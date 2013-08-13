@@ -7,7 +7,6 @@
 // @copyright  2013+, Jaroslav Bachorik
 // ==/UserScript==
 
-
 function newFailures(mydoc) {
     var failures = new Array()
     
@@ -186,7 +185,9 @@ function parseStatus(doc) {
     
     jobStatus = part1 + " jobs completed (" + part2 + " complete, " + part3 + ")"
     
-    var rslts = doc.evaluate("//*[@id='form:j_idt83:j_idt111']/table/tbody/tr[5]/td[3]/span/table/tbody/tr/td", doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE , null )
+    //*[@id="form:j_idt83:j_idt111"]//table/tbody/tr[7]/td[3]/span/table/tbody/tr/td[1]/span
+    
+    var rslts = doc.evaluate("//*[@id='form:j_idt83:j_idt111']//table[@class = 'runResTable']/tbody/tr/td", doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE , null )
     totals = "new=" + rslts.snapshotItem(0).innerText.trim() + ", known=" + rslts.snapshotItem(1).innerText.trim() + ", passed=" + rslts.snapshotItem(2).innerText.trim()
 }
 
