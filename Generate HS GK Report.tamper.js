@@ -7,23 +7,6 @@
 // @copyright  2013+, Jaroslav Bachorik
 // ==/UserScript==
 
-function HTMLParser() {
-    this.newDocument = function () {
-        var dt;
-        dt = document.implementation.createDocumentType("html", "-//W3C//DTD HTML 4.01 Transitional//EN", "http://www.w3.org/TR/html4/loose.dtd");
-        this.doc = document.implementation.createDocument('', '', dt);
-    };
-    this.loadString = function (htmlstring) {
-        if (!htmlstring) {
-            return false;
-        }
-        this.newDocument();
-        this.doc.appendChild(this.doc.createElement('html'));
-        this.doc.documentElement.innerHTML = htmlstring;
-        return this.doc;
-    };
-    return this.newDocument();
-}
 
 function newFailures(mydoc) {
     var failures = new Array()
