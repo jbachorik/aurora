@@ -1,4 +1,4 @@
 aurora
 ======
 
-Aurora scripts to make gatekeeping easier
+GreaseMonkey scripts to make gatekeeping easier
