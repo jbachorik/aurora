@@ -1,0 +1,121 @@
+package mediacenter.playback;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import mediacenter.history.HistoryStore;
+import mediacenter.history.PlaybackHistory;
+
+class PlaybackServiceTest {
+
+    /** Runs everything inline so the lifecycle can be asserted without waiting. */
+    private static final Executor DIRECT = Runnable::run;
+
+    private final Path media = Path.of("\\\\synology\\video\\Movies\\Dune.mkv");
+
+    @Test
+    @DisplayName("a completed playback lands in the history and is persisted")
+    void recordsCompletedPlayback(@TempDir Path temp) {
+        PlaybackHistory history = new PlaybackHistory();
+        HistoryStore store = new HistoryStore(temp);
+        FakePlayerLauncher launcher = FakePlayerLauncher.succeeding();
+        PlaybackService service = new PlaybackService(launcher, history, store, DIRECT, DIRECT);
+        List<PlaybackResult> results = new ArrayList<>();
+
+        service.play(media, "Dune", results::add);
+
+        assertEquals(List.of(media), launcher.played());
+        assertEquals(1, results.size());
+        assertInstanceOf(PlaybackResult.Completed.class, results.getFirst());
+        assertEquals("Dune", history.entries().getFirst().displayTitle());
+        assertTrue(Files.isRegularFile(temp.resolve("history.json")));
+        assertFalse(service.isPlaying());
+    }
+
+    @Test
+    @DisplayName("a player that never started is reported but not remembered")
+    void doesNotRecordFailedPlayback(@TempDir Path temp) {
+        PlaybackHistory history = new PlaybackHistory();
+        PlaybackService service = new PlaybackService(
+                FakePlayerLauncher.failingWith("VLC could not be started."),
+                history, new HistoryStore(temp), DIRECT, DIRECT);
+        List<PlaybackResult> results = new ArrayList<>();
+
+        service.play(media, "Dune", results::add);
+
+        PlaybackResult result = results.getFirst();
+        assertInstanceOf(PlaybackResult.Failed.class, result);
+        assertEquals("VLC could not be started.",
+                ((PlaybackResult.Failed) result).userMessage());
+        assertTrue(history.isEmpty());
+    }
+
+    @Test
+    @DisplayName("VLC being killed externally is still a normal end of playback")
+    void nonZeroExitCodeIsStillACompletedPlayback(@TempDir Path temp) {
+        PlaybackHistory history = new PlaybackHistory();
+        PlaybackService service = new PlaybackService(
+                FakePlayerLauncher.behavingAs(file ->
+                        new PlaybackResult.Completed(137, java.time.Duration.ofMinutes(3))),
+                history, new HistoryStore(temp), DIRECT, DIRECT);
+        List<PlaybackResult> results = new ArrayList<>();
+
+        service.play(media, "Dune", results::add);
+
+        assertEquals(137, ((PlaybackResult.Completed) results.getFirst()).exitCode());
+        assertEquals(1, history.entries().size());
+    }
+
+    @Test
+    void anUnexpectedFailureInsideThePlayerIsTurnedIntoAMessage(@TempDir Path temp) {
+        PlaybackService service = new PlaybackService(
+                FakePlayerLauncher.behavingAs(file -> {
+                    throw new IllegalStateException("boom");
+                }),
+                new PlaybackHistory(), new HistoryStore(temp), DIRECT, DIRECT);
+        List<PlaybackResult> results = new ArrayList<>();
+
+        service.play(media, "Dune", results::add);
+
+        assertInstanceOf(PlaybackResult.Failed.class, results.getFirst());
+        assertFalse(service.isPlaying());
+    }
+
+    @Test
+    @DisplayName("only one player runs at a time")
+    void ignoresASecondRequestWhileAPlayerIsRunning(@TempDir Path temp) {
+        PlaybackHistory history = new PlaybackHistory();
+        HistoryStore store = new HistoryStore(temp);
+        AtomicBoolean playingDuringPlayback = new AtomicBoolean();
+        List<PlaybackResult> results = new ArrayList<>();
+        PlaybackService[] holder = new PlaybackService[1];
+
+        holder[0] = new PlaybackService(
+                FakePlayerLauncher.behavingAs(file -> {
+                    playingDuringPlayback.set(holder[0].isPlaying());
+                    // A second request arriving mid-playback must be dropped.
+                    holder[0].play(Path.of("/media/other.mkv"), "Other", results::add);
+                    return new PlaybackResult.Completed(0, java.time.Duration.ofMinutes(1));
+                }),
+                history, store, DIRECT, DIRECT);
+
+        holder[0].play(media, "Dune", results::add);
+
+        assertTrue(playingDuringPlayback.get());
+        assertEquals(1, results.size());
+        assertEquals(1, history.entries().size());
+    }
+}

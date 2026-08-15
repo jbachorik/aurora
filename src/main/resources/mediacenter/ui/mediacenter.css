@@ -1,0 +1,278 @@
+/*
+ * 10-foot styling: dark background, large type, unmistakable focus.
+ * Sizes assume roughly 1920x1080 output viewed from a sofa.
+ */
+
+.root {
+    -fx-font-family: "Segoe UI", "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+    -fx-font-size: 18px;
+
+    /* palette */
+    -mc-background: #0e1118;
+    -mc-surface: #1a1f2b;
+    -mc-surface-raised: #232a39;
+    -mc-text: #f2f5fa;
+    -mc-text-dim: #9aa6bb;
+    -mc-focus: #ffb64d;
+    -mc-error: #ff6b5e;
+
+    -fx-background-color: -mc-background;
+}
+
+.root-pane {
+    -fx-background-color: -mc-background;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.header {
+    -fx-background-color: linear-gradient(to bottom, #161c28, #0e1118);
+}
+
+.header-title {
+    -fx-font-size: 46px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text;
+}
+
+.header-subtitle {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.section-heading {
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text-dim;
+    -fx-padding: 6 0 0 32;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer {
+    -fx-background-color: #0b0e14;
+}
+
+.hint-bar {
+    -fx-font-size: 17px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+/* ----------------------------------------------------------------- tiles */
+
+.tile-grid,
+.tile-grid > .viewport {
+    -fx-background-color: transparent;
+}
+
+.tile-grid-pane {
+    -fx-background-color: transparent;
+}
+
+.tile {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-width: 4;
+    -fx-border-color: transparent;
+    -fx-padding: 8;
+    -fx-cursor: hand;
+}
+
+/* Focus is the selection, so it has to be impossible to miss. */
+.tile:focused {
+    -fx-background-color: -mc-surface-raised;
+    -fx-border-color: -mc-focus;
+    -fx-effect: dropshadow(gaussian, rgba(255, 182, 77, 0.55), 28, 0.3, 0, 0);
+}
+
+.action-tile-symbol {
+    -fx-font-size: 54px;
+    -fx-text-fill: -mc-focus;
+}
+
+.action-tile-title {
+    -fx-font-size: 27px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text;
+}
+
+.action-tile-subtitle {
+    -fx-font-size: 16px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.media-tile {
+    -fx-padding: 0;
+}
+
+.media-tile-artwork {
+    -fx-background-radius: 8 8 0 0;
+}
+
+.media-tile-placeholder {
+    -fx-background-radius: 8 8 0 0;
+    -fx-padding: 16;
+}
+
+.media-tile-placeholder-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(255, 255, 255, 0.92);
+}
+
+.media-tile-placeholder-symbol {
+    -fx-font-size: 22px;
+    -fx-text-fill: rgba(255, 255, 255, 0.55);
+    -fx-padding: 6 8 0 0;
+}
+
+.media-tile-caption {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-text;
+    -fx-padding: 10 12 10 12;
+    -fx-content-display: center;
+}
+
+.grid-message {
+    -fx-font-size: 30px;
+    -fx-text-fill: -mc-text-dim;
+    -fx-text-alignment: center;
+    -fx-padding: 40;
+}
+
+/* ---------------------------------------------------------------- banner */
+
+.banner {
+    -fx-background-color: -mc-surface-raised;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-text-dim;
+    -fx-padding: 18 28 18 28;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.6), 24, 0.2, 0, 6);
+}
+
+.banner-error {
+    -fx-border-color: -mc-error;
+}
+
+.banner-label {
+    -fx-font-size: 24px;
+    -fx-text-fill: -mc-text;
+}
+
+/* -------------------------------------------------------------- settings */
+
+.settings-view {
+    -fx-background-color: -mc-background;
+}
+
+.setting-row {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 10;
+    -fx-padding: 16 20 16 20;
+}
+
+.setting-name {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text;
+}
+
+.setting-value {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.setting-status {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-focus;
+}
+
+.button,
+.toggle-button {
+    -fx-background-color: -mc-surface-raised;
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 20px;
+    -fx-padding: 12 24 12 24;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-width: 3;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+}
+
+.button:focused,
+.toggle-button:focused {
+    -fx-border-color: -mc-focus;
+}
+
+.button:hover,
+.toggle-button:hover {
+    -fx-background-color: #2e3648;
+}
+
+.toggle-button:selected {
+    -fx-background-color: #2f6d3c;
+}
+
+.roots-list {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-border-width: 3;
+    -fx-border-color: transparent;
+}
+
+.roots-list:focused {
+    -fx-border-color: -mc-focus;
+}
+
+.roots-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 21px;
+    -fx-padding: 14 20 14 20;
+}
+
+.roots-list .list-cell:filled:selected {
+    -fx-background-color: -mc-surface-raised;
+    -fx-text-fill: -mc-text;
+}
+
+.media-center-dialog {
+    -fx-background-color: -mc-surface;
+}
+
+.media-center-dialog .label {
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 20px;
+}
+
+.text-field,
+.combo-box {
+    -fx-font-size: 20px;
+    -fx-background-radius: 6;
+}
+
+/* ------------------------------------------------------------ scrollbars */
+
+.scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 14;
+}
+
+.scroll-bar:vertical .thumb {
+    -fx-background-color: #39435a;
+    -fx-background-radius: 7;
+}
+
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button,
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-background-color: transparent;
+    -fx-pref-height: 0;
+    -fx-padding: 0;
+}

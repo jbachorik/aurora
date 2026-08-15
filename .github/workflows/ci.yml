@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Liberica "Full" bundles the JavaFX modules and the jmods that jlink needs,
+  # so the project resolves no JavaFX artifacts from a repository.
+  JAVA_VERSION: "25"
+  JAVA_DISTRIBUTION: liberica
+  JAVA_PACKAGE: jdk+fx
+
+jobs:
+  # Source is shared across platforms; anything platform-specific lives behind
+  # PlatformServices, so compiling and testing everywhere is worthwhile.
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-22.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Liberica JDK ${{ env.JAVA_VERSION }} Full
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          java-package: ${{ env.JAVA_PACKAGE }}
+          cache: gradle
+
+      - name: Compile and test
+        run: ./gradlew --no-daemon clean test
+
+      # Not the distribution — just proof that the module graph links here too.
+      - name: Link a runtime image
+        run: ./gradlew --no-daemon jlink
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.os }}
+          path: build/reports/tests/test
+          retention-days: 7
+
+  # The runtime image and the launcher are platform-specific, so the Windows
+  # artifact has to be produced on Windows. The runner is pinned deliberately.
+  windows-package:
+    name: Windows x64 application image
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Liberica JDK ${{ env.JAVA_VERSION }} Full (x64)
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          java-package: ${{ env.JAVA_PACKAGE }}
+          architecture: x64
+          cache: gradle
+
+      - name: Test, jlink, jpackage and zip
+        run: .\gradlew.bat --no-daemon clean test packageZip
+
+      # CI can prove the artifact is structurally valid. It cannot prove
+      # Windows 7 compatibility — that is verified by hand on the real laptop.
+      - name: Check the application image is self-contained
+        shell: pwsh
+        run: |
+          $image = "build/app-image/MediaCenter"
+          foreach ($required in @("$image/MediaCenter.exe", "$image/runtime", "$image/app")) {
+            if (-not (Test-Path $required)) {
+              throw "Missing $required in the application image"
+            }
+          }
+          if (-not (Test-Path "$image/runtime/bin/java.exe")) {
+            throw "The application image does not contain its own Java runtime"
+          }
+          if (-not (Get-ChildItem "$image/runtime/bin" -Filter "glass.dll" -Recurse)) {
+            Write-Host "note: glass.dll not under runtime/bin, checking the whole runtime"
+            if (-not (Get-ChildItem "$image/runtime" -Filter "glass.dll" -Recurse)) {
+              throw "The JavaFX native libraries are missing from the runtime image"
+            }
+          }
+          Get-Item build/distributions/MediaCenter-windows-x64.zip
+
+      - name: Upload MediaCenter-windows-x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaCenter-windows-x64
+          path: build/distributions/MediaCenter-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-windows
+          path: build/reports/tests/test
+          retention-days: 7
