@@ -20,6 +20,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -30,6 +31,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Window;
 
 import mediacenter.config.ApplicationSettings;
+import mediacenter.config.Theme;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaRootType;
 import mediacenter.platform.PlatformServices;
@@ -47,6 +49,7 @@ public final class SettingsView implements View {
     private final Label vlcValue = new Label();
     private final Label browserValue = new Label();
     private final ToggleButton fullScreenToggle = new ToggleButton();
+    private final ToggleGroup themeGroup = new ToggleGroup();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
     private final Button firstFocusTarget;
@@ -82,6 +85,7 @@ public final class SettingsView implements View {
                 settingRow("VLC player", vlcValue, chooseVlc, detectVlc),
                 settingRow("Browser (optional)", browserValue, chooseBrowser, clearBrowser),
                 settingRow("Full screen", new Label(), fullScreenToggle),
+                themeRow(),
                 mediaRootsSection());
 
         readSettings();
@@ -151,6 +155,42 @@ public final class SettingsView implements View {
         return row;
     }
 
+    /**
+     * Dark suits a dim living room and the black fullscreen player; light suits a
+     * bright one. One flat row, no nested page.
+     */
+    private Node themeRow() {
+        Label name = new Label("Theme");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        Label value = new Label();
+        value.getStyleClass().add("setting-value");
+        HBox.setHgrow(value, Priority.ALWAYS);
+        value.setMaxWidth(Double.MAX_VALUE);
+
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        for (Theme theme : Theme.values()) {
+            ToggleButton button = new ToggleButton(theme.displayName());
+            button.setUserData(theme);
+            button.setToggleGroup(themeGroup);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            // A toggle group lets a second click clear the selection; the theme
+            // must always be one of the two.
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withTheme(theme));
+            });
+            choices.getChildren().add(button);
+        }
+
+        HBox row = new HBox(16, name, value, choices);
+        row.getStyleClass().add("setting-row");
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
     private Node mediaRootsSection() {
         Label heading = new Label("Media folders");
         heading.getStyleClass().add("section-heading");
@@ -207,6 +247,9 @@ public final class SettingsView implements View {
         browserValue.setText(settings.browserPath().map(Path::toString).orElse("Not configured"));
         fullScreenToggle.setSelected(settings.fullScreen());
         fullScreenToggle.setText(settings.fullScreen() ? "On" : "Off");
+        for (var toggle : themeGroup.getToggles()) {
+            toggle.setSelected(toggle.getUserData() == settings.theme());
+        }
 
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();
         rootsList.setItems(FXCollections.observableArrayList(settings.mediaRoots()));

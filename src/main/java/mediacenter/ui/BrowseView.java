@@ -103,7 +103,7 @@ public final class BrowseView implements View {
         }
         List<Tile> tiles = new ArrayList<>(items.size());
         for (MediaItem item : items) {
-            tiles.add(new MediaTile(item, shape, context.artworkCache()));
+            tiles.add(new MediaTile(item, shape, context.artworkCache(), context.settings().get().theme()));
         }
         grid.setTiles(tiles);
         grid.focusSelection();

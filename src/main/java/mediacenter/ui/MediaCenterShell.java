@@ -344,8 +344,12 @@ public final class MediaCenterShell implements Navigation {
 
     /** Applies a settings change: kept in memory immediately, written in the background. */
     public void applySettings(ApplicationSettings updated) {
+        boolean themeChanged = settings().theme() != updated.theme();
         settingsRef.set(updated);
         stage.setFullScreen(updated.fullScreen());
+        if (themeChanged) {
+            applyTheme(updated);
+        }
         backgroundExecutor.execute(() -> {
             if (!settingsStore.save(updated)) {
                 FxTasks.onFx(() -> showError("Settings could not be saved."));
@@ -355,6 +359,23 @@ public final class MediaCenterShell implements Navigation {
 
     public ApplicationSettings settings() {
         return settingsRef.get();
+    }
+
+    /**
+     * Swaps the palette and rebuilds the pages behind it.
+     *
+     * <p>Tile artwork placeholders are coloured per theme when the tile is built,
+     * so the pages already on the stack have to be rebuilt rather than merely
+     * restyled.
+     */
+    private void applyTheme(ApplicationSettings updated) {
+        LOG.log(Level.INFO, () -> "Switching to the " + updated.theme() + " theme");
+        if (rootPane.getScene() != null) {
+            Stylesheets.apply(rootPane.getScene(), updated.theme());
+        }
+        for (View view : viewStack) {
+            view.refresh();
+        }
     }
 
     // -- banner -------------------------------------------------------------

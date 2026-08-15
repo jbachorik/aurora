@@ -12,6 +12,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 
+import mediacenter.config.Theme;
 import mediacenter.media.MediaItem;
 
 /**
@@ -54,9 +55,11 @@ public final class MediaTile extends Tile {
     private static final double CAPTION_HEIGHT = 74;
 
     private final MediaItem item;
+    private final Theme theme;
 
-    public MediaTile(MediaItem item, Shape shape, ArtworkCache artworkCache) {
+    public MediaTile(MediaItem item, Shape shape, ArtworkCache artworkCache, Theme theme) {
         this.item = item;
+        this.theme = theme;
 
         getStyleClass().add("media-tile");
         setPrefSize(shape.width(), shape.totalHeight());
@@ -152,7 +155,7 @@ public final class MediaTile extends Tile {
     private StackPane placeholder(Shape shape) {
         StackPane placeholder = new StackPane();
         placeholder.getStyleClass().add("media-tile-placeholder");
-        placeholder.setStyle(placeholderBackground(item.displayName()));
+        placeholder.setStyle(PlaceholderColors.backgroundFor(item.displayName(), theme));
 
         Label symbol = new Label(item.isDirectory() ? "▤" : "▶");
         symbol.getStyleClass().add("media-tile-placeholder-symbol");
@@ -179,16 +182,4 @@ public final class MediaTile extends Tile {
         return caption;
     }
 
-    /**
-     * Deterministic colour so the same title always looks the same.
-     *
-     * <p>Tinted pastels rather than saturated blocks: on a light page a wall of
-     * generated tiles should read as a shelf, not as a warning.
-     */
-    static String placeholderBackground(String title) {
-        int hue = Math.floorMod(title.hashCode(), 360);
-        return "-fx-background-color: linear-gradient(to bottom right,"
-                + " hsb(" + hue + ", 16%, 97%),"
-                + " hsb(" + ((hue + 22) % 360) + ", 32%, 86%));";
-    }
 }

@@ -81,6 +81,7 @@ public final class SettingsStore {
         settings.vlcPath().ifPresent(path -> members.put("vlcPath", new JsonString(path.toString())));
         settings.browserPath().ifPresent(path -> members.put("browserPath", new JsonString(path.toString())));
         members.put("fullScreen", new JsonBoolean(settings.fullScreen()));
+        members.put("theme", new JsonString(settings.theme().name()));
 
         List<JsonValue> roots = new ArrayList<>();
         for (MediaRoot root : settings.mediaRoots()) {
@@ -99,12 +100,13 @@ public final class SettingsStore {
         Optional<Path> vlcPath = document.nonBlankString("vlcPath").map(Path::of);
         Optional<Path> browserPath = document.nonBlankString("browserPath").map(Path::of);
         boolean fullScreen = document.booleanValue("fullScreen", true);
+        Theme theme = document.nonBlankString("theme").flatMap(Theme::parse).orElse(Theme.DARK);
 
         List<MediaRoot> roots = new ArrayList<>();
         for (JsonObject rootDocument : document.objectArray("mediaRoots")) {
             readRoot(rootDocument).ifPresent(roots::add);
         }
-        return new ApplicationSettings(vlcPath, browserPath, fullScreen, roots);
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, roots);
     }
 
     private static Optional<MediaRoot> readRoot(JsonObject document) {

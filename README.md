@@ -70,18 +70,26 @@ src/main/java/
     module-info.java               module media.center
     mediacenter/                   Main, MediaCenterApp, Logging
     mediacenter/ui/                views, shell, tile grid, artwork cache
+    mediacenter/ui/components/     tiles, grid, motion, activation gate
     mediacenter/media/             MediaRoot, MediaItem, MediaScanner, artwork
     mediacenter/playback/          PlayerLauncher, VlcPlayerLauncher, service
     mediacenter/platform/          Windows / macOS / Linux services
-    mediacenter/config/            ApplicationSettings, SettingsStore
+    mediacenter/config/            ApplicationSettings, SettingsStore, Theme
     mediacenter/history/           PlaybackHistory, HistoryStore
     mediacenter/json/              small JSON reader/writer
 ```
 
-The interface is light by default: an off-white page with white cards, a blue
-accent, and focus shown as a tinted fill plus a coloured outline and a slight
-lift, because on a light background an outline alone does not carry across a
-room. Everything lives in `mediacenter.css`.
+**Dark by default, light available.** A media center is normally used in a dim
+room, the player it hands over to is fullscreen black, and posters read better
+against a dark page — so dark is the default, as it is in Kodi, Plex and every
+TV interface. Light suits a bright room. Switch it in Settings; the choice is
+remembered.
+
+The layout rules live in `mediacenter.css` and carry no colours of their own:
+every colour is a `-mc-*` variable supplied by `theme-dark.css` or
+`theme-light.css`, exactly one of which is applied alongside it. Focus is shown
+as a tinted fill plus a coloured outline plus a small lift, because on a light
+page an outline alone does not carry across a room.
 
 Design rules the code follows:
 
@@ -116,7 +124,7 @@ Where it keeps things
 | Linux    | `$XDG_CONFIG_HOME/SimpleMediaCenter/`            |
 
 ```
-config.json      VLC path, browser, full screen, media roots
+config.json      VLC path, browser, full screen, theme, media roots
 history.json     recently played
 logs/            application.log (rotating, 3 x 1 MiB)
 ```
@@ -127,6 +135,7 @@ logs/            application.log (rotating, 3 x 1 MiB)
 {
   "vlcPath": "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
   "fullScreen": true,
+  "theme": "DARK",
   "mediaRoots": [
     { "id": "…", "name": "Movies", "path": "\\\\synology\\video\\Movies", "type": "MOVIES" }
   ]

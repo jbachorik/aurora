@@ -1,0 +1,42 @@
+/*
+ * Dark palette — the default.
+ *
+ * A media center is normally used in a dim room, and the player it hands over
+ * to is fullscreen black, so a dark page keeps the whole evening at one
+ * brightness and lets poster artwork carry the screen.
+ *
+ * Only colours belong here; every rule lives in mediacenter.css.
+ */
+
+.root {
+    -mc-page: #0e1118;
+    -mc-surface: #1a1f2b;
+    -mc-surface-hover: #232a39;
+    -mc-header-top: #161c28;
+    -mc-header-bottom: #0e1118;
+    -mc-footer: #0b0e14;
+
+    -mc-border: #2b3346;
+    -mc-border-strong: #3d4762;
+
+    -mc-text: #f2f5fa;
+    -mc-text-dim: #9aa6bb;
+
+    -mc-accent: #ffb64d;
+    -mc-accent-strong: #ffc873;
+    -mc-accent-soft: #2e2617;
+    -mc-on-accent: #14181f;
+
+    -mc-error: #ff6b5e;
+    -mc-error-soft: #2c1a18;
+
+    -mc-scroll-thumb: #39435a;
+    -mc-scroll-thumb-hover: #4b5772;
+
+    -mc-shadow: rgba(0, 0, 0, 0.55);
+    -mc-shadow-soft: rgba(0, 0, 0, 0.35);
+    -mc-focus-glow: rgba(255, 182, 77, 0.55);
+
+    -mc-placeholder-text: rgba(255, 255, 255, 0.92);
+    -mc-placeholder-symbol: rgba(255, 255, 255, 0.55);
+}

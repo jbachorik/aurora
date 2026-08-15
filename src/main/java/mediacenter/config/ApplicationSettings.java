@@ -16,32 +16,38 @@ public record ApplicationSettings(
         Optional<Path> vlcPath,
         Optional<Path> browserPath,
         boolean fullScreen,
+        Theme theme,
         List<MediaRoot> mediaRoots) {
 
     public ApplicationSettings {
         vlcPath = vlcPath == null ? Optional.empty() : vlcPath;
         browserPath = browserPath == null ? Optional.empty() : browserPath;
+        theme = theme == null ? Theme.DARK : theme;
         mediaRoots = mediaRoots == null ? List.of() : List.copyOf(mediaRoots);
     }
 
     public static ApplicationSettings defaults() {
-        return new ApplicationSettings(Optional.empty(), Optional.empty(), true, List.of());
+        return new ApplicationSettings(Optional.empty(), Optional.empty(), true, Theme.DARK, List.of());
     }
 
     public ApplicationSettings withVlcPath(Optional<Path> newVlcPath) {
-        return new ApplicationSettings(newVlcPath, browserPath, fullScreen, mediaRoots);
+        return new ApplicationSettings(newVlcPath, browserPath, fullScreen, theme, mediaRoots);
     }
 
     public ApplicationSettings withBrowserPath(Optional<Path> newBrowserPath) {
-        return new ApplicationSettings(vlcPath, newBrowserPath, fullScreen, mediaRoots);
+        return new ApplicationSettings(vlcPath, newBrowserPath, fullScreen, theme, mediaRoots);
     }
 
     public ApplicationSettings withFullScreen(boolean newFullScreen) {
-        return new ApplicationSettings(vlcPath, browserPath, newFullScreen, mediaRoots);
+        return new ApplicationSettings(vlcPath, browserPath, newFullScreen, theme, mediaRoots);
+    }
+
+    public ApplicationSettings withTheme(Theme newTheme) {
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, newTheme, mediaRoots);
     }
 
     public ApplicationSettings withMediaRoots(List<MediaRoot> newMediaRoots) {
-        return new ApplicationSettings(vlcPath, browserPath, fullScreen, newMediaRoots);
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, newMediaRoots);
     }
 
     /** Adds a root, replacing any existing root with the same id. */

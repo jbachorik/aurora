@@ -1,28 +1,15 @@
 /*
- * 10-foot styling: light, high contrast, large type.
+ * 10-foot layout: high contrast, large type, unmistakable focus.
  * Sizes assume roughly 1920x1080 output viewed from a sofa.
  *
- * The background is a soft off-white rather than pure white: a full-screen
- * sheet of #fff is glaring on a TV in a dark room, and the tiles need a
- * surface that is lighter than the page to read as raised.
+ * This file carries no colours of its own — every colour is a -mc-* variable
+ * defined by theme-dark.css or theme-light.css, exactly one of which is applied
+ * alongside this stylesheet.
  */
 
 .root {
     -fx-font-family: "Segoe UI", "Helvetica Neue", "Noto Sans", Arial, sans-serif;
     -fx-font-size: 18px;
-
-    /* palette */
-    -mc-page: #eef1f6;
-    -mc-page-edge: #e3e8f0;
-    -mc-surface: #ffffff;
-    -mc-border: #d7dee9;
-    -mc-text: #131822;
-    -mc-text-dim: #5a6579;
-    -mc-accent: #1d4ed8;
-    -mc-accent-soft: #e6edff;
-    -mc-error: #b42318;
-    -mc-error-soft: #fdece9;
-
     -fx-background-color: -mc-page;
 }
 
@@ -33,7 +20,7 @@
 /* ---------------------------------------------------------------- header */
 
 .header {
-    -fx-background-color: linear-gradient(to bottom, #ffffff, #f7f9fc);
+    -fx-background-color: linear-gradient(to bottom, -mc-header-top, -mc-header-bottom);
     -fx-border-color: transparent transparent -mc-border transparent;
     -fx-border-width: 0 0 1 0;
 }
@@ -59,7 +46,7 @@
 /* ---------------------------------------------------------------- footer */
 
 .footer {
-    -fx-background-color: #ffffff;
+    -fx-background-color: -mc-footer;
     -fx-border-color: -mc-border transparent transparent transparent;
     -fx-border-width: 1 0 0 0;
 }
@@ -92,19 +79,19 @@
     -fx-border-color: -mc-border;
     -fx-padding: 8;
     -fx-cursor: hand;
-    -fx-effect: dropshadow(gaussian, rgba(19, 24, 34, 0.10), 12, 0.0, 0, 3);
+    -fx-effect: dropshadow(gaussian, -mc-shadow, 12, 0.0, 0, 3);
 }
 
 /*
- * Focus is the selection. On a light page a coloured outline alone is not
- * enough from three metres, so the focused tile also gets a tinted fill, a
- * deeper shadow and (in code) a small lift.
+ * Focus is the selection, so it has to be impossible to miss: a tinted fill, a
+ * coloured outline, a glow and (in code) a small lift. On a light page the
+ * outline alone does not carry across a room.
  */
 .tile:focused {
     -fx-background-color: -mc-accent-soft;
     -fx-border-color: -mc-accent;
     -fx-border-width: 4;
-    -fx-effect: dropshadow(gaussian, rgba(29, 78, 216, 0.34), 26, 0.20, 0, 8);
+    -fx-effect: dropshadow(gaussian, -mc-focus-glow, 26, 0.20, 0, 8);
 }
 
 .action-tile-symbol {
@@ -139,12 +126,12 @@
 .media-tile-placeholder-title {
     -fx-font-size: 22px;
     -fx-font-weight: bold;
-    -fx-text-fill: #1b2231;
+    -fx-text-fill: -mc-placeholder-text;
 }
 
 .media-tile-placeholder-symbol {
     -fx-font-size: 22px;
-    -fx-text-fill: rgba(27, 34, 49, 0.45);
+    -fx-text-fill: -mc-placeholder-symbol;
     -fx-padding: 6 8 0 0;
 }
 
@@ -171,7 +158,7 @@
     -fx-border-width: 2;
     -fx-border-color: -mc-border;
     -fx-padding: 18 28 18 28;
-    -fx-effect: dropshadow(gaussian, rgba(19, 24, 34, 0.22), 28, 0.15, 0, 10);
+    -fx-effect: dropshadow(gaussian, -mc-shadow, 28, 0.15, 0, 10);
 }
 
 .banner-error {
@@ -201,7 +188,7 @@
     -fx-border-color: -mc-border;
     -fx-border-width: 1;
     -fx-padding: 16 20 16 20;
-    -fx-effect: dropshadow(gaussian, rgba(19, 24, 34, 0.07), 10, 0.0, 0, 2);
+    -fx-effect: dropshadow(gaussian, -mc-shadow-soft, 10, 0.0, 0, 2);
 }
 
 .setting-name {
@@ -235,21 +222,27 @@
 
 .button:hover,
 .toggle-button:hover {
-    -fx-background-color: #f3f6fc;
-    -fx-border-color: #b9c6da;
+    -fx-background-color: -mc-surface-hover;
+    -fx-border-color: -mc-border-strong;
 }
 
 .button:focused,
 .toggle-button:focused {
     -fx-background-color: -mc-accent-soft;
     -fx-border-color: -mc-accent;
-    -fx-effect: dropshadow(gaussian, rgba(29, 78, 216, 0.30), 16, 0.15, 0, 4);
+    -fx-effect: dropshadow(gaussian, -mc-focus-glow, 16, 0.15, 0, 4);
 }
 
 .toggle-button:selected {
     -fx-background-color: -mc-accent;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: -mc-on-accent;
     -fx-border-color: -mc-accent;
+}
+
+.toggle-button:selected:focused {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: -mc-on-accent;
+    -fx-border-color: -mc-text;
 }
 
 .roots-list {
@@ -276,12 +269,23 @@
     -fx-text-fill: -mc-text;
 }
 
+/* --------------------------------------------------------------- dialogs */
+
 .media-center-dialog {
     -fx-background-color: -mc-surface;
 }
 
 .media-center-dialog .header-panel {
-    -fx-background-color: #f7f9fc;
+    -fx-background-color: -mc-header-bottom;
+}
+
+.media-center-dialog .header-panel .label {
+    -fx-text-fill: -mc-text;
+}
+
+.media-center-dialog .label {
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 20px;
 }
 
 .dialog-hint {
@@ -289,27 +293,22 @@
     -fx-text-fill: -mc-text-dim;
 }
 
-/* The picker is the way most folders get added, so it reads as the primary action. */
+/* The picker is how most folders get added, so it reads as the primary action. */
 .primary-button {
     -fx-background-color: -mc-accent;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: -mc-on-accent;
     -fx-border-color: -mc-accent;
 }
 
 .primary-button:hover {
-    -fx-background-color: #1a44be;
-    -fx-border-color: #1a44be;
+    -fx-background-color: -mc-accent-strong;
+    -fx-border-color: -mc-accent-strong;
 }
 
 .primary-button:focused {
     -fx-background-color: -mc-accent;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: -mc-on-accent;
     -fx-border-color: -mc-text;
-}
-
-.media-center-dialog .label {
-    -fx-text-fill: -mc-text;
-    -fx-font-size: 20px;
 }
 
 .text-field,
@@ -324,9 +323,27 @@
     -fx-padding: 8 12 8 12;
 }
 
+.text-field {
+    -fx-prompt-text-fill: -mc-text-dim;
+}
+
 .text-field:focused,
 .combo-box:focused {
     -fx-border-color: -mc-accent;
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: -mc-text;
+    -fx-background-color: -mc-surface;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -mc-surface;
+    -fx-border-color: -mc-border;
+}
+
+.combo-box-popup .list-view .list-cell:filled:hover {
+    -fx-background-color: -mc-accent-soft;
 }
 
 /* ------------------------------------------------------------ scrollbars */
@@ -337,12 +354,12 @@
 }
 
 .scroll-bar:vertical .thumb {
-    -fx-background-color: #c2ccdb;
+    -fx-background-color: -mc-scroll-thumb;
     -fx-background-radius: 7;
 }
 
 .scroll-bar:vertical .thumb:hover {
-    -fx-background-color: #a9b6ca;
+    -fx-background-color: -mc-scroll-thumb-hover;
 }
 
 .scroll-bar .track {

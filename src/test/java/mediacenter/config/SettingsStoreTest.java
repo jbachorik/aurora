@@ -31,6 +31,30 @@ class SettingsStoreTest {
     }
 
     @Test
+    @DisplayName("a media center defaults to the dark theme")
+    void theDefaultThemeIsDark(@TempDir Path temp) {
+        assertEquals(Theme.DARK, new SettingsStore(temp).load().theme());
+        assertEquals(Theme.DARK, ApplicationSettings.defaults().theme());
+    }
+
+    @Test
+    void anUnknownOrMissingThemeFallsBackToDark(@TempDir Path temp) throws IOException {
+        Files.writeString(temp.resolve("config.json"), "{\"theme\":\"SEPIA\"}");
+        assertEquals(Theme.DARK, new SettingsStore(temp).load().theme());
+
+        Files.writeString(temp.resolve("config.json"), "{\"fullScreen\":true}");
+        assertEquals(Theme.DARK, new SettingsStore(temp).load().theme());
+    }
+
+    @Test
+    void themeParsingIsLenient() {
+        assertEquals(Optional.of(Theme.LIGHT), Theme.parse(" light "));
+        assertEquals(Optional.of(Theme.DARK), Theme.parse("DARK"));
+        assertEquals(Optional.empty(), Theme.parse("sepia"));
+        assertEquals(Optional.empty(), Theme.parse(null));
+    }
+
+    @Test
     @DisplayName("settings survive a save/load round trip, UNC paths included")
     void roundTripsSettings(@TempDir Path temp) {
         SettingsStore store = new SettingsStore(temp);
@@ -41,6 +65,7 @@ class SettingsStoreTest {
                 Optional.of(Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe")),
                 Optional.of(Path.of("C:\\Program Files\\Mozilla Firefox\\firefox.exe")),
                 false,
+                Theme.LIGHT,
                 List.of(movies, tv));
 
         assertTrue(store.save(original));
@@ -49,6 +74,7 @@ class SettingsStoreTest {
         assertEquals(original.vlcPath(), reloaded.vlcPath());
         assertEquals(original.browserPath(), reloaded.browserPath());
         assertFalse(reloaded.fullScreen());
+        assertEquals(Theme.LIGHT, reloaded.theme());
         assertEquals(2, reloaded.mediaRoots().size());
         assertEquals(movies, reloaded.mediaRoots().getFirst());
         assertEquals("\\\\synology\\video\\Movies", reloaded.mediaRoots().getFirst().displayPath());

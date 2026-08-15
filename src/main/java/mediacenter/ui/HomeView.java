@@ -174,7 +174,8 @@ public final class HomeView implements View {
     private void showRecent(List<MediaItem> items) {
         List<Tile> tiles = new ArrayList<>(items.size());
         for (MediaItem item : items) {
-            tiles.add(new MediaTile(item, MediaTile.Shape.POSTER, context.artworkCache()));
+            tiles.add(new MediaTile(item, MediaTile.Shape.POSTER, context.artworkCache(),
+                    context.settings().get().theme()));
         }
         recent.setTiles(tiles);
     }

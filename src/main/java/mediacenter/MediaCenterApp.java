@@ -26,6 +26,7 @@ import mediacenter.playback.PlaybackService;
 import mediacenter.playback.PlayerLauncher;
 import mediacenter.playback.VlcPlayerLauncher;
 import mediacenter.ui.MediaCenterShell;
+import mediacenter.ui.Stylesheets;
 
 /**
  * JavaFX entry point.
@@ -38,7 +39,7 @@ public final class MediaCenterApp extends Application {
 
     private static final Logger LOG = Logger.getLogger(MediaCenterApp.class.getName());
 
-    private static final String STYLESHEET = "/mediacenter/ui/mediacenter.css";
+    static final String LAYOUT_STYLESHEET = "/mediacenter/ui/mediacenter.css";
     private static final double INITIAL_WIDTH = 1600;
     private static final double INITIAL_HEIGHT = 900;
 
@@ -83,7 +84,7 @@ public final class MediaCenterApp extends Application {
                 backgroundExecutor);
 
         Scene scene = new Scene(shell.node(), INITIAL_WIDTH, INITIAL_HEIGHT);
-        applyStylesheet(scene);
+        Stylesheets.apply(scene, settings.theme());
 
         stage.setTitle("Media Center");
         stage.setScene(scene);
@@ -116,6 +117,7 @@ public final class MediaCenterApp extends Application {
                 + " (Java " + System.getProperty("java.version") + ")");
         LOG.log(Level.INFO, () -> "Application data directory: " + dataDirectory);
         LOG.log(Level.INFO, () -> "Configured VLC: " + settings.vlcPath().map(Path::toString).orElse("<none>"));
+        LOG.log(Level.INFO, () -> "Theme: " + settings.theme());
         if (settings.mediaRoots().isEmpty()) {
             LOG.info("No media roots configured yet");
         } else {
@@ -146,12 +148,4 @@ public final class MediaCenterApp extends Application {
         });
     }
 
-    private static void applyStylesheet(Scene scene) {
-        var stylesheet = MediaCenterApp.class.getResource(STYLESHEET);
-        if (stylesheet == null) {
-            LOG.warning("Stylesheet " + STYLESHEET + " is missing from the application image");
-            return;
-        }
-        scene.getStylesheets().add(stylesheet.toExternalForm());
-    }
 }
