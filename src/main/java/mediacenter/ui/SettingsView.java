@@ -51,6 +51,9 @@ public final class SettingsView implements View {
     private final Label rootStatus = new Label();
     private final Button firstFocusTarget;
 
+    /** Where the next picker should open, so browsing does not restart from scratch. */
+    private File lastBrowsedDirectory;
+
     public SettingsView(UiContext context, PlatformServices platform, Consumer<ApplicationSettings> onSettingsChanged) {
         this.context = context;
         this.platform = platform;
@@ -224,13 +227,10 @@ public final class SettingsView implements View {
     private void chooseVlcExecutable() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Select the VLC program");
-        settings().vlcPath()
-                .map(Path::getParent)
-                .map(Path::toFile)
-                .filter(File::isDirectory)
-                .ifPresent(chooser::setInitialDirectory);
+        startingDirectory(settings().vlcPath().orElse(null)).ifPresent(chooser::setInitialDirectory);
         File chosen = chooser.showOpenDialog(window());
         if (chosen != null) {
+            remember(chosen.getParentFile());
             update(settings().withVlcPath(Optional.of(chosen.toPath())));
         }
     }
@@ -254,9 +254,36 @@ public final class SettingsView implements View {
     private void chooseBrowser() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Select a browser program");
+        startingDirectory(settings().browserPath().orElse(null)).ifPresent(chooser::setInitialDirectory);
         File chosen = chooser.showOpenDialog(window());
         if (chosen != null) {
+            remember(chosen.getParentFile());
             update(settings().withBrowserPath(Optional.of(chosen.toPath())));
+        }
+    }
+
+    /**
+     * Where a picker should open: the configured location itself, then its parent,
+     * then wherever the user browsed last. A path that no longer resolves — an
+     * offline share, for example — must not stop the dialog from opening.
+     */
+    private Optional<File> startingDirectory(Path configured) {
+        if (configured != null) {
+            File candidate = configured.toFile();
+            if (candidate.isDirectory()) {
+                return Optional.of(candidate);
+            }
+            File parent = candidate.getParentFile();
+            if (parent != null && parent.isDirectory()) {
+                return Optional.of(parent);
+            }
+        }
+        return Optional.ofNullable(lastBrowsedDirectory).filter(File::isDirectory);
+    }
+
+    private void remember(File directory) {
+        if (directory != null && directory.isDirectory()) {
+            lastBrowsedDirectory = directory;
         }
     }
 
@@ -312,6 +339,8 @@ public final class SettingsView implements View {
         Dialog<MediaRoot> dialog = new Dialog<>();
         dialog.initOwner(window());
         dialog.setTitle(existing == null ? "Add media folder" : "Edit media folder");
+        dialog.setHeaderText(existing == null ? "Add a media folder" : "Edit this media folder");
+        dialog.setResizable(true);
         dialog.getDialogPane().getStyleClass().add("media-center-dialog");
         dialog.getDialogPane().getStylesheets().addAll(root.getScene() == null
                 ? List.of()
@@ -327,12 +356,18 @@ public final class SettingsView implements View {
                 FXCollections.observableArrayList(MediaRootType.values()));
         typeBox.getSelectionModel().select(existing == null ? MediaRootType.MOVIES : existing.type());
 
-        Button browse = new Button("Browse…");
+        Button browse = new Button("Browse for a folder…");
+        browse.getStyleClass().add("primary-button");
+        browse.setMinWidth(Region.USE_PREF_SIZE);
         browse.setOnAction(event -> {
             DirectoryChooser chooser = new DirectoryChooser();
             chooser.setTitle("Select a media folder");
+            String typed = pathField.getText() == null ? "" : pathField.getText().trim();
+            startingDirectory(typed.isEmpty() ? null : Path.of(typed))
+                    .ifPresent(chooser::setInitialDirectory);
             File chosen = chooser.showDialog(dialog.getDialogPane().getScene().getWindow());
             if (chosen != null) {
+                remember(chosen.getParentFile());
                 pathField.setText(chosen.getPath());
                 if (nameField.getText().isBlank()) {
                     nameField.setText(chosen.getName());
@@ -340,13 +375,21 @@ public final class SettingsView implements View {
             }
         });
 
+        // A network share that Windows has not mapped cannot be browsed to, so
+        // typing a UNC path stays a first-class way to add a root.
+        Label hint = new Label("Browse to a local or mapped folder, "
+                + "or type a network path such as \\\\synology\\video\\Movies");
+        hint.getStyleClass().add("dialog-hint");
+        hint.setWrapText(true);
+
         GridPane form = new GridPane();
         form.setHgap(12);
         form.setVgap(12);
         form.setPadding(new Insets(16));
         form.addRow(0, new Label("Name"), nameField);
-        form.addRow(1, new Label("Folder or UNC path"), pathField, browse);
-        form.addRow(2, new Label("Type"), typeBox);
+        form.addRow(1, new Label("Folder or network path"), pathField, browse);
+        form.add(hint, 1, 2, 2, 1);
+        form.addRow(3, new Label("Type"), typeBox);
 
         dialog.getDialogPane().setContent(form);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
@@ -367,6 +410,8 @@ public final class SettingsView implements View {
                     : existing.withDisplayName(name).withPath(Path.of(path)).withType(type);
         });
 
+        // The path is what the viewer came here to set.
+        javafx.application.Platform.runLater(pathField::requestFocus);
         return dialog.showAndWait();
     }
 

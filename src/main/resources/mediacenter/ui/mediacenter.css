@@ -280,6 +280,33 @@
     -fx-background-color: -mc-surface;
 }
 
+.media-center-dialog .header-panel {
+    -fx-background-color: #f7f9fc;
+}
+
+.dialog-hint {
+    -fx-font-size: 17px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+/* The picker is the way most folders get added, so it reads as the primary action. */
+.primary-button {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: #ffffff;
+    -fx-border-color: -mc-accent;
+}
+
+.primary-button:hover {
+    -fx-background-color: #1a44be;
+    -fx-border-color: #1a44be;
+}
+
+.primary-button:focused {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: #ffffff;
+    -fx-border-color: -mc-text;
+}
+
 .media-center-dialog .label {
     -fx-text-fill: -mc-text;
     -fx-font-size: 20px;

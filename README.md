@@ -31,9 +31,10 @@ bundles the JavaFX modules *and* the JavaFX jmods that `jlink` requires, so the
 project itself declares no JavaFX dependency and the production image never
 depends on anything downloaded at build time.
 
-On first run open **Settings** and add a media folder, for example
-`\\synology\video\Movies`. VLC is located automatically; if it is somewhere
-unusual, point Settings at `vlc.exe`.
+On first run open **Settings** → **Media folders** → **Add**, then either browse
+for a folder or type a network path such as `\\synology\video\Movies` (a share
+Windows has not mapped cannot be browsed to, so both ways are supported). VLC is
+located automatically; if it is somewhere unusual, point Settings at `vlc.exe`.
 
 
 Using it
