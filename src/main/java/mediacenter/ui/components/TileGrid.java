@@ -27,13 +27,6 @@ public final class TileGrid extends ScrollPane {
     private static final double SCROLL_MARGIN = 24;
     private static final double ROW_EPSILON = 2;
 
-    /**
-     * How long an activation stays "used up" when the key release that would
-     * normally re-arm it never arrives. Long enough to swallow auto-repeat,
-     * short enough that a lost release can never disable Enter for good.
-     */
-    private static final long ACTIVATION_REARM_NANOS = 1_500_000_000L;
-
     private final TilePane tilePane = new TilePane();
     private final Label messageLabel = new Label();
     private final List<Tile> tiles = new ArrayList<>();
@@ -43,8 +36,7 @@ public final class TileGrid extends ScrollPane {
     private Runnable onNavigateAbove = () -> { };
     private Runnable onNavigateBelow = () -> { };
     private int selectedIndex = -1;
-    private boolean activationArmed = true;
-    private long lastActivationNanos;
+    private final ActivationGate activationGate = new ActivationGate();
 
     public TileGrid() {
         getStyleClass().add("tile-grid");
@@ -187,8 +179,11 @@ public final class TileGrid extends ScrollPane {
             }
             select(tiles.indexOf(tile));
             if (event.getClickCount() >= 2) {
-                activationArmed = true;
-                activate(tile);
+                // A double click cannot auto-repeat, so it always activates.
+                activationGate.rearm();
+                if (activationGate.pressed(System.nanoTime())) {
+                    onActivate.accept(tile);
+                }
             }
             event.consume();
         });
@@ -235,33 +230,18 @@ public final class TileGrid extends ScrollPane {
                 event.consume();
             }
             case ENTER, SPACE -> {
-                activate(tiles.get(current));
+                if (activationGate.pressed(System.nanoTime())) {
+                    onActivate.accept(tiles.get(current));
+                }
                 event.consume();
             }
             default -> { }
         }
     }
 
-    /**
-     * Activates a tile, ignoring the key auto-repeat that a held Enter — or a
-     * cheap remote whose button sticks — produces.
-     *
-     * <p>Without this, returning from playback while the key is still down
-     * immediately launches the same file again.
-     */
-    private void activate(Tile tile) {
-        long now = System.nanoTime();
-        if (!activationArmed && now - lastActivationNanos < ACTIVATION_REARM_NANOS) {
-            return;
-        }
-        activationArmed = false;
-        lastActivationNanos = now;
-        onActivate.accept(tile);
-    }
-
     private void handleKeyReleased(KeyEvent event) {
         if (event.getCode() == KeyCode.ENTER || event.getCode() == KeyCode.SPACE) {
-            activationArmed = true;
+            activationGate.released();
         }
     }
 

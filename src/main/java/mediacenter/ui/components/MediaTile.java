@@ -3,6 +3,7 @@ package mediacenter.ui.components;
 import java.nio.file.Path;
 import java.util.Optional;
 
+import javafx.animation.FadeTransition;
 import javafx.beans.InvalidationListener;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -94,40 +95,57 @@ public final class MediaTile extends Tile {
             view.setPreserveRatio(true);
             view.setSmooth(true);
             area.getChildren().add(view);
-            hidePlaceholderOnceLoaded(image, placeholder);
+            revealWhenLoaded(image, placeholder, view);
         }
         return area;
     }
 
     /**
-     * Keeps the placeholder visible while the image loads and drops it once the
-     * artwork is on screen — an image that fails to load leaves the placeholder
-     * in place.
+     * Keeps the placeholder visible while the image loads, then cross-fades the
+     * artwork in over it. An image that fails to load simply leaves the
+     * placeholder in place.
      *
      * <p>The listener removes itself, so a cached long-lived {@link Image} never
      * ends up holding on to discarded tiles.
      */
-    private static void hidePlaceholderOnceLoaded(Image image, Node placeholder) {
+    private static void revealWhenLoaded(Image image, Node placeholder, Node artwork) {
         if (image.isError()) {
+            artwork.setVisible(false);
             return;
         }
         if (image.getProgress() >= 1.0) {
+            // Already decoded (a cache hit while re-entering a folder): showing it
+            // straight away avoids a pointless flash on every navigation.
             placeholder.setVisible(false);
             return;
         }
+        artwork.setOpacity(0);
         InvalidationListener[] listener = new InvalidationListener[1];
         listener[0] = observable -> {
             if (image.isError()) {
-                image.progressProperty().removeListener(listener[0]);
-                image.errorProperty().removeListener(listener[0]);
+                artwork.setVisible(false);
+                stopListening(image, listener[0]);
             } else if (image.getProgress() >= 1.0) {
-                placeholder.setVisible(false);
-                image.progressProperty().removeListener(listener[0]);
-                image.errorProperty().removeListener(listener[0]);
+                crossFade(placeholder, artwork);
+                stopListening(image, listener[0]);
             }
         };
         image.progressProperty().addListener(listener[0]);
         image.errorProperty().addListener(listener[0]);
+    }
+
+    private static void stopListening(Image image, InvalidationListener listener) {
+        image.progressProperty().removeListener(listener);
+        image.errorProperty().removeListener(listener);
+    }
+
+    private static void crossFade(Node placeholder, Node artwork) {
+        FadeTransition reveal = new FadeTransition(Motion.GENTLE, artwork);
+        reveal.setFromValue(0);
+        reveal.setToValue(1);
+        reveal.setInterpolator(Motion.EASE);
+        reveal.setOnFinished(event -> placeholder.setVisible(false));
+        reveal.play();
     }
 
     /** Generated fallback: a stable colour per title plus the title itself. */
@@ -161,11 +179,16 @@ public final class MediaTile extends Tile {
         return caption;
     }
 
-    /** Deterministic colour so the same title always looks the same. */
+    /**
+     * Deterministic colour so the same title always looks the same.
+     *
+     * <p>Tinted pastels rather than saturated blocks: on a light page a wall of
+     * generated tiles should read as a shelf, not as a warning.
+     */
     static String placeholderBackground(String title) {
         int hue = Math.floorMod(title.hashCode(), 360);
         return "-fx-background-color: linear-gradient(to bottom right,"
-                + " hsb(" + hue + ", 42%, 40%),"
-                + " hsb(" + ((hue + 24) % 360) + ", 55%, 22%));";
+                + " hsb(" + hue + ", 16%, 97%),"
+                + " hsb(" + ((hue + 22) % 360) + ", 32%, 86%));";
     }
 }

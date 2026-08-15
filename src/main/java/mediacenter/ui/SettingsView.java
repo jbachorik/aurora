@@ -23,6 +23,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
@@ -116,13 +117,19 @@ public final class SettingsView implements View {
         name.getStyleClass().add("setting-name");
         name.setMinWidth(320);
 
+        // The value is the only part allowed to shrink: a long UNC path must
+        // ellipsize rather than squeeze the buttons until their labels are cut.
         value.getStyleClass().add("setting-value");
         HBox.setHgrow(value, Priority.ALWAYS);
         value.setMaxWidth(Double.MAX_VALUE);
+        value.setMinWidth(80);
 
         HBox row = new HBox(16, name, value);
         row.getStyleClass().add("setting-row");
         row.setAlignment(Pos.CENTER_LEFT);
+        for (Button button : buttons) {
+            button.setMinWidth(Region.USE_PREF_SIZE);
+        }
         row.getChildren().addAll(buttons);
         return row;
     }
@@ -133,6 +140,7 @@ public final class SettingsView implements View {
         name.setMinWidth(320);
         HBox.setHgrow(value, Priority.ALWAYS);
         value.setMaxWidth(Double.MAX_VALUE);
+        toggle.setMinWidth(Region.USE_PREF_SIZE);
 
         HBox row = new HBox(16, name, value, toggle);
         row.getStyleClass().add("setting-row");

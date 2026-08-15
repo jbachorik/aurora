@@ -9,7 +9,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
+import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -37,6 +39,7 @@ import mediacenter.playback.PlaybackService;
 import mediacenter.platform.PlatformServices;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.ui.components.ArtworkCache;
+import mediacenter.ui.components.Motion;
 
 /**
  * The application frame: header, page stack, status banner, global keys and the
@@ -104,7 +107,7 @@ public final class MediaCenterShell implements Navigation {
         buildFrame();
         this.homeView = new HomeView(context);
         viewStack.push(homeView);
-        showCurrentView();
+        showCurrentView(Direction.NONE);
     }
 
     /** The node to put into the scene. */
@@ -169,7 +172,8 @@ public final class MediaCenterShell implements Navigation {
         return viewStack.peek();
     }
 
-    private void showCurrentView() {
+    /** Shows the current page, sliding it in from the direction travelled. */
+    private void showCurrentView(Direction direction) {
         View view = currentView();
         frame.setCenter(view.node());
         titleLabel.setText(view.title());
@@ -178,11 +182,20 @@ public final class MediaCenterShell implements Navigation {
         subtitleLabel.setVisible(!subtitle.isBlank());
         subtitleLabel.setManaged(!subtitle.isBlank());
         view.onShown();
+
+        switch (direction) {
+            case FORWARD -> Motion.slideFadeIn(view.node(), Motion.PAGE_SLIDE, Motion.NORMAL);
+            case BACKWARD -> Motion.slideFadeIn(view.node(), -Motion.PAGE_SLIDE, Motion.NORMAL);
+            case NONE -> Motion.fadeIn(view.node(), Motion.NORMAL);
+        }
     }
+
+    /** Which way the viewer is moving through the page stack. */
+    private enum Direction { FORWARD, BACKWARD, NONE }
 
     private void push(View view) {
         viewStack.push(view);
-        showCurrentView();
+        showCurrentView(Direction.FORWARD);
     }
 
     // -- global keys --------------------------------------------------------
@@ -269,15 +282,16 @@ public final class MediaCenterShell implements Navigation {
             return;
         }
         viewStack.pop();
-        showCurrentView();
+        showCurrentView(Direction.BACKWARD);
     }
 
     @Override
     public void goHome() {
+        boolean moved = viewStack.size() > 1;
         while (viewStack.size() > 1) {
             viewStack.pop();
         }
-        showCurrentView();
+        showCurrentView(moved ? Direction.BACKWARD : Direction.NONE);
     }
 
     @Override
@@ -351,13 +365,32 @@ public final class MediaCenterShell implements Navigation {
         if (isError) {
             bannerBox.getStyleClass().add("banner-error");
         }
+        boolean alreadyShowing = bannerBox.isVisible();
         bannerBox.setVisible(true);
         bannerBox.setManaged(true);
+        if (!alreadyShowing) {
+            // Drops in from just above; replacing the text of a banner that is
+            // already up would only make the message harder to read.
+            bannerBox.setTranslateY(-16);
+            TranslateTransition drop = new TranslateTransition(Motion.NORMAL, bannerBox);
+            drop.setFromY(-16);
+            drop.setToY(0);
+            drop.setInterpolator(Motion.EASE);
+            drop.play();
+            Motion.fadeIn(bannerBox, Motion.NORMAL);
+        }
         bannerTimer.playFromStart();
     }
 
     private void hideBanner() {
-        bannerBox.setVisible(false);
-        bannerBox.setManaged(false);
+        FadeTransition dismiss = new FadeTransition(Motion.NORMAL, bannerBox);
+        dismiss.setFromValue(bannerBox.getOpacity());
+        dismiss.setToValue(0);
+        dismiss.setInterpolator(Motion.EASE);
+        dismiss.setOnFinished(event -> {
+            bannerBox.setVisible(false);
+            bannerBox.setManaged(false);
+        });
+        dismiss.play();
     }
 }

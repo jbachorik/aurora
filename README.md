@@ -77,6 +77,11 @@ src/main/java/
     mediacenter/json/              small JSON reader/writer
 ```
 
+The interface is light by default: an off-white page with white cards, a blue
+accent, and focus shown as a tinted fill plus a coloured outline and a slight
+lift, because on a light background an outline alone does not carry across a
+room. Everything lives in `mediacenter.css`.
+
 Design rules the code follows:
 
 * **The JavaFX thread never does I/O.** Scanning, artwork lookup, waiting for
@@ -89,6 +94,12 @@ Design rules the code follows:
   handful of small JSON files are read and written by `mediacenter.json`.
 * **Errors are readable from the sofa.** Stack traces go to
   `logs/application.log`, the screen gets one plain sentence.
+* **Input is treated as remote input.** Activation ignores key auto-repeat, so
+  a held Enter — or a remote whose button sticks — cannot relaunch a film the
+  moment the media center returns from playback. See `ActivationGate`.
+* **Motion is feedback, never decoration.** Focus lifts, pages slide the way
+  you travelled, artwork fades in when it finishes decoding. Everything is
+  under a quarter of a second and nothing delays input.
 * **Only the modules actually used.** In particular `javafx.media` is *not*
   required — this application never decodes media. The linked runtime image
   contains 11 modules.

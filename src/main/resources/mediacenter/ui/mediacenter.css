@@ -1,6 +1,10 @@
 /*
- * 10-foot styling: dark background, large type, unmistakable focus.
+ * 10-foot styling: light, high contrast, large type.
  * Sizes assume roughly 1920x1080 output viewed from a sofa.
+ *
+ * The background is a soft off-white rather than pure white: a full-screen
+ * sheet of #fff is glaring on a TV in a dark room, and the tiles need a
+ * surface that is lighter than the page to read as raised.
  */
 
 .root {
@@ -8,25 +12,30 @@
     -fx-font-size: 18px;
 
     /* palette */
-    -mc-background: #0e1118;
-    -mc-surface: #1a1f2b;
-    -mc-surface-raised: #232a39;
-    -mc-text: #f2f5fa;
-    -mc-text-dim: #9aa6bb;
-    -mc-focus: #ffb64d;
-    -mc-error: #ff6b5e;
+    -mc-page: #eef1f6;
+    -mc-page-edge: #e3e8f0;
+    -mc-surface: #ffffff;
+    -mc-border: #d7dee9;
+    -mc-text: #131822;
+    -mc-text-dim: #5a6579;
+    -mc-accent: #1d4ed8;
+    -mc-accent-soft: #e6edff;
+    -mc-error: #b42318;
+    -mc-error-soft: #fdece9;
 
-    -fx-background-color: -mc-background;
+    -fx-background-color: -mc-page;
 }
 
 .root-pane {
-    -fx-background-color: -mc-background;
+    -fx-background-color: -mc-page;
 }
 
 /* ---------------------------------------------------------------- header */
 
 .header {
-    -fx-background-color: linear-gradient(to bottom, #161c28, #0e1118);
+    -fx-background-color: linear-gradient(to bottom, #ffffff, #f7f9fc);
+    -fx-border-color: transparent transparent -mc-border transparent;
+    -fx-border-width: 0 0 1 0;
 }
 
 .header-title {
@@ -41,7 +50,7 @@
 }
 
 .section-heading {
-    -fx-font-size: 26px;
+    -fx-font-size: 24px;
     -fx-font-weight: bold;
     -fx-text-fill: -mc-text-dim;
     -fx-padding: 6 0 0 32;
@@ -50,7 +59,9 @@
 /* ---------------------------------------------------------------- footer */
 
 .footer {
-    -fx-background-color: #0b0e14;
+    -fx-background-color: #ffffff;
+    -fx-border-color: -mc-border transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
 }
 
 .hint-bar {
@@ -69,26 +80,36 @@
     -fx-background-color: transparent;
 }
 
+/*
+ * Resting tiles carry a light border and a soft shadow so they read as cards
+ * on the page without shouting.
+ */
 .tile {
     -fx-background-color: -mc-surface;
-    -fx-background-radius: 12;
-    -fx-border-radius: 12;
-    -fx-border-width: 4;
-    -fx-border-color: transparent;
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-border-width: 3;
+    -fx-border-color: -mc-border;
     -fx-padding: 8;
     -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(19, 24, 34, 0.10), 12, 0.0, 0, 3);
 }
 
-/* Focus is the selection, so it has to be impossible to miss. */
+/*
+ * Focus is the selection. On a light page a coloured outline alone is not
+ * enough from three metres, so the focused tile also gets a tinted fill, a
+ * deeper shadow and (in code) a small lift.
+ */
 .tile:focused {
-    -fx-background-color: -mc-surface-raised;
-    -fx-border-color: -mc-focus;
-    -fx-effect: dropshadow(gaussian, rgba(255, 182, 77, 0.55), 28, 0.3, 0, 0);
+    -fx-background-color: -mc-accent-soft;
+    -fx-border-color: -mc-accent;
+    -fx-border-width: 4;
+    -fx-effect: dropshadow(gaussian, rgba(29, 78, 216, 0.34), 26, 0.20, 0, 8);
 }
 
 .action-tile-symbol {
     -fx-font-size: 54px;
-    -fx-text-fill: -mc-focus;
+    -fx-text-fill: -mc-accent;
 }
 
 .action-tile-title {
@@ -107,23 +128,23 @@
 }
 
 .media-tile-artwork {
-    -fx-background-radius: 8 8 0 0;
+    -fx-background-radius: 11 11 0 0;
 }
 
 .media-tile-placeholder {
-    -fx-background-radius: 8 8 0 0;
+    -fx-background-radius: 11 11 0 0;
     -fx-padding: 16;
 }
 
 .media-tile-placeholder-title {
     -fx-font-size: 22px;
     -fx-font-weight: bold;
-    -fx-text-fill: rgba(255, 255, 255, 0.92);
+    -fx-text-fill: #1b2231;
 }
 
 .media-tile-placeholder-symbol {
     -fx-font-size: 22px;
-    -fx-text-fill: rgba(255, 255, 255, 0.55);
+    -fx-text-fill: rgba(27, 34, 49, 0.45);
     -fx-padding: 6 8 0 0;
 }
 
@@ -144,16 +165,17 @@
 /* ---------------------------------------------------------------- banner */
 
 .banner {
-    -fx-background-color: -mc-surface-raised;
-    -fx-background-radius: 12;
-    -fx-border-radius: 12;
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
     -fx-border-width: 2;
-    -fx-border-color: -mc-text-dim;
+    -fx-border-color: -mc-border;
     -fx-padding: 18 28 18 28;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.6), 24, 0.2, 0, 6);
+    -fx-effect: dropshadow(gaussian, rgba(19, 24, 34, 0.22), 28, 0.15, 0, 10);
 }
 
 .banner-error {
+    -fx-background-color: -mc-error-soft;
     -fx-border-color: -mc-error;
 }
 
@@ -162,16 +184,24 @@
     -fx-text-fill: -mc-text;
 }
 
+.banner-error .banner-label {
+    -fx-text-fill: -mc-error;
+}
+
 /* -------------------------------------------------------------- settings */
 
 .settings-view {
-    -fx-background-color: -mc-background;
+    -fx-background-color: -mc-page;
 }
 
 .setting-row {
     -fx-background-color: -mc-surface;
-    -fx-background-radius: 10;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-color: -mc-border;
+    -fx-border-width: 1;
     -fx-padding: 16 20 16 20;
+    -fx-effect: dropshadow(gaussian, rgba(19, 24, 34, 0.07), 10, 0.0, 0, 2);
 }
 
 .setting-name {
@@ -187,46 +217,51 @@
 
 .setting-status {
     -fx-font-size: 20px;
-    -fx-text-fill: -mc-focus;
+    -fx-text-fill: -mc-accent;
 }
 
 .button,
 .toggle-button {
-    -fx-background-color: -mc-surface-raised;
+    -fx-background-color: -mc-surface;
     -fx-text-fill: -mc-text;
     -fx-font-size: 20px;
     -fx-padding: 12 24 12 24;
-    -fx-background-radius: 8;
-    -fx-border-radius: 8;
-    -fx-border-width: 3;
-    -fx-border-color: transparent;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
     -fx-cursor: hand;
-}
-
-.button:focused,
-.toggle-button:focused {
-    -fx-border-color: -mc-focus;
 }
 
 .button:hover,
 .toggle-button:hover {
-    -fx-background-color: #2e3648;
+    -fx-background-color: #f3f6fc;
+    -fx-border-color: #b9c6da;
+}
+
+.button:focused,
+.toggle-button:focused {
+    -fx-background-color: -mc-accent-soft;
+    -fx-border-color: -mc-accent;
+    -fx-effect: dropshadow(gaussian, rgba(29, 78, 216, 0.30), 16, 0.15, 0, 4);
 }
 
 .toggle-button:selected {
-    -fx-background-color: #2f6d3c;
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: #ffffff;
+    -fx-border-color: -mc-accent;
 }
 
 .roots-list {
     -fx-background-color: -mc-surface;
-    -fx-background-radius: 10;
-    -fx-border-radius: 10;
-    -fx-border-width: 3;
-    -fx-border-color: transparent;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
 }
 
 .roots-list:focused {
-    -fx-border-color: -mc-focus;
+    -fx-border-color: -mc-accent;
 }
 
 .roots-list .list-cell {
@@ -237,7 +272,7 @@
 }
 
 .roots-list .list-cell:filled:selected {
-    -fx-background-color: -mc-surface-raised;
+    -fx-background-color: -mc-accent-soft;
     -fx-text-fill: -mc-text;
 }
 
@@ -253,7 +288,18 @@
 .text-field,
 .combo-box {
     -fx-font-size: 20px;
-    -fx-background-radius: 6;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
+    -fx-background-color: -mc-surface;
+    -fx-text-fill: -mc-text;
+    -fx-padding: 8 12 8 12;
+}
+
+.text-field:focused,
+.combo-box:focused {
+    -fx-border-color: -mc-accent;
 }
 
 /* ------------------------------------------------------------ scrollbars */
@@ -264,8 +310,17 @@
 }
 
 .scroll-bar:vertical .thumb {
-    -fx-background-color: #39435a;
+    -fx-background-color: #c2ccdb;
     -fx-background-radius: 7;
+}
+
+.scroll-bar:vertical .thumb:hover {
+    -fx-background-color: #a9b6ca;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
 }
 
 .scroll-bar .increment-button,
