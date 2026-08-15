@@ -49,7 +49,19 @@ Using it
 | `F5`               | refresh          |
 
 Single click selects, double click plays. Nothing important is mouse-only, so
-a cheap USB or Bluetooth remote that emulates a keyboard is enough.
+a cheap USB or Bluetooth remote that emulates a keyboard is enough. The pointer
+hides itself after a few seconds of stillness and comes back on the first
+movement.
+
+It starts **full screen with no window decorations**, which is the default and
+can be turned off in Settings. `Esc` is the Back key here, so it deliberately
+does not drop out of full screen; leave with the **Exit** tile or `Alt+F4`. If
+full screen ever misbehaves on the target machine there is an escape hatch that
+does not need Settings:
+
+```text
+MediaCenter.exe --windowed
+```
 
 
 How it is put together

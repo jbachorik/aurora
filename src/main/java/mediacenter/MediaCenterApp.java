@@ -39,7 +39,9 @@ public final class MediaCenterApp extends Application {
 
     private static final Logger LOG = Logger.getLogger(MediaCenterApp.class.getName());
 
-    static final String LAYOUT_STYLESHEET = "/mediacenter/ui/mediacenter.css";
+    /** Starts in a window even when the configuration says full screen. */
+    static final String WINDOWED_ARGUMENT = "--windowed";
+
     private static final double INITIAL_WIDTH = 1600;
     private static final double INITIAL_HEIGHT = 900;
 
@@ -62,6 +64,10 @@ public final class MediaCenterApp extends Application {
 
         ApplicationSettings settings = settingsStore.load();
         PlaybackHistory history = historyStore.load();
+        // Escape hatch for the target machine: the media center owns the whole
+        // screen by default, and there is no console to read on a TV if that
+        // ever misbehaves.
+        boolean startFullScreen = settings.fullScreen() && !getParameters().getRaw().contains(WINDOWED_ARGUMENT);
         AtomicReference<ApplicationSettings> settingsRef = new AtomicReference<>(settings);
 
         logStartup(platform, dataDirectory, settings);
@@ -93,11 +99,11 @@ public final class MediaCenterApp extends Application {
         // Escape is the Back key here, so it must not drop out of full screen.
         stage.setFullScreenExitKeyCombination(KeyCombination.NO_MATCH);
         stage.setFullScreenExitHint("");
-        stage.setFullScreen(settings.fullScreen());
+        stage.setFullScreen(startFullScreen);
         stage.setOnCloseRequest(event -> Platform.exit());
         stage.show();
 
-        shell.installKeyBindings();
+        shell.attachToScene();
         shell.focusCurrentView();
 
         discoverVlcIfNeeded(platform, shell, settingsRef);
@@ -117,7 +123,8 @@ public final class MediaCenterApp extends Application {
                 + " (Java " + System.getProperty("java.version") + ")");
         LOG.log(Level.INFO, () -> "Application data directory: " + dataDirectory);
         LOG.log(Level.INFO, () -> "Configured VLC: " + settings.vlcPath().map(Path::toString).orElse("<none>"));
-        LOG.log(Level.INFO, () -> "Theme: " + settings.theme());
+        LOG.log(Level.INFO, () -> "Theme: " + settings.theme()
+                + ", full screen: " + settings.fullScreen());
         if (settings.mediaRoots().isEmpty()) {
             LOG.info("No media roots configured yet");
         } else {

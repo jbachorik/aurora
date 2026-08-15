@@ -346,6 +346,26 @@
     -fx-background-color: -mc-accent-soft;
 }
 
+/* ---------------------------------------------------------------- cursor */
+
+/*
+ * Applied to the root while the pointer is idle. The descendant rules are
+ * needed because a node's own -fx-cursor wins over the one on its ancestors,
+ * and most of the screen is covered by tiles that ask for a hand.
+ */
+.cursor-hidden {
+    -fx-cursor: none;
+}
+
+.cursor-hidden .tile,
+.cursor-hidden .button,
+.cursor-hidden .toggle-button,
+.cursor-hidden .list-cell,
+.cursor-hidden .text-field,
+.cursor-hidden .combo-box {
+    -fx-cursor: none;
+}
+
 /* ------------------------------------------------------------ scrollbars */
 
 .scroll-bar:vertical {

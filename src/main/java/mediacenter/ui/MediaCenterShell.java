@@ -16,9 +16,11 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -57,6 +59,11 @@ public final class MediaCenterShell implements Navigation {
      */
     private static final long PLAYBACK_GUARD_NANOS = 800_000_000L;
 
+    /** How long the pointer may sit still before it is hidden. */
+    private static final Duration CURSOR_IDLE_DELAY = Duration.seconds(3);
+
+    private static final String HIDDEN_CURSOR_CLASS = "cursor-hidden";
+
     private final Stage stage;
     private final SettingsStore settingsStore;
     private final PlatformServices platform;
@@ -70,6 +77,7 @@ public final class MediaCenterShell implements Navigation {
     private final Label bannerLabel = new Label();
     private final StackPane bannerBox = new StackPane(bannerLabel);
     private final PauseTransition bannerTimer = new PauseTransition(BANNER_DURATION);
+    private final PauseTransition cursorIdleTimer = new PauseTransition(CURSOR_IDLE_DELAY);
 
     private final Deque<View> viewStack = new ArrayDeque<>();
     private final UiContext context;
@@ -115,9 +123,37 @@ public final class MediaCenterShell implements Navigation {
         return rootPane;
     }
 
-    /** Installs the global key handling; call once the scene exists. */
-    public void installKeyBindings() {
-        rootPane.getScene().addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKey);
+    /** Installs the global input handling; call once the scene exists. */
+    public void attachToScene() {
+        Scene scene = rootPane.getScene();
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKey);
+        installCursorAutoHide(scene);
+    }
+
+    /**
+     * Hides the pointer while it is not being used.
+     *
+     * <p>On a television an arrow parked in the middle of the poster wall is
+     * just clutter; it comes straight back on the first movement.
+     */
+    private void installCursorAutoHide(Scene scene) {
+        cursorIdleTimer.setOnFinished(event -> {
+            if (!rootPane.getStyleClass().contains(HIDDEN_CURSOR_CLASS)) {
+                rootPane.getStyleClass().add(HIDDEN_CURSOR_CLASS);
+                LOG.fine("Pointer idle, hiding it");
+            }
+        });
+        // Deliberately not MouseEvent.ANY: enter/exit events are synthesized as the
+        // UI changes under a stationary pointer, which would keep it awake forever.
+        scene.addEventFilter(MouseEvent.MOUSE_MOVED, event -> wakeCursor());
+        scene.addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> wakeCursor());
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> wakeCursor());
+        cursorIdleTimer.playFromStart();
+    }
+
+    private void wakeCursor() {
+        rootPane.getStyleClass().remove(HIDDEN_CURSOR_CLASS);
+        cursorIdleTimer.playFromStart();
     }
 
     /** Focus the current page, e.g. after the window is shown. */
