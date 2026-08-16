@@ -238,6 +238,29 @@ Download `Aurora-MediaCenter-windows-x64.zip` from the release, copy it to the
 laptop, unzip, and run `MediaCenter.exe`. No JDK, JRE, `JAVA_HOME`, PATH change
 or JavaFX installation is needed on the target machine.
 
+### Running the macOS image
+
+The macOS images are not signed with an Apple Developer ID, because that
+certificate requires a paid Apple Developer Program membership. macOS stamps
+anything downloaded from a browser with a quarantine attribute and refuses to
+open it, so clear the attribute once after unzipping:
+
+```bash
+unzip Aurora-MediaCenter-macos-aarch64.zip     # or -macos-x64 on an Intel Mac
+xattr -dr com.apple.quarantine MediaCenter.app
+open MediaCenter.app
+```
+
+Pick the archive that matches the machine: an arm64 image cannot run on an Intel
+Mac at all, and Rosetta does not help — it translates x86_64 to arm64, not the
+other way round.
+
+If macOS says the application is *damaged* rather than *from an unidentified
+developer*, that is a different problem: the bundle itself is broken, usually
+because archiving lost the symbolic links or the executable bits and invalidated
+jpackage's ad-hoc signature. `codesign --verify --deep --strict MediaCenter.app`
+tells the two apart.
+
 CI can prove that the Windows build links, packages and is structurally
 self-contained. It **cannot** prove Windows 7 compatibility — the runners are
 modern Windows Server. Smoke-test a new artifact by hand on the laptop:
