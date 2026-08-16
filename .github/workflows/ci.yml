@@ -26,6 +26,26 @@ env:
   JAVA_PACKAGE: jdk+fx
 
 jobs:
+  # Cheap repository-level checks that do not need a JDK.
+  guards:
+    name: repository guards
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # This repository used to hold an unrelated userscript, removed when it
+      # became a media center. Rebases and reverts are how deleted files come
+      # back, so the ban is enforced rather than remembered.
+      - name: The removed userscript must stay removed
+        run: |
+          offenders=$(git ls-files -- '*.tamper.js')
+          if [ -n "$offenders" ]; then
+            echo "::error::a removed userscript has been committed again:"
+            echo "$offenders"
+            exit 1
+          fi
+          echo "No *.tamper.js files are tracked."
+
   # The source is shared across platforms and only PlatformServices differs, but
   # the runtime image is platform-specific, so all three compile, test and link.
   #

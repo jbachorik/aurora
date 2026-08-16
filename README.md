@@ -217,9 +217,14 @@ tag `-rc2`. The images attached to the release are the ones that were
 validated, not a rebuild of them.
 
 Tagging `v1.2.3` directly skips the candidate step and does the same thing in
-one go. Running the workflow by hand (no tag) builds the images and leaves them
-as workflow artifacts, which is the way to get a build onto the laptop without
-cutting a release.
+one go.
+
+Running the workflow by hand builds the images and leaves them as workflow
+artifacts **without creating a release** — that is the way to get a build onto
+the laptop without cutting one. GitHub lets a manual run pick a tag rather than
+a branch, so publishing from one is possible, but it has to be asked for by
+ticking `publish`; fetching a build for testing cannot create a release by
+accident.
 
 One thing worth knowing before editing `release.yml`: the promoted `v1.2.3` tag
 is created with `GITHUB_TOKEN`, and GitHub deliberately does not start a
@@ -241,6 +246,55 @@ modern Windows Server. Smoke-test a new artifact by hand on the laptop:
 launch → UNC share opens → browse → play → quit VLC → UI returns → desktop
 ```
 
+
+### Running the macOS image
+
+The macOS images carry only jpackage's ad-hoc signature, because a Developer ID
+certificate requires a paid Apple Developer Program membership. macOS refuses to
+open such an application when it has been *quarantined*.
+
+Quarantine is applied by whatever downloaded the file, and command-line tools do
+not apply it — so downloading a release without a browser sidesteps the problem
+entirely, and is the recommended way to fetch a build:
+
+```bash
+gh release download v1.2.3 -p 'Aurora-MediaCenter-macos-*.zip'
+
+unzip Aurora-MediaCenter-macos-aarch64.zip     # Apple Silicon
+unzip Aurora-MediaCenter-macos-x64.zip         # Intel
+
+open MediaCenter.app
+```
+
+`curl -LO <asset-url>` works the same way. Pick the archive that matches the
+machine: an arm64 image cannot run on an Intel Mac at all, and Rosetta does not
+help — it translates x86_64 to arm64, not the other way round.
+
+#### If it was downloaded with a browser
+
+Clear the attribute once, after unzipping:
+
+```bash
+xattr -dr com.apple.quarantine MediaCenter.app
+open MediaCenter.app
+```
+
+That is once per download, not once per launch: the attribute is stored on disk,
+so the unzipped application keeps working afterwards, including after moving it
+to `/Applications` and after a reboot. `-r` matters, because the files inside the
+bundle carry the attribute too, not just the `.app` itself.
+
+#### "Damaged" is a different problem
+
+If macOS calls the application *damaged* rather than *from an unidentified
+developer*, quarantine is not the cause: the bundle itself is broken, usually
+because archiving lost the symbolic links or the executable bits and invalidated
+the ad-hoc signature. These tell the two apart:
+
+```bash
+codesign --verify --deep --strict MediaCenter.app ; echo "exit: $?"
+ls -l MediaCenter.app/Contents/MacOS/MediaCenter
+```
 
 Development notes
 -----------------
