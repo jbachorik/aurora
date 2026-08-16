@@ -1,6 +1,7 @@
 package mediacenter.ui;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,8 +66,11 @@ public final class SettingsView implements View {
      */
     private final List<List<Node>> navigationRows = new ArrayList<>();
 
-    /** Where the next picker should open, so browsing does not restart from scratch. */
+    /** Where the next media-folder picker should open, so browsing does not restart from scratch. */
     private File lastBrowsedDirectory;
+
+    /** The same for programs, which are kept apart: they live nowhere near the media. */
+    private File lastBrowsedProgramDirectory;
 
     public SettingsView(UiContext context, PlatformServices platform, Consumer<ApplicationSettings> onSettingsChanged) {
         this.context = context;
@@ -434,6 +438,16 @@ public final class SettingsView implements View {
     private void chooseVlcExecutable() {
         chooseProgram("Select the VLC " + platform.executableNoun(), settings().vlcPath())
                 .ifPresent(program -> {
+                    // Playback runs VLC with a command line and waits for it to exit,
+                    // which needs the program itself. A bundle the platform could not
+                    // resolve would be stored happily here and only fail later, at the
+                    // point where the user can no longer tell what went wrong.
+                    if (!Files.isRegularFile(program)) {
+                        showStatus(vlcStatus, "That " + platform.executableNoun()
+                                + " does not contain a program that can be started. "
+                                + "Choose the VLC " + platform.executableNoun() + " itself.");
+                        return;
+                    }
                     update(settings().withVlcPath(Optional.of(program)));
                     showStatus(vlcStatus, "Using " + program);
                 });
@@ -478,7 +492,7 @@ public final class SettingsView implements View {
         if (chosen == null) {
             return Optional.empty();
         }
-        remember(chosen.getParentFile());
+        rememberProgramDirectory(chosen.getParentFile());
         return Optional.of(platform.resolveProgram(chosen.toPath()));
     }
 
@@ -492,10 +506,33 @@ public final class SettingsView implements View {
                 .or(() -> Optional.ofNullable(lastBrowsedDirectory).filter(File::isDirectory));
     }
 
-    /** Same, for programs: where they live on this platform beats the last folder browsed. */
+    /**
+     * Same, for programs, which keep their own memory: media folders and programs
+     * live nowhere near each other, so browsing for one must not drag the other
+     * picker along with it.
+     *
+     * <p>What is configured is the runnable file, and on macOS that sits inside an
+     * application bundle — reopening at its parent would drop the user into
+     * {@code Contents/MacOS} rather than the folder holding the bundle they need
+     * to pick. Where programs live on this platform beats the last folder browsed.
+     */
     private Optional<File> programStartingDirectory(Path configured) {
-        return configuredDirectory(configured)
-                .or(() -> platform.programsDirectory().map(Path::toFile).filter(File::isDirectory));
+        return configuredProgramDirectory(configured)
+                .or(() -> platform.programsDirectory().map(Path::toFile).filter(File::isDirectory))
+                .or(() -> Optional.ofNullable(lastBrowsedProgramDirectory).filter(File::isDirectory));
+    }
+
+    /**
+     * The folder holding the configured program — always the parent, never the
+     * program itself, because a macOS bundle <em>is</em> a directory and opening
+     * the picker inside it hides the very thing the user came to select.
+     */
+    private Optional<File> configuredProgramDirectory(Path configured) {
+        if (configured == null) {
+            return Optional.empty();
+        }
+        File parent = platform.presentableProgram(configured).toFile().getParentFile();
+        return parent != null && parent.isDirectory() ? Optional.of(parent) : Optional.empty();
     }
 
     private static Optional<File> configuredDirectory(Path configured) {
@@ -513,6 +550,12 @@ public final class SettingsView implements View {
     private void remember(File directory) {
         if (directory != null && directory.isDirectory()) {
             lastBrowsedDirectory = directory;
+        }
+    }
+
+    private void rememberProgramDirectory(File directory) {
+        if (directory != null && directory.isDirectory()) {
+            lastBrowsedProgramDirectory = directory;
         }
     }
 

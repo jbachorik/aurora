@@ -61,6 +61,33 @@ public final class MacPlatformServices extends AbstractPlatformServices {
         return bundleExecutable(chosen).orElse(chosen);
     }
 
+    /**
+     * Walks back out of {@code Something.app/Contents/MacOS/Something}. Purely a
+     * question of names: the path may point at a program that is not installed on
+     * this machine any more, and a picker still has to open somewhere sensible.
+     */
+    @Override
+    public Path presentableProgram(Path stored) {
+        if (stored == null) {
+            return null;
+        }
+        Path macOsDirectory = stored.getParent();
+        Path contents = macOsDirectory == null ? null : macOsDirectory.getParent();
+        Path bundle = contents == null ? null : contents.getParent();
+        if (bundle == null
+                || !isNamed(macOsDirectory, "MacOS")
+                || !isNamed(contents, "Contents")
+                || bundle.getFileName() == null
+                || !bundle.getFileName().toString().endsWith(BUNDLE_SUFFIX)) {
+            return stored;
+        }
+        return bundle;
+    }
+
+    private static boolean isNamed(Path path, String name) {
+        return path.getFileName() != null && name.equals(path.getFileName().toString());
+    }
+
     @Override
     public void launchExternal(Path executable) throws IOException {
         Path program = resolveProgram(executable);

@@ -25,6 +25,9 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
             "VLC was not found. Choose it in Settings.";
     static final String VLC_MISSING =
             "The configured VLC program no longer exists. Check the path in Settings.";
+    static final String VLC_NOT_A_PROGRAM =
+            "The configured VLC path is not a program that can be started. "
+                    + "Choose VLC again in Settings.";
     static final String MEDIA_MISSING =
             "This file is no longer available. The folder or network share may have disconnected.";
     static final String VLC_NOT_STARTED =
@@ -55,6 +58,14 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
         }
         Path vlcExecutable = configured.get();
         if (!Files.isRegularFile(vlcExecutable)) {
+            // A path that exists but is not a file is a directory — on macOS, an
+            // application bundle. Saying it "no longer exists" would send the user
+            // looking for something that is plainly still there.
+            if (Files.exists(vlcExecutable)) {
+                LOG.log(Level.WARNING,
+                        () -> "Configured VLC path is not a runnable program: " + vlcExecutable);
+                return PlaybackResult.Failed.of(VLC_NOT_A_PROGRAM);
+            }
             LOG.log(Level.WARNING, () -> "Configured VLC executable is missing: " + vlcExecutable);
             return PlaybackResult.Failed.of(VLC_MISSING);
         }

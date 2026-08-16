@@ -136,6 +136,31 @@ class PlatformServicesTest {
     }
 
     @Test
+    @DisplayName("a program stored inside a bundle is presented as the bundle itself")
+    void presentsTheBundleRatherThanTheBinaryInsideIt() {
+        Path stored = Path.of("/Applications/VLC.app/Contents/MacOS/VLC");
+
+        assertEquals(Path.of("/Applications/VLC.app"),
+                new MacPlatformServices().presentableProgram(stored));
+    }
+
+    @Test
+    @DisplayName("a program that is not inside a bundle is presented unchanged")
+    void presentsAPlainProgramUnchanged() {
+        Path stored = Path.of("/opt/homebrew/bin/vlc");
+
+        assertEquals(stored, new MacPlatformServices().presentableProgram(stored));
+    }
+
+    @Test
+    @DisplayName("a platform with no bundles presents whatever it was given")
+    void presentsProgramsUnchangedWhereThereAreNoBundles() {
+        Path stored = Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe");
+
+        assertEquals(stored, new WindowsPlatformServices().presentableProgram(stored));
+    }
+
+    @Test
     @DisplayName("without a configured browser the tile just exposes the desktop")
     void openBrowserWithoutAnExecutableDoesNotThrow() {
         PlatformServices services = new LinuxPlatformServices();

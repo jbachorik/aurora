@@ -57,6 +57,16 @@ public interface PlatformServices {
     }
 
     /**
+     * Undoes {@link #resolveProgram}: given what was stored, the thing the user
+     * actually picked. What is stored has to be runnable, which on macOS is a file
+     * buried inside an application bundle — not somewhere a picker should reopen,
+     * nor a name worth showing to anyone.
+     */
+    default Path presentableProgram(Path stored) {
+        return stored;
+    }
+
+    /**
      * Exposes the desktop, launching the configured browser when one is set.
      *
      * @param browserExecutable optional browser chosen in Settings

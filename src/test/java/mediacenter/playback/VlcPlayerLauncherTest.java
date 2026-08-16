@@ -75,6 +75,17 @@ class VlcPlayerLauncherTest {
     }
 
     @Test
+    @DisplayName("an application bundle is reported as unrunnable, not as a path that vanished")
+    void reportsAnApplicationBundleRatherThanAMissingPath(@TempDir Path temp) throws IOException {
+        Path bundle = Files.createDirectories(temp.resolve("VLC.app"));
+        Path media = Files.createFile(temp.resolve("movie.mkv"));
+
+        PlaybackResult result = new VlcPlayerLauncher(() -> Optional.of(bundle)).play(media);
+
+        assertEquals(VlcPlayerLauncher.VLC_NOT_A_PROGRAM, failureMessage(result));
+    }
+
+    @Test
     @DisplayName("a file that disappeared before playback is reported, not launched")
     void reportsAMissingMediaFile(@TempDir Path temp) throws IOException {
         Path fakeVlc = Files.createFile(temp.resolve("vlc"));
