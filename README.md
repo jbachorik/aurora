@@ -161,20 +161,34 @@ SMB credentials are **not** handled here: Windows owns share connectivity, and
 nothing resembling a credential is ever logged.
 
 
-Building the Windows artifact
------------------------------
+Building the application images
+-------------------------------
 
-Runtime images are platform-specific, so the Windows artifact is built on
-Windows — GitHub Actions does it on a pinned `windows-2022` runner:
+A `jlink` runtime image only runs on the platform it was linked for, so there is
+no cross-building: each platform is built on its own runner with its own
+Liberica JDK 25 Full.
+
+| Runner         | Artifact                          | Contains            |
+|----------------|-----------------------------------|---------------------|
+| `windows-2022` | `Aurora-MediaCenter-windows-x64`  | `MediaCenter.exe`   |
+| `macos-14`     | `Aurora-MediaCenter-macos-aarch64`| `MediaCenter.app`   |
+| `ubuntu-22.04` | `Aurora-MediaCenter-linux-x64`    | `bin/MediaCenter`   |
 
 ```
-push → GitHub Actions → windows-2022 + Liberica JDK 25 Full
-     → test → jlink → jpackage → MediaCenter-windows-x64.zip
+push → GitHub Actions → each runner + its own Liberica JDK 25 Full
+     → test → jlink → jpackage → Aurora-MediaCenter-<platform>.zip
 ```
 
-Download the `MediaCenter-windows-x64` artifact, copy it to the laptop, unzip,
-and run `MediaCenter.exe`. No JDK, JRE, `JAVA_HOME`, PATH change or JavaFX
-installation is needed on the target machine.
+Every job runs the runtime it just linked (`runtime/bin/java -version`) before
+uploading. That only succeeds on the platform the image was linked for, so a
+cross-built or mislabelled artifact cannot pass.
+
+Locally, `./gradlew packageZip` always builds for the machine you are on and
+names the archive after it.
+
+Download the `Aurora-MediaCenter-windows-x64` artifact, copy it to the laptop,
+unzip, and run `MediaCenter.exe`. No JDK, JRE, `JAVA_HOME`, PATH change or
+JavaFX installation is needed on the target machine.
 
 CI can prove that the Windows build links, packages and is structurally
 self-contained. It **cannot** prove Windows 7 compatibility — the runners are

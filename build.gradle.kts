@@ -10,6 +10,13 @@ val applicationModuleName = "media.center"
 val applicationMainClass = "mediacenter.Main"
 val applicationImageName = "MediaCenter"
 
+/**
+ * Name of the redistributable archive. Carries the project name, while the
+ * launcher inside the image stays "MediaCenter" — that is what gets
+ * double-clicked on the target machine.
+ */
+val distributionName = "Aurora-MediaCenter"
+
 version = providers.gradleProperty("applicationVersion").getOrElse("1.0.0")
 group = "mediacenter"
 
@@ -218,6 +225,13 @@ val jpackage = tasks.register<Exec>("jpackage") {
     val runtimePath = runtimeImageDir.get().asFile.absolutePath
     val destPath = appImageDir.get().asFile.absolutePath
     val appVersion = project.version.toString()
+    // A macOS .app bundle wants a reverse-DNS identifier; the other platforms
+    // have no equivalent and reject the option.
+    val platformOptions = if (hostIsMac) {
+        listOf("--mac-package-identifier", "com.simplemediacenter.mediacenter")
+    } else {
+        emptyList()
+    }
 
     argumentProviders.add(
         CommandLineArgumentProvider {
@@ -230,7 +244,7 @@ val jpackage = tasks.register<Exec>("jpackage") {
                 "--runtime-image", runtimePath,
                 "--module", "$applicationModuleName/$applicationMainClass",
                 "--dest", destPath
-            )
+            ) + platformOptions
         }
     )
     executable = jpackageExecutable
@@ -240,8 +254,12 @@ val jpackage = tasks.register<Exec>("jpackage") {
 // Distribution zip — MediaCenter-windows-x64.zip and friends
 // ---------------------------------------------------------------------------
 
+val hostOsName: String = System.getProperty("os.name").lowercase()
+val hostIsWindows: Boolean = hostOsName.contains("win")
+val hostIsMac: Boolean = hostOsName.contains("mac")
+
 val distributionPlatform: String = run {
-    val os = System.getProperty("os.name").lowercase()
+    val os = hostOsName
     val arch = System.getProperty("os.arch").lowercase()
     val archToken = if (arch == "aarch64" || arch == "arm64") "aarch64" else "x64"
     val osToken = when {
@@ -252,21 +270,49 @@ val distributionPlatform: String = run {
     "$osToken-$archToken"
 }
 
-val packageZip = tasks.register<Zip>("packageZip") {
-    group = "distribution"
-    description = "Packages the jpackage application image into a redistributable ZIP."
+val distributionsDir = layout.buildDirectory.dir("distributions")
+val distributionArchiveName = "$distributionName-$distributionPlatform.zip"
 
-    dependsOn(jpackage)
-    from(appImageDir) {
-        // jpackage marks the launcher and the runtime's own binaries executable.
-        // Archiving normalizes permissions, which would leave a Linux or macOS
-        // image that cannot be started after unzipping.
-        eachFile {
-            if (file.canExecute()) {
-                permissions { unix("rwxr-xr-x") }
-            }
-        }
+// zip appends to an existing archive, so a stale one has to go first.
+val deleteDistributionArchive = tasks.register<Delete>("deleteDistributionArchive") {
+    delete(distributionsDir.map { it.file(distributionArchiveName) })
+}
+
+/*
+ * Two ways to build the same archive, because the platforms differ in what has
+ * to survive it:
+ *
+ *  - On Linux and macOS the image contains executable files, and a macOS .app
+ *    bundle also contains symbolic links inside its runtime. Gradle's archive
+ *    tasks normalize permissions and follow symlinks, so the system zip is used
+ *    instead: -y stores links rather than resolving them, and permissions are
+ *    preserved as recorded.
+ *  - On Windows neither applies, and zip is not on the runners, so Gradle's own
+ *    Zip task does the job.
+ */
+val packageZip = if (hostIsWindows) {
+    tasks.register<Zip>("packageZip") {
+        group = "distribution"
+        description = "Packages the jpackage application image into a redistributable ZIP."
+
+        dependsOn(jpackage)
+        from(appImageDir)
+        archiveFileName = distributionArchiveName
+        destinationDirectory = distributionsDir
     }
-    archiveFileName = "$applicationImageName-$distributionPlatform.zip"
-    destinationDirectory = layout.buildDirectory.dir("distributions")
+} else {
+    tasks.register<Exec>("packageZip") {
+        group = "distribution"
+        description = "Packages the jpackage application image into a redistributable ZIP."
+
+        dependsOn(jpackage, deleteDistributionArchive)
+        inputs.dir(appImageDir)
+        // Declaring the directory as an output makes Gradle create it for us.
+        outputs.dir(distributionsDir)
+
+        workingDir = appImageDir.get().asFile
+        val archivePath = distributionsDir.get().file(distributionArchiveName).asFile.absolutePath
+        // -q quiet, -r recurse, -y store symlinks instead of following them.
+        commandLine("zip", "-q", "-r", "-y", archivePath, ".")
+    }
 }

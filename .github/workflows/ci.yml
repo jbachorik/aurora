@@ -21,15 +21,24 @@ env:
   JAVA_PACKAGE: jdk+fx
 
 jobs:
-  # Source is shared across platforms; anything platform-specific lives behind
-  # PlatformServices, so compiling and testing everywhere is worthwhile.
-  test:
-    name: Test on ${{ matrix.os }}
+  # Runtime images and launchers are platform-specific — a Windows image cannot
+  # be produced on macOS — so every platform builds its own. The source is
+  # shared; only PlatformServices differs.
+  unix-package:
+    name: ${{ matrix.platform }} application image
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-22.04]
+        include:
+          - os: macos-14
+            platform: macos-aarch64
+            launcher: build/app-image/MediaCenter.app/Contents/MacOS/MediaCenter
+            runtime: build/app-image/MediaCenter.app/Contents/runtime/Contents/Home/bin/java
+          - os: ubuntu-22.04
+            platform: linux-x64
+            launcher: build/app-image/MediaCenter/bin/MediaCenter
+            runtime: build/app-image/MediaCenter/lib/runtime/bin/java
     steps:
       - uses: actions/checkout@v4
 
@@ -43,25 +52,46 @@ jobs:
           java-package: ${{ env.JAVA_PACKAGE }}
           cache: gradle
 
-      - name: Compile and test
-        run: ./gradlew --no-daemon clean test
+      - name: Test, jlink, jpackage and zip
+        run: ./gradlew --no-daemon clean test packageZip
 
-      # Not the distribution — just proof that the module graph links here too.
-      - name: Link a runtime image
-        run: ./gradlew --no-daemon jlink
+      - name: Check the application image is self-contained and native
+        run: |
+          set -e
+          test -x "${{ matrix.launcher }}" \
+            || { echo "::error::launcher missing or not executable: ${{ matrix.launcher }}"; exit 1; }
+          test -x "${{ matrix.runtime }}" \
+            || { echo "::error::the image does not contain its own Java runtime"; exit 1; }
+          # A jlink image only runs on the platform it was linked for, so
+          # executing the bundled runtime here proves this artifact was linked
+          # with this runner's JDK and not cross-built from somewhere else.
+          "${{ matrix.runtime }}" -version
+          archive="build/distributions/Aurora-MediaCenter-${{ matrix.platform }}.zip"
+          test -f "$archive" || { echo "::error::missing $archive"; exit 1; }
+          # The executable bit has to survive archiving or the unzipped image
+          # cannot be started at all.
+          unzip -l "$archive" > /dev/null
+          ls -l "$archive"
+
+      - name: Upload Aurora-MediaCenter-${{ matrix.platform }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aurora-MediaCenter-${{ matrix.platform }}
+          path: build/distributions/Aurora-MediaCenter-${{ matrix.platform }}.zip
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload test report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report-${{ matrix.os }}
+          name: test-report-${{ matrix.platform }}
           path: build/reports/tests/test
           retention-days: 7
 
-  # The runtime image and the launcher are platform-specific, so the Windows
-  # artifact has to be produced on Windows. The runner is pinned deliberately.
+  # The deliverable for the target machine. The runner is pinned deliberately.
   windows-package:
-    name: Windows x64 application image
+    name: windows-x64 application image
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +112,7 @@ jobs:
 
       # CI can prove the artifact is structurally valid. It cannot prove
       # Windows 7 compatibility — that is verified by hand on the real laptop.
-      - name: Check the application image is self-contained
+      - name: Check the application image is self-contained and native
         shell: pwsh
         run: |
           $image = "build/app-image/MediaCenter"
@@ -94,19 +124,20 @@ jobs:
           if (-not (Test-Path "$image/runtime/bin/java.exe")) {
             throw "The application image does not contain its own Java runtime"
           }
-          if (-not (Get-ChildItem "$image/runtime/bin" -Filter "glass.dll" -Recurse)) {
-            Write-Host "note: glass.dll not under runtime/bin, checking the whole runtime"
-            if (-not (Get-ChildItem "$image/runtime" -Filter "glass.dll" -Recurse)) {
-              throw "The JavaFX native libraries are missing from the runtime image"
-            }
+          if (-not (Get-ChildItem "$image/runtime" -Filter "glass.dll" -Recurse)) {
+            throw "The JavaFX native libraries are missing from the runtime image"
           }
-          Get-Item build/distributions/MediaCenter-windows-x64.zip
+          # A jlink image only runs on the platform it was linked for, so
+          # executing the bundled runtime here proves this artifact was linked
+          # with this runner's Windows x64 JDK.
+          & "$image/runtime/bin/java.exe" -version
+          Get-Item build/distributions/Aurora-MediaCenter-windows-x64.zip
 
-      - name: Upload MediaCenter-windows-x64
+      - name: Upload Aurora-MediaCenter-windows-x64
         uses: actions/upload-artifact@v4
         with:
-          name: MediaCenter-windows-x64
-          path: build/distributions/MediaCenter-windows-x64.zip
+          name: Aurora-MediaCenter-windows-x64
+          path: build/distributions/Aurora-MediaCenter-windows-x64.zip
           if-no-files-found: error
           retention-days: 30
 
