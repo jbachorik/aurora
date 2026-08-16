@@ -273,8 +273,3 @@ No online metadata or scraping, no Plex/Jellyfin/DLNA, no SMB client, no
 transcoding, no subtitle downloading, no user accounts, and no exact
 resume-position tracking — VLC handles its own resume. Series parsing, search
 and favourites are possible later additions.
-
----
-
-`Generate HS GK Report.tamper.js` in this repository is an unrelated userscript
-that predates the media center.
