@@ -191,6 +191,25 @@ them:
 CI stops at `jlink` on purpose: linking is what catches a broken module graph or
 a JDK without the JavaFX jmods, and it costs seconds.
 
+### The icon
+
+Two different icons, for two different things. The taskbar button of a *running*
+window comes from the application itself, which loads the PNGs under
+`src/main/resources/mediacenter/ui/icon/` — several sizes, because handing a
+window manager only the large one leaves it to squeeze 256 pixels into 16. The
+installed application, its shortcut and its `.exe` take the icon `jpackage`
+embeds, and every desktop insists on its own container:
+
+| Platform | File                      |
+|----------|---------------------------|
+| Windows  | `packaging/MediaCenter.ico`  |
+| macOS    | `packaging/MediaCenter.icns` |
+| Linux    | `packaging/MediaCenter.png`  |
+
+All of them are generated from `packaging/icon-source.png`. On a Mac, `sips`
+resizes and `iconutil -c icns` builds the macOS container; the `.ico` is a
+handful of PNGs in an icon directory, which Windows has read since Vista.
+
 ### Cutting a release
 
 Tag a commit as a release candidate and let the pipeline decide whether it

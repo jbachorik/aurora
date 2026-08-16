@@ -233,6 +233,24 @@ val jpackage = tasks.register<Exec>("jpackage") {
         emptyList()
     }
 
+    // Each desktop insists on its own container: .ico carries every size Windows
+    // asks for, .icns the same for macOS, and Linux takes a plain PNG. This is the
+    // icon of the installed application — the one on the taskbar button of a
+    // running window is set by the application itself, in MediaCenterApp.
+    val iconName = when {
+        hostIsWindows -> "MediaCenter.ico"
+        hostIsMac -> "MediaCenter.icns"
+        else -> "MediaCenter.png"
+    }
+    val iconFile = layout.projectDirectory.file("packaging/$iconName").asFile
+    val iconOptions = if (iconFile.isFile) {
+        inputs.file(iconFile)
+        listOf("--icon", iconFile.absolutePath)
+    } else {
+        logger.warn("No packaging icon at $iconFile; the image will use the JDK default")
+        emptyList()
+    }
+
     argumentProviders.add(
         CommandLineArgumentProvider {
             listOf(
@@ -244,7 +262,7 @@ val jpackage = tasks.register<Exec>("jpackage") {
                 "--runtime-image", runtimePath,
                 "--module", "$applicationModuleName/$applicationMainClass",
                 "--dest", destPath
-            ) + platformOptions
+            ) + platformOptions + iconOptions
         }
     )
     executable = jpackageExecutable
