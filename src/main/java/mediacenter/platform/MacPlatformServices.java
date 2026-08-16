@@ -4,7 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.Optional;
+
+import mediacenter.media.MediaRoot;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -43,6 +47,37 @@ public final class MacPlatformServices extends AbstractPlatformServices {
     @Override
     public String executableNoun() {
         return "application";
+    }
+
+    /**
+     * Everything under {@code /Volumes} except the boot volume, which is mounted
+     * there too — as a link to {@code /} — and is emphatically not removable.
+     */
+    @Override
+    public List<MediaRoot> removableVolumes() {
+        Path boot = path("/");
+        Set<Path> excluded = new HashSet<>();
+        excluded.add(boot);
+        try {
+            excluded.add(boot.toRealPath());
+            Path bootName = path("/Volumes").resolve(String.valueOf(boot.toRealPath().getFileName()));
+            excluded.add(bootName);
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "Could not resolve the boot volume", e);
+        }
+        // The startup disk appears under /Volumes as a symbolic link to "/", so it
+        // is excluded by where it really points rather than by what it is called.
+        return volumesUnder(List.of(path("/Volumes")), excluded).stream()
+                .filter(volume -> !isBootVolume(volume.path(), boot))
+                .toList();
+    }
+
+    private static boolean isBootVolume(Path mount, Path boot) {
+        try {
+            return Files.isSameFile(mount, boot);
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     @Override

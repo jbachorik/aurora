@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import mediacenter.media.MediaRoot;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -134,6 +136,44 @@ class PlatformServicesTest {
             file.toFile().setExecutable(true);
         }
         return bundle;
+    }
+
+    @Test
+    @DisplayName("removable drives are read out of the drive listing with their labels")
+    void readsRemovableDrivesFromTheDriveListing() {
+        String listing = """
+                DeviceID  VolumeName
+                E:        KINGSTON
+                F:\s
+                G:        MY BIG DISK
+
+                """;
+
+        List<MediaRoot> volumes = WindowsPlatformServices.parseRemovableDrives(listing);
+
+        assertEquals(List.of("KINGSTON", "F:", "MY BIG DISK"),
+                volumes.stream().map(MediaRoot::displayName).toList());
+        assertEquals(List.of("E:\\", "F:\\", "G:\\"),
+                volumes.stream().map(MediaRoot::displayPath).toList());
+    }
+
+    @Test
+    @DisplayName("nothing plugged in is not an error")
+    void readsAnEmptyDriveListing() {
+        assertEquals(List.of(), WindowsPlatformServices.parseRemovableDrives("DeviceID  VolumeName\n\n"));
+        assertEquals(List.of(), WindowsPlatformServices.parseRemovableDrives(""));
+    }
+
+    @Test
+    @DisplayName("mounted volumes are found where the desktop puts them")
+    @EnabledOnOs(OS.MAC)
+    void findsMountedVolumesOnMac() {
+        List<MediaRoot> volumes = new MacPlatformServices().removableVolumes();
+
+        // The boot volume is mounted at "/" and must never be offered as removable.
+        assertTrue(volumes.stream().noneMatch(volume -> volume.path().equals(Path.of("/"))));
+        assertTrue(volumes.stream().allMatch(volume -> Files.isDirectory(volume.path())),
+                volumes.toString());
     }
 
     @Test

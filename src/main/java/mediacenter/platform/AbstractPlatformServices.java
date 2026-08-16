@@ -3,10 +3,17 @@ package mediacenter.platform;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
+
+import mediacenter.media.MediaRoot;
+import mediacenter.media.MediaSources;
 
 /** Shared helpers for the concrete {@link PlatformServices} implementations. */
 abstract class AbstractPlatformServices implements PlatformServices {
@@ -137,6 +144,40 @@ abstract class AbstractPlatformServices implements PlatformServices {
             throw new IOException(command.getFirst() + " failed with exit code " + exitCode
                     + (output.isEmpty() ? "" : ": " + output));
         }
+    }
+
+    /**
+     * Mounted volumes found by listing the directories a desktop mounts them under.
+     *
+     * <p>Anything unreadable is skipped rather than reported: a volume being pulled
+     * out mid-scan is ordinary, not an error worth showing anybody.
+     *
+     * @param mountDirectories where this desktop puts them, most likely first
+     * @param excluded         mount points that are not removable — the boot volume
+     */
+    protected static List<MediaRoot> volumesUnder(List<Path> mountDirectories, Set<Path> excluded) {
+        List<MediaRoot> volumes = new ArrayList<>();
+        Set<Path> seen = new HashSet<>();
+        for (Path directory : mountDirectories) {
+            if (!Files.isDirectory(directory)) {
+                continue;
+            }
+            try (Stream<Path> entries = Files.list(directory)) {
+                entries.filter(Files::isDirectory)
+                        .filter(Files::isReadable)
+                        .sorted()
+                        .forEach(mount -> {
+                            Path normalized = mount.toAbsolutePath().normalize();
+                            if (!excluded.contains(normalized) && seen.add(normalized)) {
+                                volumes.add(MediaSources.removable(
+                                        String.valueOf(mount.getFileName()), normalized));
+                            }
+                        });
+            } catch (IOException | RuntimeException e) {
+                LOG.log(Level.FINE, "Could not list " + directory, e);
+            }
+        }
+        return List.copyOf(volumes);
     }
 
     /** Convenience for building candidate paths without worrying about separators. */

@@ -8,6 +8,9 @@ import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import mediacenter.media.MediaRoot;
+import mediacenter.media.MediaSources;
+
 /** Windows 7 and later. */
 public final class WindowsPlatformServices extends AbstractPlatformServices {
 
@@ -15,6 +18,9 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
 
     private static final String VLC_EXECUTABLE = "vlc.exe";
     private static final long REGISTRY_TIMEOUT_MILLIS = 2_000;
+
+    /** Long enough for a spinning optical drive, short enough not to be felt. */
+    private static final long DRIVE_QUERY_TIMEOUT_MILLIS = 4_000;
 
     private static final List<String> REGISTRY_KEYS = List.of(
             "HKLM\\SOFTWARE\\VideoLAN\\VLC",
@@ -39,6 +45,61 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
             return fromWellKnownLocation;
         }
         return findVlcInRegistry();
+    }
+
+    /**
+     * Asks Windows which drives are removable. Drive type 2 is a stick or a card
+     * reader and type 5 an optical drive; a fixed disk is deliberately not offered,
+     * since a second internal disk is a place to configure as a root, not something
+     * that comes and goes.
+     */
+    @Override
+    public List<MediaRoot> removableVolumes() {
+        return readCommandOutput(
+                List.of("wmic", "logicaldisk", "where", "drivetype=2 or drivetype=5",
+                        "get", "deviceid,volumename"),
+                DRIVE_QUERY_TIMEOUT_MILLIS)
+                .map(WindowsPlatformServices::parseRemovableDrives)
+                .orElseGet(() -> {
+                    LOG.fine("Could not list removable drives; offering none");
+                    return List.of();
+                });
+    }
+
+    /**
+     * Reads the two-column listing the drive query produces: the drive letter, then
+     * the volume label, which is blank on a stick nobody has named.
+     *
+     * <pre>
+     * DeviceID  VolumeName
+     * E:        KINGSTON
+     * F:
+     * </pre>
+     */
+    static List<MediaRoot> parseRemovableDrives(String output) {
+        List<MediaRoot> drives = new ArrayList<>();
+        boolean headerSeen = false;
+        for (String line : output.split("\\R")) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!headerSeen) {
+                // The first non-blank line names the columns, whatever their order.
+                headerSeen = true;
+                continue;
+            }
+            int space = trimmed.indexOf(' ');
+            String deviceId = space < 0 ? trimmed : trimmed.substring(0, space);
+            String label = space < 0 ? "" : trimmed.substring(space).strip();
+            if (!deviceId.endsWith(":")) {
+                continue;
+            }
+            // A drive letter is not a directory until it has a separator.
+            drives.add(MediaSources.removable(
+                    label.isEmpty() ? deviceId : label, Path.of(deviceId + "\\")));
+        }
+        return List.copyOf(drives);
     }
 
     @Override

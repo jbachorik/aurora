@@ -17,6 +17,7 @@ import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaRootType;
+import mediacenter.media.MediaSources;
 import mediacenter.ui.components.ActionTile;
 import mediacenter.ui.components.MediaTile;
 import mediacenter.ui.components.Tile;
@@ -161,13 +162,29 @@ public final class HomeView implements View {
                     .openRoots("Movies", settings.rootsOfType(MediaRootType.MOVIES));
             case "TV" -> context.navigation()
                     .openRoots("TV", settings.rootsOfType(MediaRootType.TV));
-            case "Browse" -> context.navigation()
-                    .openRoots("Browse", settings.mediaRoots());
+            case "Browse" -> openBrowse(settings);
             case "Browser / Desktop" -> context.navigation().openBrowserOrDesktop();
             case "Settings" -> context.navigation().openSettings();
             case "Exit" -> context.navigation().exitApplication();
             default -> { }
         }
+    }
+
+    /**
+     * Browse offers whatever is plugged in as well as what was configured.
+     *
+     * <p>Finding out reads the filesystem, and on Windows asks the operating
+     * system, so it happens off the JavaFX thread — a card reader with nothing in
+     * it can take a moment to answer, and the screen must not wait for it. If the
+     * question cannot be answered at all, the configured roots are still browsable.
+     */
+    private void openBrowse(ApplicationSettings settings) {
+        List<MediaRoot> configured = settings.mediaRoots();
+        FxTasks.run(
+                context.backgroundExecutor(),
+                () -> MediaSources.browsable(configured, context.platform().removableVolumes()),
+                roots -> context.navigation().openRoots("Browse", roots),
+                failure -> context.navigation().openRoots("Browse", configured));
     }
 
     // -- recently played ----------------------------------------------------

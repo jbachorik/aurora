@@ -2,8 +2,11 @@ package mediacenter.platform;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+
+import mediacenter.media.MediaRoot;
 
 /**
  * Everything that differs between operating systems.
@@ -77,6 +80,21 @@ public interface PlatformServices {
         Path presentable = presentableProgram(stored);
         Path name = presentable.getFileName();
         return name == null ? presentable.toString() : name.toString();
+    }
+
+    /**
+     * Volumes the viewer can plug in and take away again — sticks, cards, discs.
+     *
+     * <p>Offered alongside the configured roots rather than saved with them: they
+     * come and go, and a configuration file full of drives that are no longer
+     * attached would be worse than not listing them at all. Never fails: a
+     * platform that cannot answer simply reports nothing plugged in.
+     *
+     * <p>Called off the JavaFX thread — it reads the filesystem, and on Windows it
+     * asks the operating system.
+     */
+    default List<MediaRoot> removableVolumes() {
+        return List.of();
     }
 
     /**
