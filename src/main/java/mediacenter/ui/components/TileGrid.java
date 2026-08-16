@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.input.KeyCode;
@@ -25,7 +26,6 @@ import javafx.scene.layout.TilePane;
 public final class TileGrid extends ScrollPane {
 
     private static final double SCROLL_MARGIN = 24;
-    private static final double ROW_EPSILON = 2;
 
     private final TilePane tilePane = new TilePane();
     private final Label messageLabel = new Label();
@@ -259,7 +259,7 @@ public final class TileGrid extends ScrollPane {
                 event.consume();
             }
             case UP -> {
-                int above = indexInAdjacentRow(current, true);
+                int above = GridGeometry.indexInAdjacentRow(tileBounds(), current, true);
                 if (above >= 0) {
                     select(above);
                 } else {
@@ -268,7 +268,7 @@ public final class TileGrid extends ScrollPane {
                 event.consume();
             }
             case DOWN -> {
-                int below = indexInAdjacentRow(current, false);
+                int below = GridGeometry.indexInAdjacentRow(tileBounds(), current, false);
                 if (below >= 0) {
                     select(below);
                 } else {
@@ -300,53 +300,16 @@ public final class TileGrid extends ScrollPane {
         }
     }
 
-    /**
-     * Index of the tile directly above or below, matching horizontal position.
-     *
-     * @return {@code -1} when there is no such row
-     */
-    private int indexInAdjacentRow(int from, boolean upwards) {
-        Bounds origin = tiles.get(from).getBoundsInParent();
-        double originY = origin.getMinY();
-        double originCenterX = origin.getCenterX();
-
-        double targetRowY = Double.NaN;
-        for (Tile tile : tiles) {
-            double y = tile.getBoundsInParent().getMinY();
-            boolean candidate = upwards ? y < originY - ROW_EPSILON : y > originY + ROW_EPSILON;
-            if (!candidate) {
-                continue;
-            }
-            if (Double.isNaN(targetRowY)
-                    || (upwards ? y > targetRowY : y < targetRowY)) {
-                targetRowY = y;
-            }
-        }
-        if (Double.isNaN(targetRowY)) {
-            return -1;
-        }
-
-        int best = -1;
-        double bestDistance = Double.MAX_VALUE;
-        for (int i = 0; i < tiles.size(); i++) {
-            Bounds bounds = tiles.get(i).getBoundsInParent();
-            if (Math.abs(bounds.getMinY() - targetRowY) > ROW_EPSILON) {
-                continue;
-            }
-            double distance = Math.abs(bounds.getCenterX() - originCenterX);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-        return best;
+    /** Bounds of every tile, in the order the grid holds them. */
+    private List<Bounds> tileBounds() {
+        return tiles.stream().map(Node::getBoundsInParent).toList();
     }
 
     private int stepRows(int from, int rows) {
         int index = from;
         int step = Integer.signum(rows);
         for (int i = 0; i < Math.abs(rows); i++) {
-            int next = indexInAdjacentRow(index, step < 0);
+            int next = GridGeometry.indexInAdjacentRow(tileBounds(), index, step < 0);
             if (next < 0) {
                 return step < 0 ? 0 : tiles.size() - 1;
             }

@@ -38,8 +38,10 @@ public abstract class Tile extends VBox {
     /**
      * Lifts the focused tile slightly above its neighbours.
      *
-     * <p>Scaling is a render-time transform, so the grid never reflows and the
-     * geometry-based arrow navigation keeps working on the unscaled layout.
+     * <p>Scaling is a render-time transform, so the grid never reflows. It does
+     * grow the tile's bounds, though — which is why {@link GridGeometry} tells rows
+     * apart by their centres, the one measurement scaling about the centre leaves
+     * untouched.
      */
     private void animateFocus(boolean focused) {
         setViewOrder(focused ? -1 : 0);
