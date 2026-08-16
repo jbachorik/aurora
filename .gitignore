@@ -11,6 +11,12 @@ bin/
 .classpath
 .project
 
+# The userscript this repository used to hold was removed when it became a media
+# center. Ignoring the pattern stops a stray copy in a working tree from being
+# committed back by accident; .github/workflows/ci.yml fails the build if one
+# ever is.
+*.tamper.js
+
 # OS
 .DS_Store
 Thumbs.db
