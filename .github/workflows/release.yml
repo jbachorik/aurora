@@ -5,7 +5,8 @@ name: Release
 #   git tag v1.2.3-rc1  →  validate everything, and if it all passes, tag the
 #                          same commit v1.2.3 and publish that release
 #   git tag v1.2.3      →  validate everything and publish it directly
-#   run by hand         →  build the images only, as workflow artifacts
+#   run by hand         →  build the images only, as workflow artifacts, unless
+#                          "publish" is ticked while running against a tag
 #
 # The images attached to a release are the ones that were validated, not a
 # rebuild of them.
@@ -15,6 +16,13 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-rc*"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: >-
+          Also create the GitHub release. Only possible when this is run against
+          a tag; a manual run otherwise just leaves the images as artifacts.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -118,10 +126,17 @@ jobs:
   # start a workflow for a tag pushed with GITHUB_TOKEN, so a promoted v1.2.3
   # tag cannot trigger a second run of this workflow. It does not need to — the
   # images were already built and validated above.
+  #
+  # A manual run builds the images and stops there. Publishing from one is
+  # possible — run it against a tag and tick "publish" — but it has to be asked
+  # for, so that fetching a build for testing cannot create a release by
+  # accident.
   release:
     name: Publish release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      startsWith(github.ref, 'refs/tags/v')
+      && (github.event_name != 'workflow_dispatch' || inputs.publish)
     runs-on: ubuntu-22.04
     permissions:
       contents: write

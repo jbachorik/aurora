@@ -217,9 +217,14 @@ tag `-rc2`. The images attached to the release are the ones that were
 validated, not a rebuild of them.
 
 Tagging `v1.2.3` directly skips the candidate step and does the same thing in
-one go. Running the workflow by hand (no tag) builds the images and leaves them
-as workflow artifacts, which is the way to get a build onto the laptop without
-cutting a release.
+one go.
+
+Running the workflow by hand builds the images and leaves them as workflow
+artifacts **without creating a release** — that is the way to get a build onto
+the laptop without cutting one. GitHub lets a manual run pick a tag rather than
+a branch, so publishing from one is possible, but it has to be asked for by
+ticking `publish`; fetching a build for testing cannot create a release by
+accident.
 
 One thing worth knowing before editing `release.yml`: the promoted `v1.2.3` tag
 is created with `GITHUB_TOKEN`, and GitHub deliberately does not start a
