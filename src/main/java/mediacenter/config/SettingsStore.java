@@ -1,0 +1,129 @@
+package mediacenter.config;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import mediacenter.json.JsonException;
+import mediacenter.json.JsonFiles;
+import mediacenter.json.JsonValue;
+import mediacenter.json.JsonValue.JsonArray;
+import mediacenter.json.JsonValue.JsonBoolean;
+import mediacenter.json.JsonValue.JsonObject;
+import mediacenter.json.JsonValue.JsonString;
+import mediacenter.media.MediaRoot;
+import mediacenter.media.MediaRootType;
+
+/**
+ * Loads and saves {@code config.json}.
+ *
+ * <p>Loading never throws: an unreadable or corrupt configuration falls back to
+ * defaults (the broken file is kept as {@code config.json.corrupt}) so the media
+ * center always starts.
+ */
+public final class SettingsStore {
+
+    private static final Logger LOG = Logger.getLogger(SettingsStore.class.getName());
+    private static final String FILE_NAME = "config.json";
+
+    private final Path file;
+
+    public SettingsStore(Path applicationDataDirectory) {
+        this.file = applicationDataDirectory.resolve(FILE_NAME);
+    }
+
+    public Path file() {
+        return file;
+    }
+
+    /** Reads the configuration, falling back to defaults on any problem. */
+    public ApplicationSettings load() {
+        try {
+            Optional<JsonObject> document = JsonFiles.readObject(file);
+            if (document.isEmpty()) {
+                LOG.log(Level.INFO, () -> "No configuration at " + file + ", starting with defaults");
+                return ApplicationSettings.defaults();
+            }
+            return fromJson(document.get());
+        } catch (JsonException e) {
+            LOG.log(Level.WARNING, e, () -> "Configuration file " + file + " is not valid JSON");
+            JsonFiles.quarantine(file)
+                    .ifPresent(target -> LOG.log(Level.WARNING, () -> "Moved invalid configuration to " + target));
+            return ApplicationSettings.defaults();
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, e, () -> "Could not read configuration file " + file);
+            return ApplicationSettings.defaults();
+        }
+    }
+
+    /** Writes the configuration. Returns false when it could not be persisted. */
+    public boolean save(ApplicationSettings settings) {
+        try {
+            JsonFiles.write(file, toJson(settings));
+            return true;
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, e, () -> "Could not write configuration file " + file);
+            return false;
+        }
+    }
+
+    // -- mapping ------------------------------------------------------------
+
+    public static JsonObject toJson(ApplicationSettings settings) {
+        Map<String, JsonValue> members = new LinkedHashMap<>();
+        settings.vlcPath().ifPresent(path -> members.put("vlcPath", new JsonString(path.toString())));
+        settings.browserPath().ifPresent(path -> members.put("browserPath", new JsonString(path.toString())));
+        members.put("fullScreen", new JsonBoolean(settings.fullScreen()));
+        members.put("theme", new JsonString(settings.theme().name()));
+
+        List<JsonValue> roots = new ArrayList<>();
+        for (MediaRoot root : settings.mediaRoots()) {
+            Map<String, JsonValue> rootMembers = new LinkedHashMap<>();
+            rootMembers.put("id", new JsonString(root.id()));
+            rootMembers.put("name", new JsonString(root.displayName()));
+            rootMembers.put("path", new JsonString(root.path().toString()));
+            rootMembers.put("type", new JsonString(root.type().name()));
+            roots.add(new JsonObject(rootMembers));
+        }
+        members.put("mediaRoots", new JsonArray(roots));
+        return new JsonObject(members);
+    }
+
+    public static ApplicationSettings fromJson(JsonObject document) {
+        Optional<Path> vlcPath = document.nonBlankString("vlcPath").map(Path::of);
+        Optional<Path> browserPath = document.nonBlankString("browserPath").map(Path::of);
+        boolean fullScreen = document.booleanValue("fullScreen", true);
+        Theme theme = document.nonBlankString("theme").flatMap(Theme::parse).orElse(Theme.DARK);
+
+        List<MediaRoot> roots = new ArrayList<>();
+        for (JsonObject rootDocument : document.objectArray("mediaRoots")) {
+            readRoot(rootDocument).ifPresent(roots::add);
+        }
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, roots);
+    }
+
+    private static Optional<MediaRoot> readRoot(JsonObject document) {
+        Optional<String> path = document.nonBlankString("path");
+        if (path.isEmpty()) {
+            LOG.warning("Ignoring a configured media root without a path");
+            return Optional.empty();
+        }
+        // "displayName" is accepted as an alias so a hand-written file matching the
+        // specification's field names is understood as well.
+        String name = document.nonBlankString("name")
+                .or(() -> document.nonBlankString("displayName"))
+                .orElse(path.get());
+        String id = document.nonBlankString("id").orElseGet(() -> UUID.randomUUID().toString());
+        MediaRootType type = document.nonBlankString("type")
+                .flatMap(MediaRootType::parse)
+                .orElse(MediaRootType.GENERAL);
+        return Optional.of(new MediaRoot(id, name, Path.of(path.get()), type));
+    }
+}

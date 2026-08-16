@@ -1,0 +1,46 @@
+package mediacenter.ui.components;
+
+import javafx.animation.ScaleTransition;
+import javafx.scene.layout.VBox;
+
+/**
+ * Base class for the large, focusable rectangles the whole UI is built from.
+ *
+ * <p>Focus is the selection: the {@code :focused} pseudo-class drives the
+ * high-contrast highlight defined in the stylesheet, so there is never a
+ * mismatch between "what is selected" and "what receives Enter".
+ */
+public abstract class Tile extends VBox {
+
+    /** Small enough to read as a lift rather than a jump. */
+    private static final double FOCUS_SCALE = 1.04;
+
+    private ScaleTransition focusAnimation;
+
+    protected Tile() {
+        getStyleClass().add("tile");
+        setFocusTraversable(true);
+        focusedProperty().addListener((observable, wasFocused, isFocused) -> animateFocus(isFocused));
+    }
+
+    /** Text announced in the header/status area when this tile is selected. */
+    public abstract String title();
+
+    /**
+     * Lifts the focused tile slightly above its neighbours.
+     *
+     * <p>Scaling is a render-time transform, so the grid never reflows and the
+     * geometry-based arrow navigation keeps working on the unscaled layout.
+     */
+    private void animateFocus(boolean focused) {
+        setViewOrder(focused ? -1 : 0);
+        if (focusAnimation != null) {
+            focusAnimation.stop();
+        }
+        focusAnimation = new ScaleTransition(Motion.QUICK, this);
+        focusAnimation.setToX(focused ? FOCUS_SCALE : 1);
+        focusAnimation.setToY(focused ? FOCUS_SCALE : 1);
+        focusAnimation.setInterpolator(Motion.EASE);
+        focusAnimation.play();
+    }
+}

@@ -1,0 +1,397 @@
+/*
+ * 10-foot layout: high contrast, large type, unmistakable focus.
+ * Sizes assume roughly 1920x1080 output viewed from a sofa.
+ *
+ * This file carries no colours of its own — every colour is a -mc-* variable
+ * defined by theme-dark.css or theme-light.css, exactly one of which is applied
+ * alongside this stylesheet.
+ */
+
+.root {
+    -fx-font-family: "Segoe UI", "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+    -fx-font-size: 18px;
+    -fx-background-color: -mc-page;
+}
+
+.root-pane {
+    -fx-background-color: -mc-page;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.header {
+    -fx-background-color: linear-gradient(to bottom, -mc-header-top, -mc-header-bottom);
+    -fx-border-color: transparent transparent -mc-border transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.header-title {
+    -fx-font-size: 46px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text;
+}
+
+.header-subtitle {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.section-heading {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text-dim;
+    -fx-padding: 6 0 0 32;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer {
+    -fx-background-color: -mc-footer;
+    -fx-border-color: -mc-border transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+
+.hint-bar {
+    -fx-font-size: 17px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+/* ----------------------------------------------------------------- tiles */
+
+.tile-grid,
+.tile-grid > .viewport {
+    -fx-background-color: transparent;
+}
+
+.tile-grid-pane {
+    -fx-background-color: transparent;
+}
+
+/*
+ * Resting tiles carry a light border and a soft shadow so they read as cards
+ * on the page without shouting.
+ */
+.tile {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-border-width: 3;
+    -fx-border-color: -mc-border;
+    -fx-padding: 8;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, -mc-shadow, 12, 0.0, 0, 3);
+}
+
+/*
+ * Focus is the selection, so it has to be impossible to miss: a tinted fill, a
+ * coloured outline, a glow and (in code) a small lift. On a light page the
+ * outline alone does not carry across a room.
+ */
+.tile:focused {
+    -fx-background-color: -mc-accent-soft;
+    -fx-border-color: -mc-accent;
+    -fx-border-width: 4;
+    -fx-effect: dropshadow(gaussian, -mc-focus-glow, 26, 0.20, 0, 8);
+}
+
+.action-tile-symbol {
+    -fx-font-size: 54px;
+    -fx-text-fill: -mc-accent;
+}
+
+.action-tile-title {
+    -fx-font-size: 27px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text;
+}
+
+.action-tile-subtitle {
+    -fx-font-size: 16px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.media-tile {
+    -fx-padding: 0;
+}
+
+.media-tile-artwork {
+    -fx-background-radius: 11 11 0 0;
+}
+
+.media-tile-placeholder {
+    -fx-background-radius: 11 11 0 0;
+    -fx-padding: 16;
+}
+
+.media-tile-placeholder-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-placeholder-text;
+}
+
+.media-tile-placeholder-symbol {
+    -fx-font-size: 22px;
+    -fx-text-fill: -mc-placeholder-symbol;
+    -fx-padding: 6 8 0 0;
+}
+
+.media-tile-caption {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-text;
+    -fx-padding: 10 12 10 12;
+    -fx-content-display: center;
+}
+
+.grid-message {
+    -fx-font-size: 30px;
+    -fx-text-fill: -mc-text-dim;
+    -fx-text-alignment: center;
+    -fx-padding: 40;
+}
+
+/* ---------------------------------------------------------------- banner */
+
+.banner {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
+    -fx-padding: 18 28 18 28;
+    -fx-effect: dropshadow(gaussian, -mc-shadow, 28, 0.15, 0, 10);
+}
+
+.banner-error {
+    -fx-background-color: -mc-error-soft;
+    -fx-border-color: -mc-error;
+}
+
+.banner-label {
+    -fx-font-size: 24px;
+    -fx-text-fill: -mc-text;
+}
+
+.banner-error .banner-label {
+    -fx-text-fill: -mc-error;
+}
+
+/* -------------------------------------------------------------- settings */
+
+.settings-view {
+    -fx-background-color: -mc-page;
+}
+
+.setting-row {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-color: -mc-border;
+    -fx-border-width: 1;
+    -fx-padding: 16 20 16 20;
+    -fx-effect: dropshadow(gaussian, -mc-shadow-soft, 10, 0.0, 0, 2);
+}
+
+.setting-name {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -mc-text;
+}
+
+.setting-value {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.setting-status {
+    -fx-font-size: 20px;
+    -fx-text-fill: -mc-accent;
+}
+
+.button,
+.toggle-button {
+    -fx-background-color: -mc-surface;
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 20px;
+    -fx-padding: 12 24 12 24;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
+    -fx-cursor: hand;
+}
+
+.button:hover,
+.toggle-button:hover {
+    -fx-background-color: -mc-surface-hover;
+    -fx-border-color: -mc-border-strong;
+}
+
+.button:focused,
+.toggle-button:focused {
+    -fx-background-color: -mc-accent-soft;
+    -fx-border-color: -mc-accent;
+    -fx-effect: dropshadow(gaussian, -mc-focus-glow, 16, 0.15, 0, 4);
+}
+
+.toggle-button:selected {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: -mc-on-accent;
+    -fx-border-color: -mc-accent;
+}
+
+.toggle-button:selected:focused {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: -mc-on-accent;
+    -fx-border-color: -mc-text;
+}
+
+.roots-list {
+    -fx-background-color: -mc-surface;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
+}
+
+.roots-list:focused {
+    -fx-border-color: -mc-accent;
+}
+
+.roots-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 21px;
+    -fx-padding: 14 20 14 20;
+}
+
+.roots-list .list-cell:filled:selected {
+    -fx-background-color: -mc-accent-soft;
+    -fx-text-fill: -mc-text;
+}
+
+/* --------------------------------------------------------------- dialogs */
+
+.media-center-dialog {
+    -fx-background-color: -mc-surface;
+}
+
+.media-center-dialog .header-panel {
+    -fx-background-color: -mc-header-bottom;
+}
+
+.media-center-dialog .header-panel .label {
+    -fx-text-fill: -mc-text;
+}
+
+.media-center-dialog .label {
+    -fx-text-fill: -mc-text;
+    -fx-font-size: 20px;
+}
+
+.dialog-hint {
+    -fx-font-size: 17px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+/* The picker is how most folders get added, so it reads as the primary action. */
+.primary-button {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: -mc-on-accent;
+    -fx-border-color: -mc-accent;
+}
+
+.primary-button:hover {
+    -fx-background-color: -mc-accent-strong;
+    -fx-border-color: -mc-accent-strong;
+}
+
+.primary-button:focused {
+    -fx-background-color: -mc-accent;
+    -fx-text-fill: -mc-on-accent;
+    -fx-border-color: -mc-text;
+}
+
+.text-field,
+.combo-box {
+    -fx-font-size: 20px;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-width: 2;
+    -fx-border-color: -mc-border;
+    -fx-background-color: -mc-surface;
+    -fx-text-fill: -mc-text;
+    -fx-padding: 8 12 8 12;
+}
+
+.text-field {
+    -fx-prompt-text-fill: -mc-text-dim;
+}
+
+.text-field:focused,
+.combo-box:focused {
+    -fx-border-color: -mc-accent;
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: -mc-text;
+    -fx-background-color: -mc-surface;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: -mc-surface;
+    -fx-border-color: -mc-border;
+}
+
+.combo-box-popup .list-view .list-cell:filled:hover {
+    -fx-background-color: -mc-accent-soft;
+}
+
+/* ---------------------------------------------------------------- cursor */
+
+/*
+ * Applied to the root while the pointer is idle. The descendant rules are
+ * needed because a node's own -fx-cursor wins over the one on its ancestors,
+ * and most of the screen is covered by tiles that ask for a hand.
+ */
+.cursor-hidden {
+    -fx-cursor: none;
+}
+
+.cursor-hidden .tile,
+.cursor-hidden .button,
+.cursor-hidden .toggle-button,
+.cursor-hidden .list-cell,
+.cursor-hidden .text-field,
+.cursor-hidden .combo-box {
+    -fx-cursor: none;
+}
+
+/* ------------------------------------------------------------ scrollbars */
+
+.scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 14;
+}
+
+.scroll-bar:vertical .thumb {
+    -fx-background-color: -mc-scroll-thumb;
+    -fx-background-radius: 7;
+}
+
+.scroll-bar:vertical .thumb:hover {
+    -fx-background-color: -mc-scroll-thumb-hover;
+}
+
+.scroll-bar .track {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button,
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-background-color: transparent;
+    -fx-pref-height: 0;
+    -fx-padding: 0;
+}

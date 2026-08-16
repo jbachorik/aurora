@@ -1,0 +1,42 @@
+/*
+ * Light palette — for a bright room, or simply for preference.
+ *
+ * The page is a soft off-white rather than pure white: a full-screen sheet of
+ * #fff is glaring on a television, and the cards need a surface lighter than
+ * the page to read as raised.
+ *
+ * Only colours belong here; every rule lives in mediacenter.css.
+ */
+
+.root {
+    -mc-page: #eef1f6;
+    -mc-surface: #ffffff;
+    -mc-surface-hover: #f3f6fc;
+    -mc-header-top: #ffffff;
+    -mc-header-bottom: #f7f9fc;
+    -mc-footer: #ffffff;
+
+    -mc-border: #d7dee9;
+    -mc-border-strong: #b9c6da;
+
+    -mc-text: #131822;
+    -mc-text-dim: #5a6579;
+
+    -mc-accent: #1d4ed8;
+    -mc-accent-strong: #1a44be;
+    -mc-accent-soft: #e6edff;
+    -mc-on-accent: #ffffff;
+
+    -mc-error: #b42318;
+    -mc-error-soft: #fdece9;
+
+    -mc-scroll-thumb: #c2ccdb;
+    -mc-scroll-thumb-hover: #a9b6ca;
+
+    -mc-shadow: rgba(19, 24, 34, 0.10);
+    -mc-shadow-soft: rgba(19, 24, 34, 0.07);
+    -mc-focus-glow: rgba(29, 78, 216, 0.34);
+
+    -mc-placeholder-text: #1b2231;
+    -mc-placeholder-symbol: rgba(27, 34, 49, 0.45);
+}

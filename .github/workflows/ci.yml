@@ -1,0 +1,76 @@
+name: CI
+
+# Pushing to a branch that has an open pull request fires both events, so
+# `push` is limited to the default branch and everything else is covered once,
+# by `pull_request`.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# head_ref is the source branch on a pull request and empty otherwise, so a new
+# push to a PR cancels the run still in flight for the previous commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Liberica "Full" bundles the JavaFX modules and the jmods that jlink needs,
+  # so the project resolves no JavaFX artifacts from a repository.
+  JAVA_VERSION: "25"
+  JAVA_DISTRIBUTION: liberica
+  JAVA_PACKAGE: jdk+fx
+
+jobs:
+  # The source is shared across platforms and only PlatformServices differs, but
+  # the runtime image is platform-specific, so all three compile, test and link.
+  #
+  # One macOS architecture is enough here: the Java is identical and only the
+  # native image differs, so the Intel image is covered by release validation
+  # rather than by every commit.
+  #
+  # This stops at jlink deliberately. Linking is what catches a broken module
+  # graph or a JDK without the JavaFX jmods, and it costs seconds. Building and
+  # uploading the distributable images on every commit would not pay for itself,
+  # because nothing in CI consumes them — release.yml builds those.
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x64
+          - os: macos-15
+            platform: macos-aarch64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Liberica JDK ${{ env.JAVA_VERSION }} Full
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          java-package: ${{ env.JAVA_PACKAGE }}
+          cache: gradle
+
+      - name: Compile, test and link
+        shell: bash
+        run: ./gradlew --no-daemon clean test jlink
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.platform }}
+          path: build/reports/tests/test
+          retention-days: 7
