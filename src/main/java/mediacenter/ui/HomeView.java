@@ -140,9 +140,13 @@ public final class HomeView implements View {
         return count == 0 ? "No folders configured" : count + (count == 1 ? " folder" : " folders");
     }
 
-    private static String browserSubtitle(ApplicationSettings settings) {
+    private String browserSubtitle(ApplicationSettings settings) {
+        // Asked of the platform: what is stored is the runnable file, which on macOS
+        // is a binary buried inside the application and nothing anyone would
+        // recognise on a television.
         return settings.browserPath()
-                .map(path -> path.getFileName() == null ? path.toString() : path.getFileName().toString())
+                .map(context.platform()::programLabel)
+                .filter(label -> !label.isBlank())
                 .orElse("Show the desktop");
     }
 

@@ -110,7 +110,8 @@ public final class MediaCenterShell implements Navigation {
                 scanner,
                 artworkResolver,
                 new ArtworkCache(),
-                history);
+                history,
+                platform);
 
         buildFrame();
         this.homeView = new HomeView(context);

@@ -9,7 +9,6 @@ import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.event.Event;
 import javafx.scene.Node;
@@ -31,7 +30,7 @@ import javafx.util.Duration;
  *
  * <pre>
  * ./gradlew run --args="--snapshot=/tmp/home.png"
- * ./gradlew run --args="--snapshot=/tmp/browse.png --snapshot-enter=2"
+ * ./gradlew run --args="--snapshot=/tmp/browse.png --snapshot-keys=ENTER,ENTER"
  * </pre>
  */
 public final class SceneSnapshot {
@@ -39,7 +38,7 @@ public final class SceneSnapshot {
     private static final Logger LOG = Logger.getLogger(SceneSnapshot.class.getName());
 
     private static final String FILE_ARGUMENT = "--snapshot=";
-    private static final String ENTER_ARGUMENT = "--snapshot-enter=";
+    private static final String KEYS_ARGUMENT = "--snapshot-keys=";
 
     /** Long enough for artwork to decode and the entrance motion to finish. */
     private static final Duration SETTLE = Duration.seconds(3);
@@ -60,12 +59,15 @@ public final class SceneSnapshot {
         if (target.isEmpty()) {
             return;
         }
-        int presses = valueOf(arguments, ENTER_ARGUMENT).map(SceneSnapshot::parseCount).orElse(0);
+        List<KeyCode> keys = valueOf(arguments, KEYS_ARGUMENT)
+                .map(SceneSnapshot::parseKeys)
+                .orElse(List.of());
 
-        for (int press = 0; press < presses; press++) {
-            after(BETWEEN_KEYS.multiply(press + 1.0), () -> pressEnter(scene));
+        for (int index = 0; index < keys.size(); index++) {
+            KeyCode key = keys.get(index);
+            after(BETWEEN_KEYS.multiply(index + 1.0), () -> press(scene, key));
         }
-        after(SETTLE.add(BETWEEN_KEYS.multiply(presses)), () -> {
+        after(SETTLE.add(BETWEEN_KEYS.multiply(keys.size())), () -> {
             capture(scene, target.get());
             Platform.exit();
         });
@@ -88,22 +90,53 @@ public final class SceneSnapshot {
      * Navigation is driven by sending the key to whatever holds focus rather than by
      * a screen robot, which would need the very permission this class avoids.
      */
-    private static void pressEnter(Scene scene) {
+    private static void press(Scene scene, KeyCode key) {
         Node focused = scene.getFocusOwner() == null ? scene.getRoot() : scene.getFocusOwner();
-        Event.fireEvent(focused, enter(KeyEvent.KEY_PRESSED));
+        Event.fireEvent(focused, keyEvent(KeyEvent.KEY_PRESSED, key));
         // The release matters: activation ignores a repeat that never let go, which
         // is how a stuck remote button is kept from relaunching a film.
-        Event.fireEvent(focused, enter(KeyEvent.KEY_RELEASED));
+        Event.fireEvent(focused, keyEvent(KeyEvent.KEY_RELEASED, key));
     }
 
-    private static KeyEvent enter(javafx.event.EventType<KeyEvent> type) {
-        return new KeyEvent(type, "", "", KeyCode.ENTER, false, false, false, false);
+    private static KeyEvent keyEvent(javafx.event.EventType<KeyEvent> type, KeyCode key) {
+        return new KeyEvent(type, "", "", key, false, false, false, false);
     }
 
+    /** Key names as {@link KeyCode} spells them, for example {@code DOWN,DOWN,ENTER}. */
+    private static List<KeyCode> parseKeys(String value) {
+        List<KeyCode> keys = new java.util.ArrayList<>();
+        for (String name : value.split(",")) {
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                keys.add(KeyCode.valueOf(trimmed.toUpperCase(java.util.Locale.ROOT)));
+            } catch (IllegalArgumentException e) {
+                LOG.log(Level.WARNING, () -> "Ignoring a key that does not exist: " + trimmed);
+            }
+        }
+        return List.copyOf(keys);
+    }
+
+    /**
+     * Timed on an ordinary thread rather than with an animation, which would stop
+     * with the rendering pulse: a display that has gone to sleep leaves a
+     * {@code PauseTransition} that never finishes, and the application then never
+     * takes its picture and never quits.
+     */
     private static void after(Duration delay, Runnable action) {
-        PauseTransition pause = new PauseTransition(delay);
-        pause.setOnFinished(event -> action.run());
-        pause.play();
+        Thread timer = new Thread(() -> {
+            try {
+                Thread.sleep(Math.round(delay.toMillis()));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            Platform.runLater(action);
+        }, "scene-snapshot");
+        timer.setDaemon(true);
+        timer.start();
     }
 
     private static Optional<String> valueOf(List<String> arguments, String prefix) {
@@ -114,12 +147,4 @@ public final class SceneSnapshot {
                 .findFirst();
     }
 
-    private static int parseCount(String value) {
-        try {
-            return Math.max(0, Integer.parseInt(value.trim()));
-        } catch (NumberFormatException e) {
-            LOG.log(Level.WARNING, () -> "Ignoring a key count that is not a number: " + value);
-            return 0;
-        }
-    }
 }

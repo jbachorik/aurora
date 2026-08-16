@@ -72,6 +72,9 @@ public final class SettingsView implements View {
     /** The same for programs, which are kept apart: they live nowhere near the media. */
     private File lastBrowsedProgramDirectory;
 
+    /** Where the keyboard was, for when a dialog takes the focus away and gives it back elsewhere. */
+    private Position lastPosition;
+
     public SettingsView(UiContext context, PlatformServices platform, Consumer<ApplicationSettings> onSettingsChanged) {
         this.context = context;
         this.platform = platform;
@@ -323,7 +326,7 @@ public final class SettingsView implements View {
     private void moveVertically(int delta) {
         Optional<Position> position = focusedPosition();
         if (position.isEmpty()) {
-            focus(0, 0);
+            resumeWhereFocusWasLost();
             return;
         }
         Position current = position.get();
@@ -334,15 +337,23 @@ public final class SettingsView implements View {
             return;
         }
         int targetRow = current.row() + delta;
-        if (targetRow >= 0 && targetRow < navigationRows.size()) {
-            focus(targetRow, current.column());
+        if (targetRow < 0 || targetRow >= navigationRows.size()) {
+            return;
+        }
+        focus(targetRow, current.column());
+        // Arriving at the folder list starts at the end the move came from. Its
+        // selection is otherwise wherever a previous visit or a settings reload
+        // left it, and a selection already at the far end reads as "no room left"
+        // — the list would be stepped straight over instead of walked.
+        if (navigationRows.get(targetRow).contains(rootsList)) {
+            selectEdgeOfRootsList(delta);
         }
     }
 
     private void moveHorizontally(int delta) {
         Optional<Position> position = focusedPosition();
         if (position.isEmpty()) {
-            focus(0, 0);
+            resumeWhereFocusWasLost();
             return;
         }
         Position current = position.get();
@@ -350,6 +361,30 @@ public final class SettingsView implements View {
         if (targetColumn >= 0 && targetColumn < navigationRows.get(current.row()).size()) {
             focus(current.row(), targetColumn);
         }
+    }
+
+    /**
+     * Puts the keyboard back where it was rather than at the top of the screen.
+     *
+     * <p>A modal dialog leaves the focus owner outside this screen's controls when
+     * it closes, and every arrow key is consumed here, so without this the first
+     * press after adding a folder would jump to the VLC button at the top — a long
+     * way from the folder buttons the viewer was using.
+     */
+    private void resumeWhereFocusWasLost() {
+        Position resume = lastPosition == null ? new Position(0, 0) : lastPosition;
+        focus(resume.row(), resume.column());
+    }
+
+    /** The end of the folder list a vertical move should arrive at. */
+    private void selectEdgeOfRootsList(int delta) {
+        int size = rootsList.getItems().size();
+        if (size == 0) {
+            return;
+        }
+        int edge = delta > 0 ? 0 : size - 1;
+        rootsList.getSelectionModel().select(edge);
+        rootsList.scrollTo(edge);
     }
 
     private boolean moveWithinRootsList(int delta) {
@@ -385,8 +420,10 @@ public final class SettingsView implements View {
             return;
         }
         List<Node> controls = navigationRows.get(row);
-        Node target = controls.get(Math.clamp(column, 0, controls.size() - 1));
+        int clampedColumn = Math.clamp(column, 0, controls.size() - 1);
+        Node target = controls.get(clampedColumn);
         target.requestFocus();
+        lastPosition = new Position(row, clampedColumn);
         if (target == rootsList
                 && rootsList.getSelectionModel().isEmpty()
                 && !rootsList.getItems().isEmpty()) {
@@ -411,8 +448,11 @@ public final class SettingsView implements View {
 
     private void readSettings() {
         ApplicationSettings settings = settings();
-        vlcValue.setText(settings.vlcPath().map(Path::toString).orElse("Not configured"));
-        browserValue.setText(settings.browserPath().map(Path::toString).orElse("Not configured"));
+        // The name of the application, not the path to the binary inside it: what is
+        // stored has to be runnable, which on macOS is buried several directories
+        // down and reads as noise from the other side of a room.
+        vlcValue.setText(settings.vlcPath().map(platform::programLabel).orElse("Not configured"));
+        browserValue.setText(settings.browserPath().map(platform::programLabel).orElse("Not configured"));
         fullScreenToggle.setSelected(settings.fullScreen());
         fullScreenToggle.setText(settings.fullScreen() ? "On" : "Off");
         for (var toggle : themeGroup.getToggles()) {
@@ -449,7 +489,7 @@ public final class SettingsView implements View {
                         return;
                     }
                     update(settings().withVlcPath(Optional.of(program)));
-                    showStatus(vlcStatus, "Using " + program);
+                    showStatus(vlcStatus, "Using " + platform.programLabel(program));
                 });
     }
 
@@ -473,7 +513,7 @@ public final class SettingsView implements View {
         chooseProgram("Select a browser " + platform.executableNoun(), settings().browserPath())
                 .ifPresent(program -> {
                     update(settings().withBrowserPath(Optional.of(program)));
-                    showStatus(browserStatus, "Using " + program);
+                    showStatus(browserStatus, "Using " + platform.programLabel(program));
                 });
     }
 

@@ -67,6 +67,19 @@ public interface PlatformServices {
     }
 
     /**
+     * What to call a configured program on screen. Never the path: a viewer sitting
+     * across a room wants "Google Chrome", not the binary buried inside it.
+     */
+    default String programLabel(Path stored) {
+        if (stored == null) {
+            return "";
+        }
+        Path presentable = presentableProgram(stored);
+        Path name = presentable.getFileName();
+        return name == null ? presentable.toString() : name.toString();
+    }
+
+    /**
      * Exposes the desktop, launching the configured browser when one is set.
      *
      * @param browserExecutable optional browser chosen in Settings

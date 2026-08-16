@@ -315,10 +315,10 @@ checked by having the application draw itself into a PNG and quit:
 
 ```bash
 ./gradlew run --args="--snapshot=/tmp/home.png"
-./gradlew run --args="--snapshot=/tmp/browse.png --snapshot-enter=2"
+./gradlew run --args="--snapshot=/tmp/browse.png --snapshot-keys=ENTER,ENTER"
 ```
 
-`--snapshot-enter` presses Enter that many times first, a second and a half
+`--snapshot-keys` presses those keys first, a second and a half
 apart, which is how a screen below the home page is reached. The image comes
 from the scene rather than from the desktop, so nothing has to be watching: no
 screen-recording permission is involved — macOS refuses that outright to an
@@ -328,6 +328,10 @@ nobody sitting in front of it.
 `mediacenter.ui.PngWriter` encodes the file by hand. `ImageIO` would have meant
 adding `java.desktop` to the module graph, and a debugging flag is no reason to
 grow the runtime image.
+
+The screen still has to be awake. JavaFX draws through the window server, so a
+display that has gone to sleep — `ioreg -n IODisplayWrangler -r -d 1` reporting
+`CurrentPowerState=0` — produces no image and the run hangs until it is killed.
 
 ### Installing a Full JDK locally
 

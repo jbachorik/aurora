@@ -16,6 +16,9 @@ public final class MacPlatformServices extends AbstractPlatformServices {
 
     private static final String BUNDLE_SUFFIX = ".app";
 
+    /** open only asks the desktop to launch something; it has no reason to linger. */
+    private static final long OPEN_TIMEOUT_MS = 10_000;
+
     @Override
     public String name() {
         return "macOS";
@@ -84,6 +87,20 @@ public final class MacPlatformServices extends AbstractPlatformServices {
         return bundle;
     }
 
+    /** An application is known by its bundle name; the ".app" is packaging, not a name. */
+    @Override
+    public String programLabel(Path stored) {
+        if (stored == null) {
+            return "";
+        }
+        Path presentable = presentableProgram(stored);
+        Path name = presentable.getFileName();
+        String label = name == null ? presentable.toString() : name.toString();
+        return label.endsWith(BUNDLE_SUFFIX)
+                ? label.substring(0, label.length() - BUNDLE_SUFFIX.length())
+                : label;
+    }
+
     private static boolean isNamed(Path path, String name) {
         return path.getFileName() != null && name.equals(path.getFileName().toString());
     }
@@ -95,10 +112,10 @@ public final class MacPlatformServices extends AbstractPlatformServices {
             // The executable inside the bundle could not be identified; macOS
             // itself always knows how to open one.
             LOG.log(Level.INFO, () -> "Opening application bundle " + program);
-            new ProcessBuilder("/usr/bin/open", "-a", program.toString())
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
+            // open exits as soon as the desktop has been asked to launch the bundle,
+            // and its exit status is the only word on whether that worked — a moved
+            // or damaged bundle fails here and nowhere else.
+            runToCompletion(List.of("/usr/bin/open", "-a", program.toString()), OPEN_TIMEOUT_MS);
             return;
         }
         super.launchExternal(program);
@@ -127,7 +144,7 @@ public final class MacPlatformServices extends AbstractPlatformServices {
         String bundleName = bundle.getFileName().toString();
         Path namedAfterBundle = macOsDirectory.resolve(
                 bundleName.substring(0, bundleName.length() - BUNDLE_SUFFIX.length()));
-        if (Files.isRegularFile(namedAfterBundle)) {
+        if (Files.isRegularFile(namedAfterBundle) && Files.isExecutable(namedAfterBundle)) {
             return Optional.of(namedAfterBundle);
         }
         try (Stream<Path> entries = Files.list(macOsDirectory)) {

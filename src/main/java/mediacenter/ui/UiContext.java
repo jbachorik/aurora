@@ -7,6 +7,7 @@ import mediacenter.config.ApplicationSettings;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaScanner;
+import mediacenter.platform.PlatformServices;
 import mediacenter.ui.components.ArtworkCache;
 
 /** The collaborators every view needs, passed explicitly rather than injected. */
@@ -17,5 +18,6 @@ public record UiContext(
         MediaScanner scanner,
         ArtworkResolver artworkResolver,
         ArtworkCache artworkCache,
-        PlaybackHistory history) {
+        PlaybackHistory history,
+        PlatformServices platform) {
 }

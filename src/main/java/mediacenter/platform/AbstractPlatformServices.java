@@ -101,6 +101,44 @@ abstract class AbstractPlatformServices implements PlatformServices {
         }
     }
 
+    /**
+     * Runs a helper that is expected to finish promptly and fails loudly when it
+     * does not succeed.
+     *
+     * <p>For launchers that hand a program to the desktop and exit: whether the
+     * program actually started is carried only by the exit status, so discarding it
+     * would report success for a bundle that is missing, damaged or not an
+     * application at all.
+     *
+     * @throws IOException when the helper exits non-zero, does not finish in time,
+     *                     or cannot be started
+     */
+    static void runToCompletion(List<String> command, long timeoutMillis) throws IOException {
+        Process process = new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                .start();
+        String output;
+        try (var input = process.getInputStream()) {
+            output = new String(input.readAllBytes()).trim();
+        }
+        try {
+            if (!process.waitFor(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+                throw new IOException(command.getFirst() + " did not finish within "
+                        + timeoutMillis + "ms");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for " + command.getFirst(), e);
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            throw new IOException(command.getFirst() + " failed with exit code " + exitCode
+                    + (output.isEmpty() ? "" : ": " + output));
+        }
+    }
+
     /** Convenience for building candidate paths without worrying about separators. */
     protected static Path path(String first, String... more) {
         return Path.of(first, more);

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -133,6 +134,52 @@ class PlatformServicesTest {
             file.toFile().setExecutable(true);
         }
         return bundle;
+    }
+
+    @Test
+    @DisplayName("a bundle whose namesake file cannot be run falls through to the one that can")
+    void ignoresANamesakeThatIsNotExecutable(@TempDir Path temp) throws IOException {
+        Path bundle = temp.resolve("VLC.app");
+        Path macOs = Files.createDirectories(bundle.resolve("Contents").resolve("MacOS"));
+        Files.createFile(macOs.resolve("VLC"));                 // named right, not runnable
+        Path real = Files.createFile(macOs.resolve("vlc-bin"));
+        real.toFile().setExecutable(true);
+
+        assertEquals(real, new MacPlatformServices().resolveProgram(bundle));
+    }
+
+    @Test
+    @DisplayName("a helper command that fails is reported rather than passing for success")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void reportsAFailedHelperCommand() {
+        IOException failure = assertThrows(IOException.class,
+                () -> AbstractPlatformServices.runToCompletion(List.of("/bin/sh", "-c", "exit 3"), 5000));
+
+        assertTrue(failure.getMessage().contains("3"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a helper command that succeeds returns quietly")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void acceptsASuccessfulHelperCommand() throws IOException {
+        AbstractPlatformServices.runToCompletion(List.of("/bin/echo", "started"), 5000);
+    }
+
+    @Test
+    @DisplayName("a bundled program is named after its application, not the binary inside it")
+    void labelsABundledProgramByItsApplicationName() {
+        assertEquals("Google Chrome", new MacPlatformServices()
+                .programLabel(Path.of("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")));
+    }
+
+    @Test
+    @DisplayName("a program that is just a binary is named after the file")
+    void labelsAPlainProgramByItsFileName() {
+        assertEquals("firefox", new MacPlatformServices().programLabel(Path.of("/usr/bin/firefox")));
+        // Separators that this machine understands, so the assertion is about the
+        // rule and not about which platform is running the test.
+        assertEquals("vlc.exe", new WindowsPlatformServices()
+                .programLabel(Path.of("/VideoLAN/VLC/vlc.exe")));
     }
 
     @Test
