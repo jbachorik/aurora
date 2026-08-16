@@ -238,44 +238,6 @@ Download `Aurora-MediaCenter-windows-x64.zip` from the release, copy it to the
 laptop, unzip, and run `MediaCenter.exe`. No JDK, JRE, `JAVA_HOME`, PATH change
 or JavaFX installation is needed on the target machine.
 
-### Running the macOS image
-
-The macOS images are not signed with an Apple Developer ID, because that
-certificate requires a paid Apple Developer Program membership. macOS stamps
-anything downloaded from a browser with a quarantine attribute and refuses to
-open it, so clear the attribute once after unzipping:
-
-```bash
-unzip Aurora-MediaCenter-macos-aarch64.zip     # or -macos-x64 on an Intel Mac
-xattr -dr com.apple.quarantine MediaCenter.app
-open MediaCenter.app
-```
-
-The attribute is stored on disk, so that is once per download rather than once
-per launch: the unzipped application keeps working, including after moving it to
-`/Applications` and after a reboot. `-r` matters, because the files inside the
-bundle carry the attribute too, not just the `.app` itself.
-
-Quarantine is applied by whatever downloaded the file, and command-line tools do
-not apply it, so fetching a release without a browser avoids the step
-altogether:
-
-```bash
-gh release download v1.2.3 -p 'Aurora-MediaCenter-macos-*.zip'
-unzip Aurora-MediaCenter-macos-x64.zip
-open MediaCenter.app
-```
-
-Pick the archive that matches the machine: an arm64 image cannot run on an Intel
-Mac at all, and Rosetta does not help — it translates x86_64 to arm64, not the
-other way round.
-
-If macOS says the application is *damaged* rather than *from an unidentified
-developer*, that is a different problem: the bundle itself is broken, usually
-because archiving lost the symbolic links or the executable bits and invalidated
-jpackage's ad-hoc signature. `codesign --verify --deep --strict MediaCenter.app`
-tells the two apart.
-
 CI can prove that the Windows build links, packages and is structurally
 self-contained. It **cannot** prove Windows 7 compatibility — the runners are
 modern Windows Server. Smoke-test a new artifact by hand on the laptop:
@@ -284,6 +246,55 @@ modern Windows Server. Smoke-test a new artifact by hand on the laptop:
 launch → UNC share opens → browse → play → quit VLC → UI returns → desktop
 ```
 
+
+### Running the macOS image
+
+The macOS images carry only jpackage's ad-hoc signature, because a Developer ID
+certificate requires a paid Apple Developer Program membership. macOS refuses to
+open such an application when it has been *quarantined*.
+
+Quarantine is applied by whatever downloaded the file, and command-line tools do
+not apply it — so downloading a release without a browser sidesteps the problem
+entirely, and is the recommended way to fetch a build:
+
+```bash
+gh release download v1.2.3 -p 'Aurora-MediaCenter-macos-*.zip'
+
+unzip Aurora-MediaCenter-macos-aarch64.zip     # Apple Silicon
+unzip Aurora-MediaCenter-macos-x64.zip         # Intel
+
+open MediaCenter.app
+```
+
+`curl -LO <asset-url>` works the same way. Pick the archive that matches the
+machine: an arm64 image cannot run on an Intel Mac at all, and Rosetta does not
+help — it translates x86_64 to arm64, not the other way round.
+
+#### If it was downloaded with a browser
+
+Clear the attribute once, after unzipping:
+
+```bash
+xattr -dr com.apple.quarantine MediaCenter.app
+open MediaCenter.app
+```
+
+That is once per download, not once per launch: the attribute is stored on disk,
+so the unzipped application keeps working afterwards, including after moving it
+to `/Applications` and after a reboot. `-r` matters, because the files inside the
+bundle carry the attribute too, not just the `.app` itself.
+
+#### "Damaged" is a different problem
+
+If macOS calls the application *damaged* rather than *from an unidentified
+developer*, quarantine is not the cause: the bundle itself is broken, usually
+because archiving lost the symbolic links or the executable bits and invalidated
+the ad-hoc signature. These tell the two apart:
+
+```bash
+codesign --verify --deep --strict MediaCenter.app ; echo "exit: $?"
+ls -l MediaCenter.app/Contents/MacOS/MediaCenter
+```
 
 Development notes
 -----------------
