@@ -1,0 +1,122 @@
+name: Release
+
+# Application images are built here rather than in CI: nothing in CI consumes
+# them, and each one is a jlink + jpackage run on its own runner.
+#
+#   push a v* tag  → build all three, create the release, attach them
+#   run by hand    → build all three, keep them as workflow artifacts
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: "25"
+  JAVA_DISTRIBUTION: liberica
+  JAVA_PACKAGE: jdk+fx
+
+jobs:
+  # A jlink image only runs on the platform it was linked for, so there is no
+  # cross-building: each platform is built on its own runner with its own JDK.
+  build:
+    name: ${{ matrix.platform }} application image
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x64
+            runtime: build/app-image/MediaCenter/runtime/bin/java.exe
+            fxNative: glass.dll
+          - os: macos-14
+            platform: macos-aarch64
+            runtime: build/app-image/MediaCenter.app/Contents/runtime/Contents/Home/bin/java
+            fxNative: libglass.dylib
+          - os: ubuntu-22.04
+            platform: linux-x64
+            runtime: build/app-image/MediaCenter/lib/runtime/bin/java
+            fxNative: libglass.so
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Liberica JDK ${{ env.JAVA_VERSION }} Full
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          java-version: ${{ env.JAVA_VERSION }}
+          java-package: ${{ env.JAVA_PACKAGE }}
+          cache: gradle
+
+      - name: Test, jlink, jpackage and zip
+        shell: bash
+        run: ./gradlew --no-daemon clean test packageZip
+
+      - name: Check the image is self-contained and native
+        shell: bash
+        run: |
+          set -e
+          archive="build/distributions/Aurora-MediaCenter-${{ matrix.platform }}.zip"
+          test -f "$archive" || { echo "::error::missing $archive"; exit 1; }
+          test -x "${{ matrix.runtime }}" \
+            || { echo "::error::the image does not contain its own Java runtime"; exit 1; }
+          # A jlink image only runs on the platform it was linked for, so
+          # executing the bundled runtime proves this artifact was linked with
+          # this runner's JDK rather than cross-built from somewhere else.
+          "${{ matrix.runtime }}" -version
+          # jlink can link the JavaFX modules without their native libraries if
+          # it is pointed at jars rather than jmods, which produces an image
+          # that fails only at startup.
+          find build/app-image -name "${{ matrix.fxNative }}" | grep -q . \
+            || { echo "::error::JavaFX natives (${{ matrix.fxNative }}) missing from the image"; exit 1; }
+          ls -l "$archive"
+
+      - name: Upload Aurora-MediaCenter-${{ matrix.platform }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aurora-MediaCenter-${{ matrix.platform }}
+          path: build/distributions/Aurora-MediaCenter-${{ matrix.platform }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  # Attaching happens in one job after all three have finished, so the release
+  # never appears with a partial set of images.
+  publish:
+    name: Attach images to the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Collect the application images
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Aurora-MediaCenter-*
+          path: images
+          merge-multiple: true
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          ls -l images
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" images/*.zip --clobber
+          else
+            gh release create "$TAG" images/*.zip \
+              --title "$TAG" \
+              --generate-notes
+          fi

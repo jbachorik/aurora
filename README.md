@@ -174,21 +174,38 @@ Liberica JDK 25 Full.
 | `macos-14`     | `Aurora-MediaCenter-macos-aarch64`| `MediaCenter.app`   |
 | `ubuntu-22.04` | `Aurora-MediaCenter-linux-x64`    | `bin/MediaCenter`   |
 
+Two workflows, because the images are expensive and nothing in CI consumes
+them:
+
+| Workflow | Runs on | Does |
+|---|---|---|
+| `ci.yml` | pull requests, pushes to `master` | compile, test and `jlink` on all three platforms |
+| `release.yml` | a `v*` tag, or run by hand | `jpackage` + zip on all three, attached to the release |
+
 ```
-push → GitHub Actions → each runner + its own Liberica JDK 25 Full
+git tag v1.0.0 && git push origin v1.0.0
+     → each runner + its own Liberica JDK 25 Full
      → test → jlink → jpackage → Aurora-MediaCenter-<platform>.zip
+     → attached to the GitHub release
 ```
 
-Every job runs the runtime it just linked (`runtime/bin/java -version`) before
-uploading. That only succeeds on the platform the image was linked for, so a
-cross-built or mislabelled artifact cannot pass.
+CI stops at `jlink` on purpose: linking is what catches a broken module graph or
+a JDK without the JavaFX jmods, and it costs seconds. Running `release.yml` by
+hand (workflow dispatch, no tag) builds the same images and leaves them as
+workflow artifacts, which is the way to get a build onto the laptop without
+cutting a release.
+
+Before attaching anything, each job executes the runtime it has just linked
+(`runtime/bin/java -version`) and checks the JavaFX natives are present. Both
+only succeed on the platform the image was linked for, so a cross-built or
+mislabelled artifact cannot reach a release.
 
 Locally, `./gradlew packageZip` always builds for the machine you are on and
 names the archive after it.
 
-Download the `Aurora-MediaCenter-windows-x64` artifact, copy it to the laptop,
-unzip, and run `MediaCenter.exe`. No JDK, JRE, `JAVA_HOME`, PATH change or
-JavaFX installation is needed on the target machine.
+Download `Aurora-MediaCenter-windows-x64.zip` from the release, copy it to the
+laptop, unzip, and run `MediaCenter.exe`. No JDK, JRE, `JAVA_HOME`, PATH change
+or JavaFX installation is needed on the target machine.
 
 CI can prove that the Windows build links, packages and is structurally
 self-contained. It **cannot** prove Windows 7 compatibility — the runners are
