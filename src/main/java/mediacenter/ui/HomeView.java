@@ -13,6 +13,7 @@ import javafx.scene.layout.VBox;
 
 import mediacenter.config.ApplicationSettings;
 import mediacenter.history.PlaybackHistoryEntry;
+import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaRootType;
@@ -47,7 +48,12 @@ public final class HomeView implements View {
 
         actions.setPrefHeight(ActionTile.HEIGHT + 56);
         actions.setMinHeight(ActionTile.HEIGHT + 56);
-        actions.setTileAlignment(Pos.CENTER_LEFT);
+        // Once the tiles reach their maximum width a wide screen has room to spare,
+        // and the row has to sit in the middle of it rather than against one edge.
+        actions.setTileAlignment(Pos.CENTER);
+        // The row is a fixed one tile tall, so it must stay one tile tall: anything
+        // that wraps is both invisible and, worse, keeps Down from reaching Recents.
+        actions.setFitTilesToSingleRow(true);
         actions.setOnActivate(this::activate);
         actions.setOnNavigateBelow(() -> {
             if (!recent.isEmpty()) {
@@ -56,6 +62,10 @@ public final class HomeView implements View {
         });
 
         recentHeading.getStyleClass().add("section-heading");
+        // The page is centre-aligned for the empty case, which would otherwise
+        // centre this heading too and detach it from the left-aligned row it
+        // labels. Filling the width lets its own left padding do the aligning.
+        recentHeading.setMaxWidth(Double.MAX_VALUE);
         // Preferred, not minimum: on a smaller window the row simply scrolls
         // instead of pushing the hint bar off the screen.
         recent.setPrefHeight(MediaTile.Shape.POSTER.totalHeight() + 56);
@@ -190,7 +200,7 @@ public final class HomeView implements View {
         for (PlaybackHistoryEntry entry : entries) {
             Optional<java.nio.file.Path> artwork = Optional.ofNullable(entry.mediaPath().getParent())
                     .flatMap(parent -> context.artworkResolver().resolveForDirectory(parent));
-            items.add(MediaItem.video(entry.mediaPath(), entry.displayTitle(), artwork, 0));
+            items.add(MediaItem.video(entry.mediaPath(), recentTitle(entry), artwork, 0));
         }
         return items;
     }
@@ -198,8 +208,19 @@ public final class HomeView implements View {
     private static List<MediaItem> toMediaItemsWithoutArtwork(List<PlaybackHistoryEntry> entries) {
         List<MediaItem> items = new ArrayList<>(entries.size());
         for (PlaybackHistoryEntry entry : entries) {
-            items.add(MediaItem.video(entry.mediaPath(), entry.displayTitle(), Optional.empty(), 0));
+            items.add(MediaItem.video(entry.mediaPath(), recentTitle(entry), Optional.empty(), 0));
         }
         return items;
+    }
+
+    /**
+     * Derived from the path rather than read back from the history file. The stored
+     * title was normalised by whatever rules applied on the day it was played, so
+     * re-deriving keeps the recent row consistent with the folder it came from —
+     * and quietly tidies entries recorded before a rule changed.
+     */
+    private static String recentTitle(PlaybackHistoryEntry entry) {
+        String derived = DisplayNames.forPath(entry.mediaPath());
+        return derived.isBlank() ? entry.displayTitle() : derived;
     }
 }

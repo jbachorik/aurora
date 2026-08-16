@@ -45,6 +45,42 @@ class DisplayNamesTest {
     }
 
     @Test
+    @DisplayName("an ordering prefix is dropped, since the grid is already in order")
+    void dropsAnOrderingPrefix() {
+        assertEquals("Dead Mans Chest", DisplayNames.forFileName("02 - Dead Mans Chest.mkv"));
+    }
+
+    @Test
+    @DisplayName("an ordering prefix is dropped from a dotted name too")
+    void dropsAnOrderingPrefixFromADottedName() {
+        assertEquals("Dead Mans Chest", DisplayNames.forFileName("01.Dead.Mans.Chest.mkv"));
+    }
+
+    @Test
+    @DisplayName("a number that is part of the title survives, having no separator after it")
+    void keepsALeadingNumberThatBelongsToTheTitle() {
+        assertEquals("12 Angry Men", DisplayNames.forFileName("12 Angry Men.mkv"));
+    }
+
+    @Test
+    @DisplayName("a leading year is never mistaken for an ordering prefix")
+    void keepsALeadingYear() {
+        assertEquals("2001 - A Space Odyssey",
+                DisplayNames.forFileName("2001 - A Space Odyssey.mkv"));
+    }
+
+    @Test
+    @DisplayName("a name that is nothing but a number is left alone")
+    void keepsANameThatIsOnlyANumber() {
+        assertEquals("300", DisplayNames.forFileName("300.mkv"));
+    }
+
+    @Test
+    void dropsAnOrderingPrefixFromADirectory() {
+        assertEquals("Season One", DisplayNames.forDirectory(Path.of("/media/TV/01 - Season One")));
+    }
+
+    @Test
     void picksTheRuleFromTheExtension() {
         assertEquals("Alien 1979", DisplayNames.forPath(Path.of("/media/Alien.1979.mkv")));
         assertEquals("Alien (1979)", DisplayNames.forPath(Path.of("/media/Alien (1979)")));

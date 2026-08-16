@@ -36,6 +36,7 @@ public final class TileGrid extends ScrollPane {
     private Runnable onNavigateAbove = () -> { };
     private Runnable onNavigateBelow = () -> { };
     private int selectedIndex = -1;
+    private boolean fitTilesToSingleRow;
     private final ActivationGate activationGate = new ActivationGate();
 
     public TileGrid() {
@@ -64,6 +65,10 @@ public final class TileGrid extends ScrollPane {
         setVbarPolicy(ScrollBarPolicy.AS_NEEDED);
         setFocusTraversable(false);
 
+        // The share each tile gets depends on how much room the grid was given, so
+        // a resized window has to be recomputed.
+        viewportBoundsProperty().addListener((observable, was, is) -> fitTiles());
+
         // A filter, not a handler: ScrollPane's own skin would otherwise turn the
         // arrow keys into scrolling instead of selection movement.
         addEventFilter(KeyEvent.KEY_PRESSED, this::handleKeyPressed);
@@ -76,6 +81,47 @@ public final class TileGrid extends ScrollPane {
      */
     public void setTileAlignment(Pos alignment) {
         tilePane.setAlignment(alignment);
+    }
+
+    /**
+     * Keeps every tile on one row by narrowing them to share the width available.
+     *
+     * <p>A wrapped grid is not merely untidy: Down moves to the row beneath within
+     * the grid, so a home row that wraps swallows the key that is supposed to reach
+     * the row below it. Tiles that cannot resize simply stay as they are.
+     */
+    public void setFitTilesToSingleRow(boolean fit) {
+        this.fitTilesToSingleRow = fit;
+        fitTiles();
+    }
+
+    private void fitTiles() {
+        if (!fitTilesToSingleRow || tiles.isEmpty()) {
+            return;
+        }
+        double available = availableWidth();
+        if (available <= 0) {
+            return;
+        }
+        int count = tiles.size();
+        // Floored: sharing the width exactly leaves the row one rounding error away
+        // from wrapping, which is the whole failure being prevented here.
+        double perTile = Math.floor((available - (count - 1) * tilePane.getHgap()) / count);
+        for (Tile tile : tiles) {
+            tile.resizeToWidth(perTile);
+        }
+        tilePane.setPrefTileWidth(tiles.getFirst().getPrefWidth());
+        // Columns are otherwise derived from the width, which is exactly the
+        // calculation being overridden here.
+        tilePane.setPrefColumns(count);
+    }
+
+    /** The width inside the grid's own padding, which the tiles have to share. */
+    private double availableWidth() {
+        Bounds viewport = getViewportBounds();
+        double width = viewport != null && viewport.getWidth() > 0 ? viewport.getWidth() : getWidth();
+        Insets padding = tilePane.getPadding();
+        return width - padding.getLeft() - padding.getRight();
     }
 
     // -- content ------------------------------------------------------------
@@ -94,6 +140,7 @@ public final class TileGrid extends ScrollPane {
             tilePane.setPrefTileWidth(tiles.getFirst().getPrefWidth());
             tilePane.setPrefTileHeight(tiles.getFirst().getPrefHeight());
         }
+        fitTiles();
 
         selectedIndex = tiles.isEmpty() ? -1 : Math.min(Math.max(previousIndex, 0), tiles.size() - 1);
         showMessage(null);

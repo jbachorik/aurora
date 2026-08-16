@@ -1,6 +1,9 @@
 package mediacenter;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -11,6 +14,7 @@ import java.util.logging.Logger;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.scene.input.KeyCombination;
 import javafx.stage.Stage;
 
@@ -26,6 +30,7 @@ import mediacenter.playback.PlaybackService;
 import mediacenter.playback.PlayerLauncher;
 import mediacenter.playback.VlcPlayerLauncher;
 import mediacenter.ui.MediaCenterShell;
+import mediacenter.ui.SceneSnapshot;
 import mediacenter.ui.Stylesheets;
 
 /**
@@ -44,6 +49,9 @@ public final class MediaCenterApp extends Application {
 
     private static final double INITIAL_WIDTH = 1600;
     private static final double INITIAL_HEIGHT = 900;
+
+    /** Window-manager icon sizes, small first: a taskbar asks for 16 and 32. */
+    private static final List<Integer> ICON_SIZES = List.of(16, 32, 48, 64, 128, 256);
 
     private ExecutorService backgroundExecutor;
 
@@ -93,6 +101,7 @@ public final class MediaCenterApp extends Application {
         Stylesheets.apply(scene, settings.theme());
 
         stage.setTitle("Media Center");
+        applicationIcons(stage);
         stage.setScene(scene);
         stage.setMinWidth(960);
         stage.setMinHeight(600);
@@ -106,6 +115,8 @@ public final class MediaCenterApp extends Application {
         shell.attachToScene();
         shell.focusCurrentView();
 
+        SceneSnapshot.scheduleIfRequested(scene, getParameters().getRaw());
+
         discoverVlcIfNeeded(platform, shell, settingsRef);
     }
 
@@ -116,6 +127,26 @@ public final class MediaCenterApp extends Application {
             backgroundExecutor.shutdownNow();
         }
         Platform.exit();
+    }
+
+    /**
+     * Several sizes rather than one: the window manager picks the closest match, so
+     * handing it only the large image leaves a taskbar to downscale 256px into 16,
+     * which smears. A missing icon is never fatal — the window opens without one.
+     */
+    private static void applicationIcons(Stage stage) {
+        for (int size : ICON_SIZES) {
+            String resource = "/mediacenter/ui/icon/aurora-" + size + ".png";
+            try (InputStream stream = MediaCenterApp.class.getResourceAsStream(resource)) {
+                if (stream == null) {
+                    LOG.log(Level.WARNING, () -> "Application icon missing from the image: " + resource);
+                    continue;
+                }
+                stage.getIcons().add(new Image(stream));
+            } catch (IOException | RuntimeException e) {
+                LOG.log(Level.WARNING, "Could not load application icon " + resource, e);
+            }
+        }
     }
 
     private static void logStartup(PlatformServices platform, Path dataDirectory, ApplicationSettings settings) {

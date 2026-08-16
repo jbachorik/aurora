@@ -123,20 +123,14 @@
     -fx-padding: 16;
 }
 
-.media-tile-placeholder-title {
-    -fx-font-size: 22px;
-    -fx-font-weight: bold;
-    -fx-text-fill: -mc-placeholder-text;
-}
-
+/* Stands in for the poster, so it carries the card rather than badging it. */
 .media-tile-placeholder-symbol {
-    -fx-font-size: 22px;
+    -fx-font-size: 72px;
     -fx-text-fill: -mc-placeholder-symbol;
-    -fx-padding: 6 8 0 0;
 }
 
 .media-tile-caption {
-    -fx-font-size: 20px;
+    -fx-font-size: 28px;
     -fx-text-fill: -mc-text;
     -fx-padding: 10 12 10 12;
     -fx-content-display: center;

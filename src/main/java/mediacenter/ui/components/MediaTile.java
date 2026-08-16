@@ -10,7 +10,9 @@ import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.shape.Rectangle;
 
 import mediacenter.config.Theme;
 import mediacenter.media.MediaItem;
@@ -27,7 +29,7 @@ public final class MediaTile extends Tile {
     /** Tile proportions: posters for movie-style roots, wide cards elsewhere. */
     public enum Shape {
 
-        POSTER(230, 345),
+        POSTER(210, 315),
         WIDE(300, 180);
 
         private final double width;
@@ -52,7 +54,11 @@ public final class MediaTile extends Tile {
         }
     }
 
-    private static final double CAPTION_HEIGHT = 74;
+    /** Two lines of a 28px caption, which is what reads from across a room. */
+    private static final double CAPTION_HEIGHT = 92;
+
+    /** Matches the tile radius less its border, so the two curves sit concentric. */
+    private static final double ARTWORK_CORNER = 11;
 
     private final MediaItem item;
     private final Theme theme;
@@ -81,19 +87,25 @@ public final class MediaTile extends Tile {
         return item.displayName();
     }
 
+    /**
+     * The artwork area takes its width from the tile rather than naming it: the
+     * tile's border insets the content box, so anything pinned to the full tile
+     * width renders out over the rounded edge.
+     */
     private StackPane artworkArea(Shape shape, ArtworkCache artworkCache) {
-        StackPane placeholder = placeholder(shape);
+        StackPane placeholder = placeholder();
         StackPane area = new StackPane(placeholder);
         area.getStyleClass().add("media-tile-artwork");
-        area.setPrefSize(shape.width(), shape.artworkHeight());
-        area.setMinSize(shape.width(), shape.artworkHeight());
-        area.setMaxSize(shape.width(), shape.artworkHeight());
+        area.setPrefHeight(shape.artworkHeight());
+        area.setMinHeight(shape.artworkHeight());
+        area.setMaxHeight(shape.artworkHeight());
+        roundTopCorners(area);
 
         Optional<Path> artworkPath = item.artworkPath();
         if (artworkPath.isPresent()) {
             Image image = artworkCache.load(artworkPath.get(), shape.width(), shape.artworkHeight());
             ImageView view = new ImageView(image);
-            view.setFitWidth(shape.width());
+            view.fitWidthProperty().bind(area.widthProperty());
             view.setFitHeight(shape.artworkHeight());
             view.setPreserveRatio(true);
             view.setSmooth(true);
@@ -101,6 +113,22 @@ public final class MediaTile extends Tile {
             revealWhenLoaded(image, placeholder, view);
         }
         return area;
+    }
+
+    /**
+     * The placeholder gets its rounded top from the stylesheet, but a poster is a
+     * square-cornered rectangle and would square the tile off again once artwork
+     * loads. Clipping the area covers both.
+     */
+    private static void roundTopCorners(Region area) {
+        Rectangle clip = new Rectangle();
+        clip.setArcWidth(ARTWORK_CORNER * 2);
+        clip.setArcHeight(ARTWORK_CORNER * 2);
+        clip.widthProperty().bind(area.widthProperty());
+        // Overshoot the bottom so only the top corners are rounded; the caption
+        // below carries the tile's lower edge.
+        clip.heightProperty().bind(area.heightProperty().add(ARTWORK_CORNER));
+        area.setClip(clip);
     }
 
     /**
@@ -151,23 +179,21 @@ public final class MediaTile extends Tile {
         reveal.play();
     }
 
-    /** Generated fallback: a stable colour per title plus the title itself. */
-    private StackPane placeholder(Shape shape) {
+    /**
+     * Generated fallback: a stable colour per title, and the symbol standing in for
+     * the poster. The name is deliberately not repeated here — the caption below
+     * already carries it, at a size that reads from a sofa.
+     */
+    private StackPane placeholder() {
         StackPane placeholder = new StackPane();
         placeholder.getStyleClass().add("media-tile-placeholder");
         placeholder.setStyle(PlaceholderColors.backgroundFor(item.displayName(), theme));
 
         Label symbol = new Label(item.isDirectory() ? "▤" : "▶");
         symbol.getStyleClass().add("media-tile-placeholder-symbol");
-        StackPane.setAlignment(symbol, Pos.TOP_RIGHT);
+        StackPane.setAlignment(symbol, Pos.CENTER);
 
-        Label name = new Label(item.displayName());
-        name.getStyleClass().add("media-tile-placeholder-title");
-        name.setWrapText(true);
-        name.setAlignment(Pos.CENTER);
-        name.setMaxWidth(shape.width() - 32);
-
-        placeholder.getChildren().addAll(name, symbol);
+        placeholder.getChildren().add(symbol);
         return placeholder;
     }
 

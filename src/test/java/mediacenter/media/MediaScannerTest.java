@@ -19,6 +19,20 @@ class MediaScannerTest {
     private final MediaScanner scanner = new MediaScanner();
 
     @Test
+    @DisplayName("an ordering prefix still orders the grid even though it is not shown")
+    void sortsByTheOrderingPrefixItDoesNotDisplay(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("03 - At Worlds End.mkv"));
+        Files.createFile(temp.resolve("01 - Curse of the Black Pearl.mkv"));
+        Files.createFile(temp.resolve("02 - Dead Mans Chest.mkv"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(
+                List.of("Curse of the Black Pearl", "Dead Mans Chest", "At Worlds End"),
+                items.stream().map(MediaItem::displayName).toList());
+    }
+
+    @Test
     @DisplayName("directories come before files and both are sorted by name")
     void ordersDirectoriesBeforeFiles(@TempDir Path temp) throws Exception {
         Files.createDirectory(temp.resolve("Zulu Collection"));

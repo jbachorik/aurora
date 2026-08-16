@@ -308,6 +308,27 @@ Central. That fallback is for development only — `jlink` needs real jmods:
 ./gradlew packageZip -PjavafxJmods=/path/to/jmods     # any other JDK
 ```
 
+### Looking at the interface
+
+The tests cover no layout — there is no rendered scene in them — so a screen is
+checked by having the application draw itself into a PNG and quit:
+
+```bash
+./gradlew run --args="--snapshot=/tmp/home.png"
+./gradlew run --args="--snapshot=/tmp/browse.png --snapshot-enter=2"
+```
+
+`--snapshot-enter` presses Enter that many times first, a second and a half
+apart, which is how a screen below the home page is reached. The image comes
+from the scene rather than from the desktop, so nothing has to be watching: no
+screen-recording permission is involved — macOS refuses that outright to an
+unsigned parent process — and the television the application really runs on has
+nobody sitting in front of it.
+
+`mediacenter.ui.PngWriter` encodes the file by hand. `ImageIO` would have meant
+adding `java.desktop` to the module graph, and a debugging flag is no reason to
+grow the runtime image.
+
 ### Installing a Full JDK locally
 
 `jlink` and `jpackage` fail with **No JavaFX jmods found** when the selected

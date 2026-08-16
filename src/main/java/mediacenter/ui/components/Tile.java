@@ -27,6 +27,15 @@ public abstract class Tile extends VBox {
     public abstract String title();
 
     /**
+     * Offered the width a single-row grid can spare. Tiles whose size is fixed by
+     * their content — media posters — ignore it; the home actions use it to keep
+     * every action on one row whatever the screen.
+     */
+    public void resizeToWidth(double width) {
+        // Fixed-size tiles have nothing to do here.
+    }
+
+    /**
      * Lifts the focused tile slightly above its neighbours.
      *
      * <p>Scaling is a render-time transform, so the grid never reflows and the

@@ -129,6 +129,19 @@ public final class MediaScanner {
         }
     }
 
+    /**
+     * Order comes from the name on disk, not from the displayed one. An "01 - "
+     * prefix is there to order a series and is deliberately not shown, so sorting
+     * on the display name would throw away the very thing it was added for.
+     */
+    private static final Comparator<MediaItem> BY_FILE_NAME =
+            Comparator.comparing(MediaScanner::fileNameOf, String.CASE_INSENSITIVE_ORDER);
+
+    private static String fileNameOf(MediaItem item) {
+        Path name = item.path().getFileName();
+        return name == null ? item.displayName() : name.toString();
+    }
+
     // -- item construction --------------------------------------------------
 
     private List<MediaItem> directoryItems(List<Path> directories, List<Long> timestamps) {
@@ -142,7 +155,7 @@ public final class MediaScanner {
                     artwork.get(i),
                     timestamps.get(i)));
         }
-        items.sort(Comparator.comparing(MediaItem::displayName, String.CASE_INSENSITIVE_ORDER));
+        items.sort(BY_FILE_NAME);
         return items;
     }
 
@@ -172,7 +185,7 @@ public final class MediaScanner {
                     artworkResolver.resolveForFile(video, siblingFileNames),
                     timestamps.get(i)));
         }
-        items.sort(Comparator.comparing(MediaItem::displayName, String.CASE_INSENSITIVE_ORDER));
+        items.sort(BY_FILE_NAME);
         return items;
     }
 
