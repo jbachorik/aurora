@@ -29,7 +29,9 @@ Quick start
 The build needs a **Liberica JDK 25 Full** distribution — the "Full" variant
 bundles the JavaFX modules *and* the JavaFX jmods that `jlink` requires, so the
 project itself declares no JavaFX dependency and the production image never
-depends on anything downloaded at build time.
+depends on anything downloaded at build time. See [Installing a Full JDK
+locally](#installing-a-full-jdk-locally) for how to get one — `run` and `test`
+work on any JDK 25, only the packaging tasks need the Full variant.
 
 On first run open **Settings** → **Media folders** → **Add**, then either browse
 for a folder or type a network path such as `\\synology\video\Movies` (a share
@@ -251,6 +253,31 @@ Central. That fallback is for development only — `jlink` needs real jmods:
 ./gradlew packageZip                                  # Liberica Full JDK
 ./gradlew packageZip -PjavafxJmods=/path/to/jmods     # any other JDK
 ```
+
+### Installing a Full JDK locally
+
+`jlink` and `jpackage` fail with **No JavaFX jmods found** when the selected
+JDK is a plain one. The standard Liberica build ships no `javafx.*.jmod` — only
+the "Full" variant does, and on SDKMAN those carry `.fx` in the identifier:
+
+```bash
+sdk install java 25.0.4.fx-librca
+ls "$(sdk home java 25.0.4.fx-librca)/jmods" | grep javafx   # expect 7 files
+```
+
+Gradle detects every SDKMAN candidate and picks the highest matching Java 25,
+so installing it is normally all it takes. The one thing that overrides that is
+`JAVA_HOME`: whenever it points at a JDK that satisfies the toolchain, Gradle
+uses it and ignores the rest. A shell left on a plain JDK 25 by `sdk use` keeps
+failing, so either switch the shell or name the jmods directory explicitly:
+
+```bash
+sdk use java 25.0.4.fx-librca                                       # this shell
+./gradlew packageZip -PjavafxJmods="$(sdk home java 25.0.4.fx-librca)/jmods"
+```
+
+The override is a plain directory of jmods; it does not have to come from the
+JDK doing the linking, so a Gluon JavaFX jmods download works the same way.
 
 To build and test against a different Java release (for example on a machine
 that has no JDK 25 yet):
