@@ -29,6 +29,10 @@ jobs:
   # The source is shared across platforms and only PlatformServices differs, but
   # the runtime image is platform-specific, so all three compile, test and link.
   #
+  # One macOS architecture is enough here: the Java is identical and only the
+  # native image differs, so the Intel image is covered by release validation
+  # rather than by every commit.
+  #
   # This stops at jlink deliberately. Linking is what catches a broken module
   # graph or a JDK without the JavaFX jmods, and it costs seconds. Building and
   # uploading the distributable images on every commit would not pay for itself,
@@ -42,7 +46,7 @@ jobs:
         include:
           - os: windows-2022
             platform: windows-x64
-          - os: macos-14
+          - os: macos-15
             platform: macos-aarch64
           - os: ubuntu-22.04
             platform: linux-x64

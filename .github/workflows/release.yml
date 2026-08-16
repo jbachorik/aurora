@@ -1,13 +1,19 @@
 name: Release
 
-# Application images are built here rather than in CI: nothing in CI consumes
-# them, and each one is a jlink + jpackage run on its own runner.
+# Two ways in, one pipeline:
 #
-#   push a v* tag  → build all three, create the release, attach them
-#   run by hand    → build all three, keep them as workflow artifacts
+#   git tag v1.2.3-rc1  →  validate everything, and if it all passes, tag the
+#                          same commit v1.2.3 and publish that release
+#   git tag v1.2.3      →  validate everything and publish it directly
+#   run by hand         →  build the images only, as workflow artifacts
+#
+# The images attached to a release are the ones that were validated, not a
+# rebuild of them.
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc*"
   workflow_dispatch:
 
 permissions:
@@ -23,8 +29,10 @@ env:
   JAVA_PACKAGE: jdk+fx
 
 jobs:
-  # A jlink image only runs on the platform it was linked for, so there is no
-  # cross-building: each platform is built on its own runner with its own JDK.
+  # Full validation: the whole test suite and a real application image on every
+  # platform. A jlink image only runs on the platform it was linked for, so
+  # there is no cross-building — each is built on its own runner with its own
+  # JDK.
   build:
     name: ${{ matrix.platform }} application image
     runs-on: ${{ matrix.os }}
@@ -36,8 +44,15 @@ jobs:
             platform: windows-x64
             runtime: build/app-image/MediaCenter/runtime/bin/java.exe
             fxNative: glass.dll
-          - os: macos-14
+          # Both macOS architectures: an arm64 image cannot run on an Intel Mac
+          # at all, and Rosetta does not help — it translates x86_64 to arm64,
+          # not the other way round.
+          - os: macos-15
             platform: macos-aarch64
+            runtime: build/app-image/MediaCenter.app/Contents/runtime/Contents/Home/bin/java
+            fxNative: libglass.dylib
+          - os: macos-15-intel
+            platform: macos-x64
             runtime: build/app-image/MediaCenter.app/Contents/runtime/Contents/Home/bin/java
             fxNative: libglass.dylib
           - os: ubuntu-22.04
@@ -88,35 +103,98 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Attaching happens in one job after all three have finished, so the release
-  # never appears with a partial set of images.
-  publish:
-    name: Attach images to the release
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.platform }}
+          path: build/reports/tests/test
+          retention-days: 7
+
+  # Runs only after every platform has passed, so a release never appears with
+  # a partial or unvalidated set of images.
+  #
+  # Promotion and publication happen in the same job on purpose: GitHub does not
+  # start a workflow for a tag pushed with GITHUB_TOKEN, so a promoted v1.2.3
+  # tag cannot trigger a second run of this workflow. It does not need to — the
+  # images were already built and validated above.
+  release:
+    name: Publish release
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
-      - name: Collect the application images
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out the release tag
+        id: tag
+        shell: bash
+        run: |
+          set -e
+          validated="$GITHUB_REF_NAME"
+          # v1.2.3-rc1, v1.2.3-rc.2 and friends all release as v1.2.3.
+          release="${validated%%-rc*}"
+          echo "validated=$validated" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          if [ "$validated" = "$release" ]; then
+            echo "promoted=false" >> "$GITHUB_OUTPUT"
+            echo "Releasing $release directly."
+          else
+            echo "promoted=true" >> "$GITHUB_OUTPUT"
+            echo "$validated passed validation; releasing the same commit as $release."
+          fi
+
+      - name: Tag the validated commit as ${{ steps.tag.outputs.release }}
+        if: steps.tag.outputs.promoted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -e
+          release="${{ steps.tag.outputs.release }}"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$release" > /dev/null 2>&1; then
+            existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$release" --jq .object.sha)
+            if [ "$existing" != "$GITHUB_SHA" ]; then
+              echo "::error::$release already exists and points at $existing, not $GITHUB_SHA"
+              exit 1
+            fi
+            echo "$release already points at this commit."
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$release" \
+              -f sha="$GITHUB_SHA" > /dev/null
+            echo "Tagged $GITHUB_SHA as $release."
+          fi
+
+      - name: Collect the validated application images
         uses: actions/download-artifact@v4
         with:
           pattern: Aurora-MediaCenter-*
           path: images
           merge-multiple: true
 
-      - name: Create or update the release
+      - name: Publish ${{ steps.tag.outputs.release }} with generated notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+        shell: bash
         run: |
           set -e
+          release="${{ steps.tag.outputs.release }}"
           ls -l images
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" images/*.zip --clobber
+          if gh release view "$release" > /dev/null 2>&1; then
+            gh release upload "$release" images/*.zip --clobber
+            echo "Updated the existing $release release."
           else
-            gh release create "$TAG" images/*.zip \
-              --title "$TAG" \
-              --generate-notes
+            # --generate-notes builds the changelog from the commits and merged
+            # pull requests since the previous release.
+            gh release create "$release" images/*.zip \
+              --title "$release" \
+              --generate-notes \
+              --verify-tag
+            echo "Created the $release release."
           fi

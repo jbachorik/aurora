@@ -168,11 +168,15 @@ A `jlink` runtime image only runs on the platform it was linked for, so there is
 no cross-building: each platform is built on its own runner with its own
 Liberica JDK 25 Full.
 
-| Runner         | Artifact                          | Contains            |
-|----------------|-----------------------------------|---------------------|
-| `windows-2022` | `Aurora-MediaCenter-windows-x64`  | `MediaCenter.exe`   |
-| `macos-14`     | `Aurora-MediaCenter-macos-aarch64`| `MediaCenter.app`   |
-| `ubuntu-22.04` | `Aurora-MediaCenter-linux-x64`    | `bin/MediaCenter`   |
+| Runner            | Artifact                           | Runs on                |
+|-------------------|------------------------------------|------------------------|
+| `windows-2022`    | `Aurora-MediaCenter-windows-x64`   | Windows x64            |
+| `macos-15`        | `Aurora-MediaCenter-macos-aarch64` | Apple Silicon Macs     |
+| `macos-15-intel`  | `Aurora-MediaCenter-macos-x64`     | Intel Macs             |
+| `ubuntu-22.04`    | `Aurora-MediaCenter-linux-x64`     | Linux x64              |
+
+Both macOS architectures are built because an arm64 image cannot run on an Intel
+Mac at all — Rosetta translates x86_64 to arm64, not the other way round.
 
 Two workflows, because the images are expensive and nothing in CI consumes
 them:
@@ -180,25 +184,45 @@ them:
 | Workflow | Runs on | Does |
 |---|---|---|
 | `ci.yml` | pull requests, pushes to `master` | compile, test and `jlink` on all three platforms |
-| `release.yml` | a `v*` tag, or run by hand | `jpackage` + zip on all three, attached to the release |
-
-```
-git tag v1.0.0 && git push origin v1.0.0
-     → each runner + its own Liberica JDK 25 Full
-     → test → jlink → jpackage → Aurora-MediaCenter-<platform>.zip
-     → attached to the GitHub release
-```
+| `release.yml` | a `v*` tag, or run by hand | full validation, then `jpackage` + zip attached to a release |
 
 CI stops at `jlink` on purpose: linking is what catches a broken module graph or
-a JDK without the JavaFX jmods, and it costs seconds. Running `release.yml` by
-hand (workflow dispatch, no tag) builds the same images and leaves them as
-workflow artifacts, which is the way to get a build onto the laptop without
+a JDK without the JavaFX jmods, and it costs seconds.
+
+### Cutting a release
+
+Tag a commit as a release candidate and let the pipeline decide whether it
+becomes a release:
+
+```bash
+git tag v1.2.3-rc1 && git push origin v1.2.3-rc1
+```
+
+```
+v1.2.3-rc1
+    ↓  full test suite + application image on every supported platform
+    ↓  each image checked: bundled runtime executes, JavaFX natives present
+    ↓  all three pass
+tag the same commit v1.2.3
+    ↓
+GitHub release v1.2.3, notes generated from the commits and merged PRs
+    ↓
+Aurora-MediaCenter-{windows-x64,macos-aarch64,macos-x64,linux-x64}.zip attached
+```
+
+If any platform fails, nothing is promoted and no release appears — fix it and
+tag `-rc2`. The images attached to the release are the ones that were
+validated, not a rebuild of them.
+
+Tagging `v1.2.3` directly skips the candidate step and does the same thing in
+one go. Running the workflow by hand (no tag) builds the images and leaves them
+as workflow artifacts, which is the way to get a build onto the laptop without
 cutting a release.
 
-Before attaching anything, each job executes the runtime it has just linked
-(`runtime/bin/java -version`) and checks the JavaFX natives are present. Both
-only succeed on the platform the image was linked for, so a cross-built or
-mislabelled artifact cannot reach a release.
+One thing worth knowing before editing `release.yml`: the promoted `v1.2.3` tag
+is created with `GITHUB_TOKEN`, and GitHub deliberately does not start a
+workflow for such a tag. That is why validation and publication live in the same
+run rather than the release tag triggering a second one.
 
 Locally, `./gradlew packageZip` always builds for the machine you are on and
 names the archive after it.
