@@ -251,6 +251,21 @@ xattr -dr com.apple.quarantine MediaCenter.app
 open MediaCenter.app
 ```
 
+The attribute is stored on disk, so that is once per download rather than once
+per launch: the unzipped application keeps working, including after moving it to
+`/Applications` and after a reboot. `-r` matters, because the files inside the
+bundle carry the attribute too, not just the `.app` itself.
+
+Quarantine is applied by whatever downloaded the file, and command-line tools do
+not apply it, so fetching a release without a browser avoids the step
+altogether:
+
+```bash
+gh release download v1.2.3 -p 'Aurora-MediaCenter-macos-*.zip'
+unzip Aurora-MediaCenter-macos-x64.zip
+open MediaCenter.app
+```
+
 Pick the archive that matches the machine: an arm64 image cannot run on an Intel
 Mac at all, and Rosetta does not help — it translates x86_64 to arm64, not the
 other way round.
