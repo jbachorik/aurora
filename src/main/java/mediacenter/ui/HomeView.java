@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.Priority;
@@ -40,9 +41,13 @@ public final class HomeView implements View {
         root.getStyleClass().add("home-view");
         root.setSpacing(8);
         root.setPadding(new Insets(8, 0, 0, 0));
+        // With nothing played yet there is no second row, and the actions would
+        // otherwise cling to the top of an empty page.
+        root.setAlignment(Pos.CENTER);
 
         actions.setPrefHeight(ActionTile.HEIGHT + 56);
         actions.setMinHeight(ActionTile.HEIGHT + 56);
+        actions.setTileAlignment(Pos.CENTER_LEFT);
         actions.setOnActivate(this::activate);
         actions.setOnNavigateBelow(() -> {
             if (!recent.isEmpty()) {

@@ -70,6 +70,14 @@ public final class TileGrid extends ScrollPane {
         addEventFilter(KeyEvent.KEY_RELEASED, this::handleKeyReleased);
     }
 
+    /**
+     * Where the tiles sit inside the grid. The default puts them at the top left;
+     * a single row on an otherwise empty page reads better centred.
+     */
+    public void setTileAlignment(Pos alignment) {
+        tilePane.setAlignment(alignment);
+    }
+
     // -- content ------------------------------------------------------------
 
     /** Replaces the tiles, keeping the selected position when it still exists. */

@@ -22,7 +22,7 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
     private static final Logger LOG = Logger.getLogger(VlcPlayerLauncher.class.getName());
 
     static final String VLC_NOT_CONFIGURED =
-            "VLC was not found. Choose vlc.exe in Settings.";
+            "VLC was not found. Choose it in Settings.";
     static final String VLC_MISSING =
             "The configured VLC program no longer exists. Check the path in Settings.";
     static final String MEDIA_MISSING =

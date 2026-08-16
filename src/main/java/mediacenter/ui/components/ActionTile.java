@@ -6,11 +6,11 @@ import javafx.scene.control.Label;
 /** A large home-screen action: a symbol, a caption and an optional sub-caption. */
 public final class ActionTile extends Tile {
 
-    public static final double WIDTH = 220;
-    public static final double HEIGHT = 200;
+    public static final double WIDTH = 280;
+    public static final double HEIGHT = 260;
 
     /** Two lines of caption, so the symbols line up across every tile. */
-    private static final double TITLE_HEIGHT = 68;
+    private static final double TITLE_HEIGHT = 76;
 
     private final String title;
 

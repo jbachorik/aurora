@@ -2,6 +2,7 @@ package mediacenter.ui;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -11,7 +12,6 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
@@ -21,6 +21,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -41,18 +42,28 @@ import mediacenter.platform.PlatformServices;
  */
 public final class SettingsView implements View {
 
+    private static final double BUTTON_MIN_WIDTH = 160;
+
     private final UiContext context;
     private final PlatformServices platform;
     private final Consumer<ApplicationSettings> onSettingsChanged;
 
     private final VBox root = new VBox();
     private final Label vlcValue = new Label();
+    private final Label vlcStatus = new Label();
     private final Label browserValue = new Label();
+    private final Label browserStatus = new Label();
     private final ToggleButton fullScreenToggle = new ToggleButton();
     private final ToggleGroup themeGroup = new ToggleGroup();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
-    private final Button firstFocusTarget;
+
+    /**
+     * The controls the arrow keys walk, grouped into rows in screen order. Every
+     * row on this screen is reachable with the arrows alone; nothing here may
+     * require Tab.
+     */
+    private final List<List<Node>> navigationRows = new ArrayList<>();
 
     /** Where the next picker should open, so browsing does not restart from scratch. */
     private File lastBrowsedDirectory;
@@ -66,28 +77,43 @@ public final class SettingsView implements View {
         root.setSpacing(18);
         root.setPadding(new Insets(24, 32, 24, 32));
 
-        Button chooseVlc = new Button("Choose vlc.exe…");
+        // "vlc.exe" means nothing on a Mac, where the same thing is an application
+        // bundle, so every program label is worded by the platform.
+        String programNoun = platform.executableNoun();
+
+        Button chooseVlc = new Button("Choose VLC " + programNoun + "…");
         chooseVlc.setOnAction(event -> chooseVlcExecutable());
-        this.firstFocusTarget = chooseVlc;
 
         Button detectVlc = new Button("Detect");
         detectVlc.setOnAction(event -> detectVlc());
 
-        Button chooseBrowser = new Button("Choose browser…");
+        Button chooseBrowser = new Button("Choose browser " + programNoun + "…");
         chooseBrowser.setOnAction(event -> chooseBrowser());
         Button clearBrowser = new Button("Clear");
-        clearBrowser.setOnAction(event -> update(settings().withBrowserPath(Optional.empty())));
+        clearBrowser.setOnAction(event -> {
+            update(settings().withBrowserPath(Optional.empty()));
+            showStatus(browserStatus, null);
+        });
 
         fullScreenToggle.setOnAction(event ->
                 update(settings().withFullScreen(fullScreenToggle.isSelected())));
 
-        root.getChildren().addAll(
-                settingRow("VLC player", vlcValue, chooseVlc, detectVlc),
-                settingRow("Browser (optional)", browserValue, chooseBrowser, clearBrowser),
-                settingRow("Full screen", new Label(), fullScreenToggle),
-                themeRow(),
-                mediaRootsSection());
+        Node vlcRow = settingRow("VLC player", vlcValue, vlcStatus, chooseVlc, detectVlc);
+        navigationRows.add(List.of(chooseVlc, detectVlc));
 
+        Node browserRow = settingRow("Browser (optional)", browserValue, browserStatus,
+                chooseBrowser, clearBrowser);
+        navigationRows.add(List.of(chooseBrowser, clearBrowser));
+
+        Node fullScreenRow = settingRow("Full screen", new Label(), null, fullScreenToggle);
+        navigationRows.add(List.of(fullScreenToggle));
+
+        Node themeRow = themeRow();
+        Node rootsSection = mediaRootsSection();
+
+        root.getChildren().addAll(vlcRow, browserRow, fullScreenRow, themeRow, rootsSection);
+
+        installArrowNavigation();
         readSettings();
     }
 
@@ -103,7 +129,7 @@ public final class SettingsView implements View {
 
     @Override
     public void focusSelection() {
-        firstFocusTarget.requestFocus();
+        focus(0, 0);
     }
 
     @Override
@@ -119,7 +145,13 @@ public final class SettingsView implements View {
 
     // -- layout -------------------------------------------------------------
 
-    private Node settingRow(String label, Label value, Button... buttons) {
+    /**
+     * One card: the name, the current value, the controls, and — underneath and
+     * inside the same card — whatever the last action on this row had to say.
+     * Feedback belongs next to the button that caused it; a message parked at the
+     * bottom of the screen reads as nothing having happened at all.
+     */
+    private Node settingRow(String label, Label value, Label status, Region... controls) {
         Label name = new Label(label);
         name.getStyleClass().add("setting-name");
         name.setMinWidth(320);
@@ -131,28 +163,34 @@ public final class SettingsView implements View {
         value.setMaxWidth(Double.MAX_VALUE);
         value.setMinWidth(80);
 
-        HBox row = new HBox(16, name, value);
-        row.getStyleClass().add("setting-row");
-        row.setAlignment(Pos.CENTER_LEFT);
-        for (Button button : buttons) {
-            button.setMinWidth(Region.USE_PREF_SIZE);
+        HBox line = new HBox(16, name, value);
+        line.setAlignment(Pos.CENTER_LEFT);
+        for (Region control : controls) {
+            control.setMinWidth(Region.USE_PREF_SIZE);
         }
-        row.getChildren().addAll(buttons);
-        return row;
+        line.getChildren().addAll(controls);
+
+        VBox card = new VBox(8, line);
+        card.getStyleClass().add("setting-row");
+        if (status != null) {
+            card.getChildren().add(prepareStatus(status));
+        }
+        return card;
     }
 
-    private Node settingRow(String label, Label value, ToggleButton toggle) {
-        Label name = new Label(label);
-        name.getStyleClass().add("setting-name");
-        name.setMinWidth(320);
-        HBox.setHgrow(value, Priority.ALWAYS);
-        value.setMaxWidth(Double.MAX_VALUE);
-        toggle.setMinWidth(Region.USE_PREF_SIZE);
+    private Label prepareStatus(Label status) {
+        status.getStyleClass().add("setting-status");
+        status.setWrapText(true);
+        showStatus(status, null);
+        return status;
+    }
 
-        HBox row = new HBox(16, name, value, toggle);
-        row.getStyleClass().add("setting-row");
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
+    /** Shows a message, or takes the label out of the layout when there is none. */
+    private static void showStatus(Label status, String message) {
+        boolean present = message != null && !message.isBlank();
+        status.setText(present ? message : "");
+        status.setVisible(present);
+        status.setManaged(present);
     }
 
     /**
@@ -169,6 +207,7 @@ public final class SettingsView implements View {
         HBox.setHgrow(value, Priority.ALWAYS);
         value.setMaxWidth(Double.MAX_VALUE);
 
+        List<Node> toggles = new ArrayList<>();
         HBox choices = new HBox(12);
         choices.setAlignment(Pos.CENTER_RIGHT);
         for (Theme theme : Theme.values()) {
@@ -183,12 +222,16 @@ public final class SettingsView implements View {
                 update(settings().withTheme(theme));
             });
             choices.getChildren().add(button);
+            toggles.add(button);
         }
+        navigationRows.add(List.copyOf(toggles));
 
-        HBox row = new HBox(16, name, value, choices);
-        row.getStyleClass().add("setting-row");
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
+        HBox line = new HBox(16, name, value, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
     }
 
     private Node mediaRootsSection() {
@@ -209,6 +252,7 @@ public final class SettingsView implements View {
             }
         });
         VBox.setVgrow(rootsList, Priority.ALWAYS);
+        navigationRows.add(List.of(rootsList));
 
         Button add = new Button("Add");
         add.setOnAction(event -> addRoot());
@@ -219,20 +263,140 @@ public final class SettingsView implements View {
         Button test = new Button("Test");
         test.setOnAction(event -> testSelectedRoot());
 
-        ButtonBar buttons = new ButtonBar();
-        buttons.setButtonMinWidth(160);
-        buttons.getButtons().addAll(add, edit, remove, test);
-        ButtonBar.setButtonData(add, ButtonBar.ButtonData.LEFT);
-        ButtonBar.setButtonData(edit, ButtonBar.ButtonData.LEFT);
-        ButtonBar.setButtonData(remove, ButtonBar.ButtonData.LEFT);
-        ButtonBar.setButtonData(test, ButtonBar.ButtonData.LEFT);
+        // A plain row, not a ButtonBar: the arrow keys walk these like every other
+        // row on the screen, and no platform gets to reorder them behind our back.
+        HBox buttons = new HBox(12);
+        for (Button button : List.of(add, edit, remove, test)) {
+            button.setMinWidth(BUTTON_MIN_WIDTH);
+            buttons.getChildren().add(button);
+        }
+        navigationRows.add(List.copyOf(buttons.getChildren()));
 
-        rootStatus.getStyleClass().add("setting-status");
-        rootStatus.setWrapText(true);
+        prepareStatus(rootStatus);
 
         VBox section = new VBox(12, heading, rootsList, buttons, rootStatus);
         VBox.setVgrow(section, Priority.ALWAYS);
         return section;
+    }
+
+    // -- keyboard navigation -------------------------------------------------
+
+    /**
+     * Up and down step between rows, left and right between the controls in a row.
+     *
+     * <p>An event filter, not a handler: the folder list would otherwise swallow
+     * the arrow keys for its own selection and the buttons underneath it could
+     * only be reached with Tab — which is exactly what a remote control does not
+     * have.
+     */
+    private void installArrowNavigation() {
+        root.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            switch (event.getCode()) {
+                case UP -> {
+                    moveVertically(-1);
+                    event.consume();
+                }
+                case DOWN -> {
+                    moveVertically(1);
+                    event.consume();
+                }
+                case LEFT -> {
+                    moveHorizontally(-1);
+                    event.consume();
+                }
+                case RIGHT -> {
+                    moveHorizontally(1);
+                    event.consume();
+                }
+                default -> { }
+            }
+        });
+    }
+
+    /** Which control the keyboard is on, as a row and a column. */
+    private record Position(int row, int column) { }
+
+    private void moveVertically(int delta) {
+        Optional<Position> position = focusedPosition();
+        if (position.isEmpty()) {
+            focus(0, 0);
+            return;
+        }
+        Position current = position.get();
+        // The folder list is walked through before it is left, so a remote can
+        // still pick a folder with the same two keys.
+        if (navigationRows.get(current.row()).get(current.column()) == rootsList
+                && moveWithinRootsList(delta)) {
+            return;
+        }
+        int targetRow = current.row() + delta;
+        if (targetRow >= 0 && targetRow < navigationRows.size()) {
+            focus(targetRow, current.column());
+        }
+    }
+
+    private void moveHorizontally(int delta) {
+        Optional<Position> position = focusedPosition();
+        if (position.isEmpty()) {
+            focus(0, 0);
+            return;
+        }
+        Position current = position.get();
+        int targetColumn = current.column() + delta;
+        if (targetColumn >= 0 && targetColumn < navigationRows.get(current.row()).size()) {
+            focus(current.row(), targetColumn);
+        }
+    }
+
+    private boolean moveWithinRootsList(int delta) {
+        int size = rootsList.getItems().size();
+        if (size == 0) {
+            return false;
+        }
+        int target = rootsList.getSelectionModel().getSelectedIndex() + delta;
+        if (target < 0 || target >= size) {
+            return false;
+        }
+        rootsList.getSelectionModel().select(target);
+        rootsList.scrollTo(target);
+        return true;
+    }
+
+    private Optional<Position> focusedPosition() {
+        Node focused = root.getScene() == null ? null : root.getScene().getFocusOwner();
+        for (int row = 0; row < navigationRows.size(); row++) {
+            List<Node> controls = navigationRows.get(row);
+            for (int column = 0; column < controls.size(); column++) {
+                if (isSelfOrAncestor(controls.get(column), focused)) {
+                    return Optional.of(new Position(row, column));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Focuses a control, clamping the column to what the target row actually has. */
+    private void focus(int row, int column) {
+        if (navigationRows.isEmpty()) {
+            return;
+        }
+        List<Node> controls = navigationRows.get(row);
+        Node target = controls.get(Math.clamp(column, 0, controls.size() - 1));
+        target.requestFocus();
+        if (target == rootsList
+                && rootsList.getSelectionModel().isEmpty()
+                && !rootsList.getItems().isEmpty()) {
+            rootsList.getSelectionModel().selectFirst();
+        }
+    }
+
+    private static boolean isSelfOrAncestor(Node candidate, Node focused) {
+        for (Node node = focused; node != null; node = node.getParent()) {
+            if (node == candidate) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // -- state --------------------------------------------------------------
@@ -268,41 +432,54 @@ public final class SettingsView implements View {
     // -- actions ------------------------------------------------------------
 
     private void chooseVlcExecutable() {
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle("Select the VLC program");
-        startingDirectory(settings().vlcPath().orElse(null)).ifPresent(chooser::setInitialDirectory);
-        File chosen = chooser.showOpenDialog(window());
-        if (chosen != null) {
-            remember(chosen.getParentFile());
-            update(settings().withVlcPath(Optional.of(chosen.toPath())));
-        }
+        chooseProgram("Select the VLC " + platform.executableNoun(), settings().vlcPath())
+                .ifPresent(program -> {
+                    update(settings().withVlcPath(Optional.of(program)));
+                    showStatus(vlcStatus, "Using " + program);
+                });
     }
 
     private void detectVlc() {
-        rootStatus.setText("Looking for VLC…");
+        showStatus(vlcStatus, "Looking for VLC…");
         FxTasks.run(
                 context.backgroundExecutor(),
                 platform::findVlc,
                 found -> {
                     if (found.isPresent()) {
                         update(settings().withVlcPath(found));
-                        rootStatus.setText("Found VLC at " + found.get());
+                        showStatus(vlcStatus, "Found VLC at " + found.get());
                     } else {
-                        rootStatus.setText("VLC was not found automatically. Choose the program manually.");
+                        showStatus(vlcStatus, "VLC was not found automatically. Choose it manually.");
                     }
                 },
-                failure -> rootStatus.setText("VLC could not be detected."));
+                failure -> showStatus(vlcStatus, "VLC could not be detected."));
     }
 
     private void chooseBrowser() {
+        chooseProgram("Select a browser " + platform.executableNoun(), settings().browserPath())
+                .ifPresent(program -> {
+                    update(settings().withBrowserPath(Optional.of(program)));
+                    showStatus(browserStatus, "Using " + program);
+                });
+    }
+
+    /**
+     * Picks a program and hands back something that can actually be started.
+     *
+     * <p>On macOS the picker returns an application bundle, which is a directory,
+     * so the choice is resolved to the runnable file inside it before it is stored
+     * — everything downstream expects to be able to run what it is given.
+     */
+    private Optional<Path> chooseProgram(String title, Optional<Path> configured) {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Select a browser program");
-        startingDirectory(settings().browserPath().orElse(null)).ifPresent(chooser::setInitialDirectory);
+        chooser.setTitle(title);
+        programStartingDirectory(configured.orElse(null)).ifPresent(chooser::setInitialDirectory);
         File chosen = chooser.showOpenDialog(window());
-        if (chosen != null) {
-            remember(chosen.getParentFile());
-            update(settings().withBrowserPath(Optional.of(chosen.toPath())));
+        if (chosen == null) {
+            return Optional.empty();
         }
+        remember(chosen.getParentFile());
+        return Optional.of(platform.resolveProgram(chosen.toPath()));
     }
 
     /**
@@ -311,17 +488,26 @@ public final class SettingsView implements View {
      * offline share, for example — must not stop the dialog from opening.
      */
     private Optional<File> startingDirectory(Path configured) {
-        if (configured != null) {
-            File candidate = configured.toFile();
-            if (candidate.isDirectory()) {
-                return Optional.of(candidate);
-            }
-            File parent = candidate.getParentFile();
-            if (parent != null && parent.isDirectory()) {
-                return Optional.of(parent);
-            }
+        return configuredDirectory(configured)
+                .or(() -> Optional.ofNullable(lastBrowsedDirectory).filter(File::isDirectory));
+    }
+
+    /** Same, for programs: where they live on this platform beats the last folder browsed. */
+    private Optional<File> programStartingDirectory(Path configured) {
+        return configuredDirectory(configured)
+                .or(() -> platform.programsDirectory().map(Path::toFile).filter(File::isDirectory));
+    }
+
+    private static Optional<File> configuredDirectory(Path configured) {
+        if (configured == null) {
+            return Optional.empty();
         }
-        return Optional.ofNullable(lastBrowsedDirectory).filter(File::isDirectory);
+        File candidate = configured.toFile();
+        if (candidate.isDirectory()) {
+            return Optional.of(candidate);
+        }
+        File parent = candidate.getParentFile();
+        return parent != null && parent.isDirectory() ? Optional.of(parent) : Optional.empty();
     }
 
     private void remember(File directory) {
@@ -337,7 +523,7 @@ public final class SettingsView implements View {
     private void editSelectedRoot() {
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            rootStatus.setText("Select a folder first.");
+            showStatus(rootStatus, "Select a folder first.");
             return;
         }
         editRoot(selected).ifPresent(root -> update(settings().withRoot(root)));
@@ -346,28 +532,29 @@ public final class SettingsView implements View {
     private void removeSelectedRoot() {
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            rootStatus.setText("Select a folder first.");
+            showStatus(rootStatus, "Select a folder first.");
             return;
         }
         update(settings().withoutRoot(selected.id()));
-        rootStatus.setText("Removed " + selected.displayName() + ".");
+        showStatus(rootStatus, "Removed " + selected.displayName() + ".");
     }
 
     private void testSelectedRoot() {
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();
         if (selected == null) {
-            rootStatus.setText("Select a folder first.");
+            showStatus(rootStatus, "Select a folder first.");
             return;
         }
-        rootStatus.setText("Checking " + selected.displayPath() + "…");
+        showStatus(rootStatus, "Checking " + selected.displayPath() + "…");
         FxTasks.run(
                 context.backgroundExecutor(),
                 () -> {
                     context.scanner().verifyAccessible(selected.path());
                     return context.scanner().scan(selected.path()).size();
                 },
-                count -> rootStatus.setText(selected.displayName() + " is reachable — " + count + " items."),
-                failure -> rootStatus.setText(friendlyMessage(failure)));
+                count -> showStatus(rootStatus,
+                        selected.displayName() + " is reachable — " + count + " items."),
+                failure -> showStatus(rootStatus, friendlyMessage(failure)));
     }
 
     private static String friendlyMessage(Exception failure) {

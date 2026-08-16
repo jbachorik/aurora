@@ -82,6 +82,60 @@ class PlatformServicesTest {
     }
 
     @Test
+    @DisplayName("a macOS application bundle resolves to the runnable file inside it")
+    void resolvesAnApplicationBundleNamedAfterTheBundle(@TempDir Path temp) throws IOException {
+        Path bundle = bundleWithExecutables(temp, "VLC.app", "VLC");
+
+        assertEquals(bundle.resolve("Contents/MacOS/VLC"),
+                new MacPlatformServices().resolveProgram(bundle));
+    }
+
+    @Test
+    @DisplayName("a bundle whose executable is named differently still resolves when it is the only one")
+    void resolvesTheOnlyExecutableInABundle(@TempDir Path temp) throws IOException {
+        Path bundle = bundleWithExecutables(temp, "Firefox.app", "firefox-bin");
+
+        assertEquals(bundle.resolve("Contents/MacOS/firefox-bin"),
+                new MacPlatformServices().resolveProgram(bundle));
+    }
+
+    @Test
+    @DisplayName("an ambiguous bundle is left alone, for macOS itself to open")
+    void leavesAmbiguousBundlesUnresolved(@TempDir Path temp) throws IOException {
+        Path bundle = bundleWithExecutables(temp, "Odd.app", "one", "two");
+
+        assertEquals(bundle, new MacPlatformServices().resolveProgram(bundle));
+    }
+
+    @Test
+    @DisplayName("a plain executable is passed through untouched")
+    void leavesPlainExecutablesAlone(@TempDir Path temp) throws IOException {
+        Path executable = Files.createFile(temp.resolve("vlc"));
+
+        assertEquals(executable, new MacPlatformServices().resolveProgram(executable));
+    }
+
+    @Test
+    @DisplayName("macOS words its buttons for applications, not for vlc.exe")
+    void macTalksAboutApplications() {
+        assertEquals("application", new MacPlatformServices().executableNoun());
+        assertEquals("program", new WindowsPlatformServices().executableNoun());
+        assertEquals("program", new LinuxPlatformServices().executableNoun());
+    }
+
+    private static Path bundleWithExecutables(Path parent, String bundleName, String... executables)
+            throws IOException {
+
+        Path bundle = parent.resolve(bundleName);
+        Path macOsDirectory = Files.createDirectories(bundle.resolve("Contents").resolve("MacOS"));
+        for (String executable : executables) {
+            Path file = Files.createFile(macOsDirectory.resolve(executable));
+            file.toFile().setExecutable(true);
+        }
+        return bundle;
+    }
+
+    @Test
     @DisplayName("without a configured browser the tile just exposes the desktop")
     void openBrowserWithoutAnExecutableDoesNotThrow() {
         PlatformServices services = new LinuxPlatformServices();

@@ -33,6 +33,30 @@ public interface PlatformServices {
     void launchExternal(Path executable) throws IOException;
 
     /**
+     * What a runnable program is called to the viewer here — "program" on Windows
+     * and Linux, "application" on macOS. Used to word the Settings buttons and the
+     * file-picker titles, so no screen has to name {@code vlc.exe} on a Mac.
+     */
+    default String executableNoun() {
+        return "program";
+    }
+
+    /** Where a program picker should open when nothing is configured yet. */
+    default Optional<Path> programsDirectory() {
+        return Optional.empty();
+    }
+
+    /**
+     * Turns whatever the file picker returned into something that can actually be
+     * started. Everything downstream — the VLC launcher, {@link #launchExternal} —
+     * expects a runnable file, and on macOS the picker hands back an application
+     * bundle, which is a directory.
+     */
+    default Path resolveProgram(Path chosen) {
+        return chosen;
+    }
+
+    /**
      * Exposes the desktop, launching the configured browser when one is set.
      *
      * @param browserExecutable optional browser chosen in Settings

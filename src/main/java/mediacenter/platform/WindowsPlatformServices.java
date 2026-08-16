@@ -41,6 +41,11 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
         return findVlcInRegistry();
     }
 
+    @Override
+    public Optional<Path> programsDirectory() {
+        return environmentPath("ProgramFiles").filter(java.nio.file.Files::isDirectory);
+    }
+
     private static List<Path> wellKnownVlcLocations() {
         List<Path> candidates = new ArrayList<>();
         environmentPath("ProgramFiles")
