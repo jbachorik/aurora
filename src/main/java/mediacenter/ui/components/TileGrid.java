@@ -22,6 +22,13 @@ import javafx.scene.layout.TilePane;
  * <p>Selection is simply which tile has the focus, and movement is computed from
  * the tiles' actual laid-out positions rather than from an assumed column count,
  * so a ragged last row behaves the way a viewer expects.
+ *
+ * <p>The grid also owns that focus: {@link #wire} refuses any focus a tile
+ * receives that the grid did not itself request through {@link #select}, so
+ * keyboard (Tab) traversal into or within the grid never sticks. Nothing in this
+ * codebase currently relies on Tab reaching a tile, so this is a documented trade
+ * rather than a regression — but a future page mixing a {@code TileGrid} with
+ * another focusable control would need to revisit it.
  */
 public final class TileGrid extends ScrollPane {
 
@@ -147,12 +154,23 @@ public final class TileGrid extends ScrollPane {
      * Adds a single tile at a position, leaving the others exactly as they are.
      *
      * <p>Deliberately not {@link #setTiles} with a rebuilt list. Replacing the
-     * children takes the focused tile out of the scene, and JavaFX applies a focus
-     * request on the next pulse rather than when it is made — so a request issued a
-     * moment earlier lands on a tile that has gone, and the focus goes with it.
-     * What is left is a grid with no highlight whose next Enter activates whatever
-     * the fallback happened to be, which is the first tile and not the one the
-     * viewer was looking at. Inserting leaves the focused tile where it is.
+     * children takes the focused tile out of the scene. {@code Node.focusSetDirty}
+     * marks the scene focus-dirty whenever a focus-traversable node enters or
+     * leaves it, and {@code Tile}'s constructor calls {@code setFocusTraversable
+     * (true)}, so the next pulse runs {@code focusCleanup()} — before layout — and
+     * then {@code focusInitial()} hands the focus to the first traversable node,
+     * i.e. tile 0, whether or not that is the tile the viewer was looking at.
+     *
+     * <p>Inserting does not, by itself, avoid that pulse: a newly inserted tile is
+     * also focus-traversable, so it sets the same {@code focusDirty} flag and
+     * {@code focusCleanup()} still runs. This method is a no-op for focus only
+     * when the selected tile happens to already be a live focus owner at the
+     * moment of insertion — which is why {@code insertTile} alone was not a
+     * complete fix (see the fix table in the task-11 report). The actual
+     * guarantee comes from {@link #wire}'s refusal of focus it did not request,
+     * which fires inside {@code FocusOwnerProperty.invalidated()} — synchronously,
+     * strictly before any key event can be delivered. The race between rebuild
+     * and pulse still exists; the recovery from it is what is deterministic.
      */
     public void insertTile(int index, Tile tile) {
         int at = Math.min(Math.max(index, 0), tiles.size());
