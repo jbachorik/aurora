@@ -136,14 +136,50 @@ public final class TileGrid extends ScrollPane {
             wire(tile);
         }
         tilePane.getChildren().setAll(tiles);
-        if (!tiles.isEmpty()) {
-            tilePane.setPrefTileWidth(tiles.getFirst().getPrefWidth());
-            tilePane.setPrefTileHeight(tiles.getFirst().getPrefHeight());
-        }
+        sizeCells();
         fitTiles();
 
         selectedIndex = tiles.isEmpty() ? -1 : Math.min(Math.max(previousIndex, 0), tiles.size() - 1);
         showMessage(null);
+    }
+
+    /**
+     * Adds a single tile at a position, leaving the others exactly as they are.
+     *
+     * <p>Deliberately not {@link #setTiles} with a rebuilt list. Replacing the
+     * children takes the focused tile out of the scene, and JavaFX applies a focus
+     * request on the next pulse rather than when it is made — so a request issued a
+     * moment earlier lands on a tile that has gone, and the focus goes with it.
+     * What is left is a grid with no highlight whose next Enter activates whatever
+     * the fallback happened to be, which is the first tile and not the one the
+     * viewer was looking at. Inserting leaves the focused tile where it is.
+     */
+    public void insertTile(int index, Tile tile) {
+        int at = Math.min(Math.max(index, 0), tiles.size());
+        wire(tile);
+        tiles.add(at, tile);
+        tilePane.getChildren().add(at, tile);
+        sizeCells();
+        fitTiles();
+        if (selectedIndex >= at) {
+            // Everything from here on has moved one place along, and the selection
+            // has to move with it or the highlight lands on a different tile.
+            selectedIndex++;
+        }
+        showMessage(null);
+    }
+
+    /**
+     * Sizes every cell from the largest tile, not the first: a grid may hold an
+     * action tile beside media tiles, and a cell sized for the smaller clips the
+     * larger.
+     */
+    private void sizeCells() {
+        if (tiles.isEmpty()) {
+            return;
+        }
+        tilePane.setPrefTileWidth(tiles.stream().mapToDouble(Tile::getPrefWidth).max().orElse(0));
+        tilePane.setPrefTileHeight(tiles.stream().mapToDouble(Tile::getPrefHeight).max().orElse(0));
     }
 
     /** Shows a centred message instead of tiles (loading, empty folder, error). */
@@ -219,14 +255,33 @@ public final class TileGrid extends ScrollPane {
 
     private void wire(Tile tile) {
         tile.focusedProperty().addListener((observable, wasFocused, isFocused) -> {
-            if (isFocused) {
-                int index = tiles.indexOf(tile);
-                if (index >= 0 && index != selectedIndex) {
-                    selectedIndex = index;
-                    onSelectionChanged.accept(tile);
-                }
-                ensureVisible(tile);
+            if (!isFocused) {
+                return;
             }
+            int index = tiles.indexOf(tile);
+            if (index < 0) {
+                return;
+            }
+            if (selectedIndex >= 0 && index != selectedIndex) {
+                // Nobody here asked for this. Every move the viewer makes — an
+                // arrow, a click — goes through select(), which moves the selection
+                // before the focus, so the two only disagree when JavaFX has moved
+                // the focus on its own: it empties the focus owner during the pulse
+                // whenever the node holding it has left the scene, which is every
+                // change of page, and then hands the focus to the first tile it can
+                // find. Following that would move the highlight — and what Enter
+                // opens — without the viewer touching anything, so the selection
+                // takes the focus back instead. Keyboard traversal is given up
+                // with it, which this grid has never used.
+                select(selectedIndex);
+                return;
+            }
+            if (selectedIndex < 0) {
+                // Nothing was selected yet, so whatever has taken the focus is it.
+                selectedIndex = index;
+                onSelectionChanged.accept(tile);
+            }
+            ensureVisible(tile);
         });
         tile.setOnMousePressed(event -> {
             if (event.getButton() != MouseButton.PRIMARY) {

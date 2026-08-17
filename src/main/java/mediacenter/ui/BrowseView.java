@@ -10,6 +10,8 @@ import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaAccessException;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
+import mediacenter.media.PhotoWalker;
+import mediacenter.ui.components.ActionTile;
 import mediacenter.ui.components.MediaTile;
 import mediacenter.ui.components.Tile;
 import mediacenter.ui.components.TileGrid;
@@ -96,9 +98,15 @@ public final class BrowseView implements View {
 
     private void showItems(List<MediaItem> scanned) {
         items = scanned;
+        // The load's own generation is a local of load(); the field is what is in
+        // scope here, and it is the same number until the next load begins.
+        int generation = loadGeneration;
         if (items.isEmpty()) {
             grid.clear();
             grid.showMessage("This folder has nothing to show.");
+            // Still worth asking: a folder whose own entries are all hidden may
+            // have photographs several levels below it.
+            offerSlideshow(generation);
             return;
         }
         List<Tile> tiles = new ArrayList<>(items.size());
@@ -107,6 +115,37 @@ public final class BrowseView implements View {
         }
         grid.setTiles(tiles);
         grid.focusSelection();
+        offerSlideshow(generation);
+    }
+
+    /**
+     * The Slideshow tile only makes sense where there are photographs, and finding
+     * that out means walking the tree — so the grid is filled first and the tile
+     * appears a moment later, rather than the folder waiting on the answer.
+     */
+    private void offerSlideshow(int generation) {
+        FxTasks.run(
+                context.backgroundExecutor(),
+                () -> PhotoWalker.hasPhotos(folder),
+                hasPhotos -> {
+                    // Guarded like every other late result: an F5, or a theme
+                    // change — which refreshes every stacked page — would
+                    // otherwise let a stale answer repopulate the grid.
+                    if (!hasPhotos || generation != loadGeneration) {
+                        return;
+                    }
+                    // Inserted rather than set: the grid is already on screen with
+                    // the focus on one of its tiles, and rebuilding it would take
+                    // that tile out of the scene and the highlight with it. The
+                    // grid shifts the selection along by one for us.
+                    grid.insertTile(0,
+                            new ActionTile("▣", "Slideshow", "Every photograph, including subfolders"));
+                    // For the empty folder, whose only tile this now is; where the
+                    // grid already had tiles the insertion keeps the highlight
+                    // where it was, focus and all.
+                    grid.focusSelection();
+                },
+                failure -> { });
     }
 
     private void showFailure(Exception failure) {
@@ -120,14 +159,25 @@ public final class BrowseView implements View {
     }
 
     private void activate(Tile tile) {
+        if (tile instanceof ActionTile) {
+            // The only action this grid ever holds.
+            context.navigation().openSlideshow(folder);
+            return;
+        }
         if (!(tile instanceof MediaTile mediaTile)) {
             return;
         }
         MediaItem item = mediaTile.item();
         if (item.isDirectory()) {
             context.navigation().browse(root, item.path());
-        } else {
-            context.navigation().play(item);
+            return;
         }
+        if (item.isImage()) {
+            // The path, not a position: this grid and the walk that fills the
+            // viewer are ordered by different code, and an index would drift.
+            context.navigation().openPhoto(folder, item.path());
+            return;
+        }
+        context.navigation().play(item);
     }
 }

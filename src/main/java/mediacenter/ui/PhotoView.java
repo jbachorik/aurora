@@ -136,6 +136,14 @@ final class PhotoView implements View {
 
         root.getStyleClass().add("photo-view");
         root.setAlignment(Pos.CENTER);
+        // The photograph is fitted to the page, so the page must never be sized by
+        // the photograph. Without this a first painting that lands before the page
+        // has been laid out — which is what happens whenever the walk finds
+        // something before the first pulse — makes the pane grow to the size that
+        // painting guessed, and it then stays larger than the window: the
+        // photograph hangs off every edge and the caption sits below the bottom of
+        // the screen, with nothing that ever brings either back.
+        root.setMinSize(0, 0);
         // Without this the arrow keys never arrive: an event filter only sees
         // events aimed at this node or below it.
         root.setFocusTraversable(true);
@@ -360,6 +368,19 @@ final class PhotoView implements View {
                 });
     }
 
+    /**
+     * How much room there is in one direction: the page's own measurement, the
+     * window's while the page has yet to be laid out, and only failing both the
+     * fixed guess. The window is the better answer of the two available before a
+     * layout, because it is the size the page is about to be given.
+     */
+    private static double fitInto(double pageSize, double windowSize) {
+        if (pageSize > 0) {
+            return pageSize;
+        }
+        return windowSize > 0 ? windowSize : FALLBACK_SIZE;
+    }
+
     /** Whether the page has been given a different size since the last painting. */
     private boolean sizeChanged() {
         return Math.abs(root.getWidth() - lastPaintedWidth) >= 1
@@ -367,8 +388,8 @@ final class PhotoView implements View {
     }
 
     private void paint(Path photo, int degrees) {
-        double width = root.getWidth() > 0 ? root.getWidth() : FALLBACK_SIZE;
-        double height = root.getHeight() > 0 ? root.getHeight() : FALLBACK_SIZE;
+        double width = fitInto(root.getWidth(), root.getScene() == null ? 0 : root.getScene().getWidth());
+        double height = fitInto(root.getHeight(), root.getScene() == null ? 0 : root.getScene().getHeight());
         boolean quarterTurn = degrees == 90 || degrees == 270;
 
         // A rotation is applied after layout and does not re-lay-out, so a portrait
