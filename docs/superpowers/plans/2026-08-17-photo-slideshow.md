@@ -686,7 +686,7 @@ public final class PhotoWalker {
             throw new MediaAccessException(root, MediaScanner.cannotAccessMessage(root), null);
         }
         List<Path> collected = new ArrayList<>();
-        boolean truncated = walk(root, rootListing, recursive, limit, 0, cancelled, onBatch, collected);
+        boolean truncated = walk(rootListing, recursive, limit, 0, cancelled, onBatch, collected);
         return new Walk(collected.size(), truncated);
     }
 
@@ -710,7 +710,11 @@ public final class PhotoWalker {
         List<String> names = new ArrayList<>();
         try (DirectoryStream<Path> entries = Files.newDirectoryStream(directory)) {
             for (Path entry : entries) {
-                if (FileVisibility.isHiddenOrSystem(entry)) {
+                // Junk first, and for directories as well as files: a Synology
+                // share keeps generated thumbnails in "@eaDir" folders, and a
+                // slideshow full of those is worse than no slideshow at all.
+                if (VideoFiles.isJunk(entry.getFileName().toString())
+                        || FileVisibility.isHiddenOrSystem(entry)) {
                     continue;
                 }
                 // Links are not followed: one pointing back up the tree would walk
@@ -756,7 +760,7 @@ public final class PhotoWalker {
     }
 
     /** @return whether the walk stopped at the limit */
-    private static boolean walk(Path directory, Listing listing, boolean recursive, int limit,
+    private static boolean walk(Listing listing, boolean recursive, int limit,
             int depth, BooleanSupplier cancelled, Consumer<List<Path>> onBatch, List<Path> collected) {
         if (cancelled.getAsBoolean() || collected.size() >= limit) {
             return collected.size() >= limit;
@@ -774,16 +778,21 @@ public final class PhotoWalker {
             onBatch.accept(List.copyOf(batch));
         }
         boolean truncated = collected.size() >= limit;
+        if (truncated) {
+            // Nothing below can be wanted, and listing it costs a round trip per
+            // directory. This is what makes hasPhotos cheap: it asks for one.
+            return true;
+        }
         if (recursive && depth < MAX_DEPTH) {
             for (Path subdirectory : listing.subdirectories()) {
-                if (cancelled.getAsBoolean()) {
-                    return truncated;
+                if (cancelled.getAsBoolean() || collected.size() >= limit) {
+                    return truncated || collected.size() >= limit;
                 }
                 // A share that goes away mid-walk ends that branch and no more:
                 // what has already been collected is still worth showing.
                 Listing below = list(subdirectory);
                 if (below != null) {
-                    truncated |= walk(subdirectory, below, true, limit, depth + 1, cancelled, onBatch, collected);
+                    truncated |= walk(below, true, limit, depth + 1, cancelled, onBatch, collected);
                 }
             }
         }
@@ -1151,7 +1160,8 @@ class PhotoCacheTest {
         cache.show(photos, 8, List.of(7, 9), 1920, 1080);
 
         assertEquals(3, cache.size());
-        assertTrue(evicted.contains("/photos/5.jpg"), "expected the old middle to be disposed: " + evicted);
+        assertTrue(evicted.contains(photos.get(5).toString()),
+                "expected the old middle to be disposed: " + evicted);
     }
 
     @Test
@@ -1188,7 +1198,9 @@ class PhotoCacheTest {
         PhotoCache<String> cache = cacheOf(new ArrayList<>());
         List<Path> photos = photos(3);
 
-        assertEquals("/photos/0.jpg", cache.show(photos, 0, List.of(1), 1920, 1080));
+        // Compared against the path's own toString: a separator is not the same
+        // character on the machine this suite also runs on.
+        assertEquals(photos.get(0).toString(), cache.show(photos, 0, List.of(1), 1920, 1080));
         assertEquals(2, cache.size());
     }
 
@@ -1936,6 +1948,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import javafx.animation.FadeTransition;
+import javafx.animation.PauseTransition;
+import javafx.util.Duration;
 
 import mediacenter.media.ExifOrientation;
 import mediacenter.media.MediaAccessException;
@@ -1982,6 +1996,8 @@ final class PhotoView implements View {
     /** Orientation is read from disk, so it is remembered rather than re-read on every repaint. */
     private final Map<Path, Integer> orientations = new HashMap<>();
     private FadeTransition captionFade;
+    /** A resize is acted on once it has stopped, not while it is happening. */
+    private final PauseTransition resizeSettled = new PauseTransition(Duration.millis(250));
 
     private int index;
     private boolean showingSomething;
@@ -2026,15 +2042,16 @@ final class PhotoView implements View {
 
         // The scene does not exist yet — this view is constructed before it is put
         // into the frame — so the first sizing waits for the pane to be laid out.
-        // Only a real change in size is worth acting on. A drag or a full-screen
-        // transition fires these listeners on every pulse, and each repaint would
-        // otherwise re-open the file and re-decode at the new size.
-        InvalidationListener resize = observable -> {
+        // Debounced, not merely de-duplicated: width and height fire separately
+        // and a drag changes the size on every pulse, so reacting to each one
+        // would clear the cache and start three fresh decodes many times a second.
+        resizeSettled.setOnFinished(event -> {
             if (showingSomething && sizeChanged()) {
                 cache.clear();
                 display();
             }
-        };
+        });
+        InvalidationListener resize = observable -> resizeSettled.playFromStart();
         root.widthProperty().addListener(resize);
         root.heightProperty().addListener(resize);
 
@@ -2226,7 +2243,11 @@ final class PhotoView implements View {
         listener[0] = observable -> {
             if (image.isError()) {
                 stopListening(image, listener[0]);
-                if (!cancelled && run.get(index).equals(photo)) {
+                // Compared by identity against what is actually on screen, not by
+                // path. Image.cancel() reports itself as an error one pulse later,
+                // so an image discarded by a resize would otherwise be taken for a
+                // photograph that failed to decode — and skipped.
+                if (!cancelled && imageView.getImage() == image) {
                     onDecodeFailed(photo);
                 }
             } else if (image.getProgress() >= 1.0) {
@@ -2494,6 +2515,10 @@ and add:
                     // Everything shifted by one; the selection must shift with it,
                     // or the highlight silently lands on a different picture.
                     grid.setSelectedIndex(selected < 0 ? 0 : selected + 1);
+                    // setTiles takes the focus owner out of the scene, and
+                    // setSelectedIndex deliberately does not put it back. Without
+                    // this the highlight vanishes and the arrows go dead.
+                    grid.focusSelection();
                 },
                 failure -> { });
     }
