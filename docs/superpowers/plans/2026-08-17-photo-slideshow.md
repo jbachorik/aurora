@@ -325,6 +325,17 @@ has no `import java.util.Optional`, matching its existing style):
     }
 
     @Test
+    @DisplayName("a folder image is the folder's artwork even where there is no film")
+    void treatsAFolderImageAsArtworkEvenWithoutVideos(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("folder.jpg"));
+        Files.createFile(temp.resolve("holiday.jpg"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(List.of("holiday"), items.stream().map(MediaItem::displayName).toList());
+    }
+
+    @Test
     @DisplayName("a photograph does not stop a lone film borrowing its folder's name")
     void photographsDoNotCountTowardTheSingleVideoRule(@TempDir Path temp) throws Exception {
         Path folder = Files.createDirectory(temp.resolve("Blade Runner 2049 (2017)"));
@@ -367,9 +378,17 @@ In `MediaItem.java`, beside the existing factories:
 
 In `MediaScanner`, in the listing loop that currently tests
 `VideoFiles.isVideoFileName(fileName)`, collect photographs into a **separate**
-`List<Path> photos`, skipping any name that `ArtworkResolver.selectCover(names)`
-or `ArtworkResolver.selectSidecar(baseName, names)` already claims for a video in
-this folder. Build them with `MediaItem.image(photo, DisplayNames.forFile(photo),
+`List<Path> photos` with a parallel `List<Long> photoTimestamps` filled from the
+same attributes the loop already reads for videos.
+
+Exclude artwork with **exactly the rule `PhotoWalker.isArtworkFor` uses** — the
+grid and the walk must reach the same verdict, or the two disagree about what is
+in a folder and `openPhoto` cannot find the photograph that was activated. That
+rule is unconditional: `ArtworkResolver.selectCover(names)` claims
+`poster`/`folder`/`cover` whether or not a video is present, because
+`MediaScanner` already uses that name as the folder tile's own artwork. Extract
+it once, as `ArtworkResolver.isArtwork(String fileName, List<String> siblings)`,
+and call it from both places rather than writing it twice. Build them with `MediaItem.image(photo, DisplayNames.forFile(photo),
 Optional.of(photo), timestamp)`, sort them into the same list with the existing
 `BY_FILE_NAME` comparator, and **leave `videoItems`' `videos.size() == 1` rule
 reading the video list only** — photographs must not be added to `videos`.
@@ -606,7 +625,10 @@ class PhotoWalkerTest {
         List<Path> found = new ArrayList<>();
         PhotoWalker.collect(root, true, 1000, () -> !found.isEmpty(), found::addAll);
 
-        assertTrue(found.size() < 51, "the walk should have stopped early: " + found.size());
+        // Cancellation is consulted between directories, so the root's own batch
+        // still arrives; what must not happen is descending after that.
+        assertEquals(50, found.size());
+        assertTrue(found.stream().noneMatch(path -> path.endsWith("deep.jpg")), found.toString());
     }
 }
 ```
@@ -1409,15 +1431,15 @@ class PhotoRunTest {
     }
 
     @Test
-    @DisplayName("a truncated walk is never complete, so it neither loops nor claims a total")
-    void aTruncatedWalkIsNotComplete() {
+    @DisplayName("a truncated walk loops over what it has, without claiming that is all")
+    void aTruncatedWalkLoopsButDoesNotClaimATotal() {
         PhotoRun run = runOf(true, "a.jpg", "b.jpg");
         run.markTruncated();
         run.markComplete();
 
-        assertEquals(1, run.next(1));
+        // Freezing on the last of five thousand would be worse than looping them.
+        assertEquals(0, run.next(1));
         assertEquals("2 of 2+", run.counterText(1));
-        assertTrue(!run.complete());
     }
 
     @Test
@@ -1526,8 +1548,19 @@ final class PhotoRun {
         truncated = true;
     }
 
+    /** Whether the walk has ended, however it ended. */
     boolean complete() {
-        return complete && !truncated;
+        return complete;
+    }
+
+    /**
+     * Whether the arrows may wrap. A truncated run wraps over what it has: a
+     * library of six thousand photographs should loop over the five thousand
+     * collected, not freeze for ever on the last one. It still refuses to claim
+     * that is all of them — see {@link #counterText}.
+     */
+    private boolean wraps() {
+        return looping && complete;
     }
 
     boolean isEmpty() {
@@ -1566,7 +1599,7 @@ final class PhotoRun {
         if (from + 1 < photos.size()) {
             return from + 1;
         }
-        return looping && complete() ? 0 : from;
+        return wraps() ? 0 : from;
     }
 
     int previous(int from) {
@@ -1576,7 +1609,7 @@ final class PhotoRun {
         if (from > 0) {
             return from - 1;
         }
-        return looping && complete() ? photos.size() - 1 : from;
+        return wraps() ? photos.size() - 1 : from;
     }
 
     /** Which photographs to have ready, given where the arrows can go from here. */
@@ -1592,7 +1625,8 @@ final class PhotoRun {
         if (photos.isEmpty()) {
             return "";
         }
-        return (index + 1) + " of " + photos.size() + (complete() ? "" : "+");
+        // The "+" outlives the walk when it was cut short: there really are more.
+        return (index + 1) + " of " + photos.size() + (complete && !truncated ? "" : "+");
     }
 }
 ```
@@ -1793,7 +1827,7 @@ In `SettingsStore`: add `import mediacenter.json.JsonValue.JsonNumber;`, write t
 key as `new JsonNumber(settings.slideshowSeconds())`, and read it as
 
 ```java
-        int slideshowSeconds = object.longValue("slideshowSeconds").orElse(5L).intValue();
+        int slideshowSeconds = document.longValue("slideshowSeconds").orElse(5L).intValue();
 ```
 
 passing it as the sixth constructor argument. `JsonValue` has no `intValue`, hence
@@ -1885,6 +1919,7 @@ commit, which is the rule this plan works to.
 - Create: `src/main/java/mediacenter/ui/PhotoView.java`
 - Modify: `src/main/java/mediacenter/ui/Navigation.java`
 - Modify: `src/main/java/mediacenter/ui/MediaCenterShell.java`
+- Modify: `src/main/java/mediacenter/ui/components/Motion.java`
 - Modify: `src/main/resources/mediacenter/ui/mediacenter.css`
 
 **Interfaces:**
@@ -2282,7 +2317,14 @@ final class PhotoView implements View {
         }
         int onwards = run.next(index);
         if (onwards != index) {
-            show(onwards);
+            // Posted rather than called: a cached image that is already in error
+            // reports it from inside paint(), and advancing straight away would
+            // nest paint() inside paint() once per broken file.
+            Platform.runLater(() -> {
+                if (!cancelled && index != onwards) {
+                    show(onwards);
+                }
+            });
         } else {
             imageView.setImage(null);
             showCaption("This photograph could not be shown.");
@@ -2368,7 +2410,13 @@ final class PhotoView implements View {
     }
 
     private void advance() {
-        if (cancelled || run.isEmpty()) {
+        if (cancelled) {
+            return;
+        }
+        if (run.isEmpty()) {
+            // Nothing to advance to yet; wait out another interval rather than
+            // being asked again on the next tick.
+            resetTimer();
             return;
         }
         // Checked again here: an arrow pressed between the timer reading the
