@@ -203,7 +203,6 @@ package mediacenter.media;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.DosFileAttributes;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -226,8 +225,8 @@ public final class FileVisibility {
     public static boolean isHiddenOrSystem(Path entry) {
         try {
             // On Windows this single call also yields the hidden/system flags.
-            BasicFileAttributes attributes = Files.readAttributes(entry, DosFileAttributes.class);
-            return attributes instanceof DosFileAttributes dos && (dos.isHidden() || dos.isSystem());
+            DosFileAttributes attributes = Files.readAttributes(entry, DosFileAttributes.class);
+            return attributes.isHidden() || attributes.isSystem();
         } catch (IOException | RuntimeException e) {
             // UnsupportedOperationException lands here on filesystems without the
             // DOS view, where there is no hidden attribute to consult.
@@ -403,17 +402,17 @@ git commit -m "List photographs in the browse grid"
 
 ---
 
-### Task 4: Walking a tree for photographs
+### Task 4: Walking a folder for photographs
 
 **Files:**
 - Create: `src/main/java/mediacenter/media/PhotoWalker.java`
 - Test: `src/test/java/mediacenter/media/PhotoWalkerTest.java`
 
 **Interfaces:**
-- Consumes: `PhotoFiles.isPhoto(Path)`, `FileVisibility.isHiddenOrSystem(Path)`, `MediaAccessException`.
+- Consumes: `PhotoFiles.isPhoto(Path)`, `FileVisibility.isHiddenOrSystem(Path)`, `MediaAccessException`, `MediaScanner.cannotAccessMessage(Path)` (package-private static, same package), `ArtworkResolver.selectCover(Collection<String>)`, `ArtworkResolver.selectSidecar(String, Collection<String>)`.
 - Produces:
   - `record PhotoWalker.Walk(long count, boolean truncated)`
-  - `PhotoWalker.collect(Path root, boolean recursive, int limit, Consumer<List<Path>> onBatch)` → `Walk`. Throws `MediaAccessException` when the **root** cannot be listed. Called on a background thread; `onBatch` runs on that thread.
+  - `PhotoWalker.collect(Path root, boolean recursive, int limit, BooleanSupplier cancelled, Consumer<List<Path>> onBatch)` → `Walk`, **`throws MediaAccessException`** — it is a checked exception with a `(Path, String, Throwable)` constructor, so both the `throws` clause and the arguments matter. Called on a background thread; `onBatch` runs on that thread.
   - `PhotoWalker.hasPhotos(Path root)` → `boolean`, never throws.
 
 **Why the signature has `recursive`:** the spec gives the Slideshow tile the whole
@@ -423,6 +422,15 @@ parameter both would recurse.
 **Why `Walk` carries `truncated`:** reaching the limit must be distinguishable
 from finishing, or the counter drops its `+` and claims a truncated set is the
 whole library.
+
+**Why it takes a `cancelled` supplier:** leaving the viewer must stop the walk.
+Nothing else can — the shell only pops a stack, and a walk over a share would
+otherwise run on for thousands of entries against a page nobody is looking at.
+
+**Why it excludes artwork:** `poster.jpg`, `folder.jpg`, `cover.jpg` and a
+`<video>.jpg` sidecar are photographs by extension. Task 3 keeps them out of the
+grid; if the walk does not do the same, every film folder grows a Slideshow tile
+and arrowing through a mixed folder lands on the poster the grid hid.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -453,15 +461,15 @@ class PhotoWalkerTest {
                 .toList();
     }
 
-    private static List<Path> collectAll(Path root, boolean recursive) {
+    private static List<Path> collectAll(Path root, boolean recursive) throws MediaAccessException {
         List<Path> found = new ArrayList<>();
-        PhotoWalker.collect(root, recursive, 1000, found::addAll);
+        PhotoWalker.collect(root, recursive, 1000, () -> false, found::addAll);
         return found;
     }
 
     @Test
     @DisplayName("each folder's photographs come before its subfolders'")
-    void walksDepthFirstInFolderOrder(@TempDir Path root) throws IOException {
+    void walksDepthFirstInFolderOrder(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("02 - b.jpg"));
         Files.createFile(root.resolve("01 - a.jpg"));
         Path crete = Files.createDirectory(root.resolve("Crete"));
@@ -476,7 +484,7 @@ class PhotoWalkerTest {
 
     @Test
     @DisplayName("looking at one folder does not descend into its subfolders")
-    void doesNotRecurseWhenNotAskedTo(@TempDir Path root) throws IOException {
+    void doesNotRecurseWhenNotAskedTo(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("here.jpg"));
         Path below = Files.createDirectory(root.resolve("below"));
         Files.createFile(below.resolve("deeper.jpg"));
@@ -486,7 +494,7 @@ class PhotoWalkerTest {
 
     @Test
     @DisplayName("order matches the grid, which ignores case")
-    void ordersTheSameWayTheGridDoes(@TempDir Path root) throws IOException {
+    void ordersTheSameWayTheGridDoes(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("Zebra.jpg"));
         Files.createFile(root.resolve("apple.jpg"));
 
@@ -495,19 +503,19 @@ class PhotoWalkerTest {
 
     @Test
     @DisplayName("the first photograph is reported before the walk has finished")
-    void reportsInBatchesAsItGoes(@TempDir Path root) throws IOException {
+    void reportsInBatchesAsItGoes(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("first.jpg"));
         Path deep = Files.createDirectories(root.resolve("a/b/c"));
         Files.createFile(deep.resolve("last.jpg"));
 
         List<Integer> batchSizes = new ArrayList<>();
-        PhotoWalker.collect(root, true, 1000, batch -> batchSizes.add(batch.size()));
+        PhotoWalker.collect(root, true, 1000, () -> false, batch -> batchSizes.add(batch.size()));
 
         assertTrue(batchSizes.size() >= 2, "expected more than one batch, got " + batchSizes);
     }
 
     @Test
-    void ignoresEverythingThatIsNotAPhotograph(@TempDir Path root) throws IOException {
+    void ignoresEverythingThatIsNotAPhotograph(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("movie.mkv"));
         Files.createFile(root.resolve("notes.txt"));
         Files.createFile(root.resolve("IMG_1.heic"));
@@ -519,7 +527,7 @@ class PhotoWalkerTest {
 
     @Test
     @DisplayName("a link pointing back up the tree does not walk forever")
-    void doesNotFollowSymbolicLinks(@TempDir Path root) throws IOException {
+    void doesNotFollowSymbolicLinks(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("a.jpg"));
         Path child = Files.createDirectory(root.resolve("child"));
         try {
@@ -533,35 +541,35 @@ class PhotoWalkerTest {
 
     @Test
     @DisplayName("reaching the limit is reported, not passed off as a finished walk")
-    void reportsTruncation(@TempDir Path root) throws IOException {
+    void reportsTruncation(@TempDir Path root) throws Exception {
         for (int i = 0; i < 10; i++) {
             Files.createFile(root.resolve("photo-" + i + ".jpg"));
         }
 
-        PhotoWalker.Walk walk = PhotoWalker.collect(root, true, 4, batch -> { });
+        PhotoWalker.Walk walk = PhotoWalker.collect(root, true, 4, () -> false, batch -> { });
 
         assertEquals(4, walk.count());
         assertTrue(walk.truncated());
     }
 
     @Test
-    void aCompletedWalkIsNotTruncated(@TempDir Path root) throws IOException {
+    void aCompletedWalkIsNotTruncated(@TempDir Path root) throws Exception {
         Files.createFile(root.resolve("only.jpg"));
 
-        assertFalse(PhotoWalker.collect(root, true, 1000, batch -> { }).truncated());
+        assertFalse(PhotoWalker.collect(root, true, 1000, () -> false, batch -> { }).truncated());
     }
 
     @Test
     @DisplayName("a folder that cannot be listed at all is an error, not an empty slideshow")
-    void refusesAnUnreachableRoot(@TempDir Path temp) {
+    void refusesAnUnreachableRoot(@TempDir Path temp) throws Exception {
         Path missing = temp.resolve("offline-share");
 
         assertThrows(MediaAccessException.class,
-                () -> PhotoWalker.collect(missing, true, 1000, batch -> { }));
+                () -> PhotoWalker.collect(missing, true, 1000, () -> false, batch -> { }));
     }
 
     @Test
-    void answersWhetherAFolderHasAnyPhotographsBeneathIt(@TempDir Path root) throws IOException {
+    void answersWhetherAFolderHasAnyPhotographsBeneathIt(@TempDir Path root) throws Exception {
         Path deep = Files.createDirectories(root.resolve("a/b"));
         assertFalse(PhotoWalker.hasPhotos(root));
 
@@ -571,8 +579,34 @@ class PhotoWalkerTest {
 
     @Test
     @DisplayName("an unreachable folder has no photographs rather than throwing")
-    void hasPhotosSwallowsAnUnreachableFolder(@TempDir Path temp) {
+    void hasPhotosSwallowsAnUnreachableFolder(@TempDir Path temp) throws Exception {
         assertFalse(PhotoWalker.hasPhotos(temp.resolve("offline-share")));
+    }
+
+    @Test
+    @DisplayName("a film's artwork is not a photograph to show, here as in the grid")
+    void skipsArtwork(@TempDir Path root) throws Exception {
+        Files.createFile(root.resolve("Blade Runner 2049.mkv"));
+        Files.createFile(root.resolve("poster.jpg"));
+        Files.createFile(root.resolve("Blade Runner 2049.jpg"));
+        Files.createFile(root.resolve("holiday.jpg"));
+
+        assertEquals(List.of("holiday.jpg"), namesOf(collectAll(root, false), root));
+    }
+
+    @Test
+    @DisplayName("a cancelled walk stops instead of running on against a closed page")
+    void stopsWhenCancelled(@TempDir Path root) throws Exception {
+        for (int i = 0; i < 50; i++) {
+            Files.createFile(root.resolve("photo-" + i + ".jpg"));
+        }
+        Path below = Files.createDirectory(root.resolve("below"));
+        Files.createFile(below.resolve("deep.jpg"));
+
+        List<Path> found = new ArrayList<>();
+        PhotoWalker.collect(root, true, 1000, () -> !found.isEmpty(), found::addAll);
+
+        assertTrue(found.size() < 51, "the walk should have stopped early: " + found.size());
     }
 }
 ```
@@ -595,6 +629,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -637,37 +672,42 @@ public final class PhotoWalker {
      * @param recursive whether to descend into subfolders
      * @param limit     the most photographs to collect; reaching it truncates the walk
      * @param onBatch   called with each folder's photographs as they are found
+     * @param cancelled consulted between directories; a viewer who has left stops the walk
      * @throws MediaAccessException when the root itself cannot be listed
      */
-    public static Walk collect(Path root, boolean recursive, int limit, Consumer<List<Path>> onBatch) {
-        if (!Files.isDirectory(root)) {
-            // An offline share must say so. Returning an empty walk would present
-            // a disconnected NAS as a folder with no photographs in it.
-            throw new MediaAccessException("This folder is not available: " + root);
+    public static Walk collect(Path root, boolean recursive, int limit,
+            BooleanSupplier cancelled, Consumer<List<Path>> onBatch) throws MediaAccessException {
+        // The root is listed here rather than inside the recursion, so that a
+        // share which exists but cannot be read is an error rather than an empty
+        // slideshow. Deeper failures are a different matter: what has already been
+        // collected is still worth showing.
+        Listing rootListing = list(root);
+        if (rootListing == null) {
+            throw new MediaAccessException(root, MediaScanner.cannotAccessMessage(root), null);
         }
         List<Path> collected = new ArrayList<>();
-        boolean truncated = walk(root, recursive, limit, 0, onBatch, collected);
+        boolean truncated = walk(root, rootListing, recursive, limit, 0, cancelled, onBatch, collected);
         return new Walk(collected.size(), truncated);
     }
 
-    /** Whether there is any photograph at all beneath this folder. */
+    /** Whether there is any photograph at all beneath this folder. Never throws. */
     public static boolean hasPhotos(Path root) {
         try {
-            return collect(root, true, 1, batch -> { }).count() > 0;
+            return collect(root, true, 1, () -> false, batch -> { }).count() > 0;
         } catch (MediaAccessException e) {
             LOG.log(Level.FINE, "Cannot look for photographs in " + root, e);
             return false;
         }
     }
 
-    /** @return whether the walk stopped at the limit */
-    private static boolean walk(Path directory, boolean recursive, int limit, int depth,
-            Consumer<List<Path>> onBatch, List<Path> collected) {
-        if (collected.size() >= limit) {
-            return true;
-        }
+    /** A directory's entries, already split and sorted. */
+    private record Listing(List<Path> photos, List<Path> subdirectories) { }
+
+    /** @return null when the directory cannot be listed at all */
+    private static Listing list(Path directory) {
         List<Path> photos = new ArrayList<>();
         List<Path> subdirectories = new ArrayList<>();
+        List<String> names = new ArrayList<>();
         try (DirectoryStream<Path> entries = Files.newDirectoryStream(directory)) {
             for (Path entry : entries) {
                 if (FileVisibility.isHiddenOrSystem(entry)) {
@@ -678,22 +718,52 @@ public final class PhotoWalker {
                 // Windows does not report as links at all.
                 if (Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
                     subdirectories.add(entry);
-                } else if (Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS) && PhotoFiles.isPhoto(entry)) {
-                    photos.add(entry);
+                } else if (Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) {
+                    names.add(entry.getFileName().toString());
+                    if (PhotoFiles.isPhoto(entry)) {
+                        photos.add(entry);
+                    }
                 }
             }
         } catch (IOException | RuntimeException e) {
-            // A share that goes away mid-walk ends this branch and no more: what
-            // has already been collected is still worth showing.
             LOG.log(Level.FINE, "Could not list " + directory, e);
-            return false;
+            return null;
         }
-
+        photos.removeIf(photo -> isArtworkFor(photo, names));
         photos.sort(BY_FILE_NAME);
         subdirectories.sort(BY_FILE_NAME);
+        return new Listing(photos, subdirectories);
+    }
+
+    /**
+     * Whether this image is a film's artwork rather than a photograph in its own
+     * right. The grid hides these; the slideshow must hide the same ones, or the
+     * two disagree about what is in a folder.
+     */
+    private static boolean isArtworkFor(Path photo, List<String> siblingFileNames) {
+        String name = photo.getFileName().toString();
+        if (ArtworkResolver.selectCover(siblingFileNames).filter(name::equals).isPresent()) {
+            return true;
+        }
+        for (String sibling : siblingFileNames) {
+            if (VideoFiles.isVideoFileName(sibling)
+                    && ArtworkResolver.selectSidecar(VideoFiles.withoutExtension(sibling), siblingFileNames)
+                            .filter(name::equals).isPresent()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** @return whether the walk stopped at the limit */
+    private static boolean walk(Path directory, Listing listing, boolean recursive, int limit,
+            int depth, BooleanSupplier cancelled, Consumer<List<Path>> onBatch, List<Path> collected) {
+        if (cancelled.getAsBoolean() || collected.size() >= limit) {
+            return collected.size() >= limit;
+        }
 
         List<Path> batch = new ArrayList<>();
-        for (Path photo : photos) {
+        for (Path photo : listing.photos()) {
             if (collected.size() >= limit) {
                 break;
             }
@@ -705,8 +775,16 @@ public final class PhotoWalker {
         }
         boolean truncated = collected.size() >= limit;
         if (recursive && depth < MAX_DEPTH) {
-            for (Path subdirectory : subdirectories) {
-                truncated |= walk(subdirectory, true, limit, depth + 1, onBatch, collected);
+            for (Path subdirectory : listing.subdirectories()) {
+                if (cancelled.getAsBoolean()) {
+                    return truncated;
+                }
+                // A share that goes away mid-walk ends that branch and no more:
+                // what has already been collected is still worth showing.
+                Listing below = list(subdirectory);
+                if (below != null) {
+                    truncated |= walk(subdirectory, below, true, limit, depth + 1, cancelled, onBatch, collected);
+                }
             }
         }
         return truncated;
@@ -717,7 +795,7 @@ public final class PhotoWalker {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests '*PhotoWalkerTest*'`
-Expected: PASS, eleven tests.
+Expected: PASS, thirteen tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1256,7 +1334,7 @@ git commit -m "Hold the photograph on screen and its neighbours"
   - `PhotoRun(boolean looping)`
   - `void add(List<Path> batch)`, `void markComplete()`, `void markTruncated()`
   - `boolean complete()`, `boolean isEmpty()`, `int size()`
-  - `Path get(int index)`, `List<Path> photos()`
+  - `Path get(int index)`, `List<Path> photosView()`
   - `int next(int from)`, `int previous(int from)`, `List<Integer> neighbours(int from)`
   - `String counterText(int index)`
   - `int indexOf(Path photo)` — `-1` when not collected yet
@@ -1452,8 +1530,12 @@ final class PhotoRun {
         return photos.get(index);
     }
 
-    List<Path> photos() {
-        return List.copyOf(photos);
+    /**
+     * An unmodifiable view, not a copy: this is read on every painting and on
+     * every resize, and copying five thousand paths each time is waste.
+     */
+    List<Path> photosView() {
+        return java.util.Collections.unmodifiableList(photos);
     }
 
     int indexOf(Path photo) {
@@ -1599,592 +1681,7 @@ git commit -m "Let a page take the whole screen, and know when it leaves"
 
 ---
 
-### Task 9: The photograph viewer
-
-**Files:**
-- Create: `src/main/java/mediacenter/ui/PhotoView.java`
-- Modify: `src/main/java/mediacenter/ui/Navigation.java`
-- Modify: `src/main/java/mediacenter/ui/MediaCenterShell.java`
-- Modify: `src/main/resources/mediacenter/ui/mediacenter.css`
-
-**Interfaces:**
-- Consumes: `PhotoRun`, `PhotoCache<Image>`, `PhotoWalker.collect`, `ExifOrientation.degreesFor`, `FxTasks`, `View.fullBleed/onHidden`.
-- Produces:
-  - `Navigation.openSlideshow(Path folder)`
-  - `Navigation.openPhoto(Path folder, Path photo)` — **the path, not an index.** The grid's ordering and the walk's ordering are produced by different code; handing an index across that boundary was a defect in the first draft of this plan. The view seeks the path as batches arrive.
-  - `PhotoView implements View`, `fullBleed()` → `true`.
-
-**The whole class is given below** rather than described, because the first draft
-of this plan described it and review found eight defects hiding in the prose.
-
-- [ ] **Step 1: Add the navigation entry points**
-
-In `Navigation.java`:
-
-```java
-    /** Runs every photograph beneath a folder as a slideshow. */
-    void openSlideshow(Path folder);
-
-    /** Opens one photograph, with the arrows moving through its own folder. */
-    void openPhoto(Path folder, Path photo);
-```
-
-In `MediaCenterShell`:
-
-```java
-    @Override
-    public void openSlideshow(Path folder) {
-        push(new PhotoView(context, folder, true, null));
-    }
-
-    @Override
-    public void openPhoto(Path folder, Path photo) {
-        push(new PhotoView(context, folder, false, photo));
-    }
-```
-
-- [ ] **Step 2: Write the view**
-
-```java
-package mediacenter.ui;
-
-import java.nio.file.Path;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-import javafx.application.Platform;
-import javafx.beans.InvalidationListener;
-import javafx.geometry.Pos;
-import javafx.scene.Node;
-import javafx.scene.control.Label;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.StackPane;
-
-import mediacenter.media.ExifOrientation;
-import mediacenter.media.PhotoWalker;
-import mediacenter.ui.components.PhotoCache;
-
-/**
- * Photographs, full screen.
- *
- * <p>Two viewings share this class: a slideshow of everything beneath a folder,
- * advancing on its own and looping; and one photograph with the arrows moving
- * through its own folder. The difference is entirely in what is collected and in
- * {@link PhotoRun}'s wrapping rule.
- */
-final class PhotoView implements View {
-
-    private static final Logger LOG = Logger.getLogger(PhotoView.class.getName());
-
-    /**
-     * A ceiling on one viewing. Large enough for any real shelf of holidays,
-     * small enough that a wrong turn into a system directory cannot collect for
-     * ever. Reaching it leaves the run incomplete, so the counter keeps its "+".
-     */
-    private static final int PHOTO_LIMIT = 5_000;
-
-    /** Where a photograph goes before the window has been laid out. */
-    private static final double FALLBACK_SIZE = 1920;
-
-    private final UiContext context;
-    private final Path folder;
-    private final boolean slideshow;
-    private final Path startAt;
-
-    private final StackPane root = new StackPane();
-    private final ImageView imageView = new ImageView();
-    private final Label overlay = new Label();
-    private final PhotoRun run;
-    private final PhotoCache<Image> cache =
-            new PhotoCache<>(PhotoCache.imageLoader(), PhotoCache.imageDisposer());
-
-    private int index;
-    private boolean showingSomething;
-    private int failuresSinceLastSuccess;
-
-    /** Set from the JavaFX thread, read by the timer thread. */
-    private volatile boolean cancelled;
-    private volatile boolean advancing;
-    private final AtomicLong nextAdvanceAt = new AtomicLong(Long.MAX_VALUE);
-
-    PhotoView(UiContext context, Path folder, boolean slideshow, Path startAt) {
-        this.context = context;
-        this.folder = folder;
-        this.slideshow = slideshow;
-        this.startAt = startAt;
-        this.run = new PhotoRun(slideshow);
-
-        root.getStyleClass().add("photo-view");
-        root.setAlignment(Pos.CENTER);
-        // Without this the arrow keys never arrive: an event filter only sees
-        // events aimed at this node or below it.
-        root.setFocusTraversable(true);
-
-        imageView.setPreserveRatio(true);
-        imageView.setSmooth(true);
-
-        overlay.getStyleClass().add("photo-overlay");
-        overlay.setVisible(false);
-        StackPane.setAlignment(overlay, Pos.BOTTOM_LEFT);
-
-        root.getChildren().addAll(imageView, overlay);
-        root.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKey);
-
-        // The scene does not exist yet — this view is constructed before it is put
-        // into the frame — so the first sizing waits for the pane to be laid out.
-        InvalidationListener resize = observable -> {
-            if (showingSomething) {
-                display();
-            }
-        };
-        root.widthProperty().addListener(resize);
-        root.heightProperty().addListener(resize);
-
-        startWalk();
-        if (slideshow) {
-            startTimer();
-        }
-    }
-
-    @Override
-    public Node node() {
-        return root;
-    }
-
-    @Override
-    public String title() {
-        Path name = folder.getFileName();
-        return name == null ? folder.toString() : name.toString();
-    }
-
-    @Override
-    public boolean fullBleed() {
-        return true;
-    }
-
-    @Override
-    public void focusSelection() {
-        root.requestFocus();
-    }
-
-    @Override
-    public void onHidden() {
-        // Nothing else stops these: the shell only pops the stack.
-        cancelled = true;
-        cache.clear();
-    }
-
-    // -- collecting ---------------------------------------------------------
-
-    private void startWalk() {
-        context.backgroundExecutor().execute(() -> {
-            try {
-                PhotoWalker.Walk walk = PhotoWalker.collect(folder, slideshow, PHOTO_LIMIT,
-                        batch -> Platform.runLater(() -> onBatch(batch)));
-                Platform.runLater(() -> {
-                    if (walk.truncated()) {
-                        run.markTruncated();
-                    }
-                    run.markComplete();
-                    refreshOverlay();
-                });
-            } catch (RuntimeException e) {
-                LOG.log(Level.WARNING, "Could not collect photographs in " + folder, e);
-                Platform.runLater(() -> {
-                    run.markComplete();
-                    if (!showingSomething) {
-                        overlay.setText("These photographs are not available.");
-                        overlay.setVisible(true);
-                    }
-                });
-            }
-        });
-    }
-
-    /** On the JavaFX thread: the run is only ever mutated here. */
-    private void onBatch(List<Path> batch) {
-        if (cancelled) {
-            return;
-        }
-        run.add(batch);
-        if (!showingSomething) {
-            // Seek the photograph that was activated, if it has been collected.
-            int wanted = startAt == null ? 0 : run.indexOf(startAt);
-            show(Math.max(wanted, 0));
-        } else if (startAt != null && run.get(index) != startAt) {
-            int wanted = run.indexOf(startAt);
-            if (wanted >= 0 && wanted != index) {
-                show(wanted);
-            }
-        }
-        refreshOverlay();
-    }
-
-    // -- showing ------------------------------------------------------------
-
-    private void show(int target) {
-        if (run.isEmpty()) {
-            return;
-        }
-        index = Math.floorMod(target, run.size());
-        showingSomething = true;
-        resetTimer();
-        display();
-        refreshOverlay();
-    }
-
-    /**
-     * Reading the orientation opens the file, so it happens on the background
-     * executor. The photograph already on screen stays until the answer arrives,
-     * which reads better than showing one sideways and snapping it upright.
-     */
-    private void display() {
-        Path photo = run.get(index);
-        int shownIndex = index;
-        FxTasks.run(
-                context.backgroundExecutor(),
-                () -> ExifOrientation.degreesFor(photo),
-                degrees -> {
-                    if (!cancelled && shownIndex == index) {
-                        paint(photo, degrees);
-                    }
-                },
-                failure -> {
-                    if (!cancelled && shownIndex == index) {
-                        paint(photo, 0);
-                    }
-                });
-    }
-
-    private void paint(Path photo, int degrees) {
-        double width = root.getWidth() > 0 ? root.getWidth() : FALLBACK_SIZE;
-        double height = root.getHeight() > 0 ? root.getHeight() : FALLBACK_SIZE;
-        boolean quarterTurn = degrees == 90 || degrees == 270;
-
-        // A rotation is applied after layout and does not re-lay-out, so a portrait
-        // photograph has to be fitted into the box it will occupy once turned —
-        // otherwise it is fitted landscape and then hangs off both sides.
-        double fitWidth = quarterTurn ? height : width;
-        double fitHeight = quarterTurn ? width : height;
-
-        Image image = cache.show(run.photos(), index, run.neighbours(index), fitWidth, fitHeight);
-        imageView.setFitWidth(fitWidth);
-        imageView.setFitHeight(fitHeight);
-        imageView.setRotate(degrees);
-        imageView.setImage(image);
-        watchForFailure(image, photo);
-    }
-
-    /**
-     * A background-loading image reports failure later, not when it is handed
-     * over, so the answer has to be waited for rather than asked for. The listener
-     * removes itself so a cached image never holds on to a discarded view.
-     */
-    private void watchForFailure(Image image, Path photo) {
-        if (image.isError()) {
-            onDecodeFailed(photo);
-            return;
-        }
-        InvalidationListener[] listener = new InvalidationListener[1];
-        listener[0] = observable -> {
-            if (image.isError()) {
-                image.errorProperty().removeListener(listener[0]);
-                if (!cancelled && run.get(index).equals(photo)) {
-                    onDecodeFailed(photo);
-                }
-            } else if (image.getProgress() >= 1.0) {
-                image.errorProperty().removeListener(listener[0]);
-                failuresSinceLastSuccess = 0;
-            }
-        };
-        image.errorProperty().addListener(listener[0]);
-    }
-
-    /**
-     * A photograph that will not decode must not stop the show. Giving up after a
-     * full pass keeps a folder of broken files from spinning for ever.
-     */
-    private void onDecodeFailed(Path photo) {
-        LOG.log(Level.FINE, () -> "Could not decode " + photo);
-        imageView.setImage(null);
-        overlay.setText("This photograph could not be shown.");
-        overlay.setVisible(true);
-
-        failuresSinceLastSuccess++;
-        if (failuresSinceLastSuccess >= run.size()) {
-            LOG.warning("None of these photographs could be shown");
-            return;
-        }
-        int onwards = run.next(index);
-        if (onwards != index) {
-            show(onwards);
-        }
-    }
-
-    private void refreshOverlay() {
-        if (run.isEmpty()) {
-            return;
-        }
-        Path photo = run.get(index);
-        Path name = photo.getFileName();
-        overlay.setText((name == null ? photo.toString() : name.toString())
-                + "        " + run.counterText(index));
-        overlay.setVisible(true);
-        overlay.setOpacity(1);
-        Motion.fadeOutAfter(overlay);
-    }
-
-    // -- input --------------------------------------------------------------
-
-    private void handleKey(KeyEvent event) {
-        switch (event.getCode()) {
-            case LEFT -> {
-                show(run.previous(index));
-                event.consume();
-            }
-            case RIGHT -> {
-                show(run.next(index));
-                event.consume();
-            }
-            case ENTER, SPACE -> {
-                if (slideshow) {
-                    advancing = !advancing;
-                    resetTimer();
-                }
-                event.consume();
-            }
-            default -> { }
-        }
-    }
-
-    // -- advancing ----------------------------------------------------------
-
-    /**
-     * Timed on an ordinary daemon thread rather than an animation: an animation
-     * stops with the rendering pulse, and a display that goes to sleep would stop
-     * the slideshow with it. The thread owns nothing but the deadline; every
-     * change to what is on screen happens on the JavaFX thread.
-     */
-    private void startTimer() {
-        advancing = true;
-        resetTimer();
-        Thread timer = new Thread(() -> {
-            while (!cancelled) {
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-                if (advancing && System.currentTimeMillis() >= nextAdvanceAt.get()) {
-                    Platform.runLater(this::advance);
-                    resetTimer();
-                }
-            }
-        }, "photo-slideshow");
-        timer.setDaemon(true);
-        timer.start();
-    }
-
-    private void advance() {
-        if (cancelled || run.isEmpty()) {
-            return;
-        }
-        int onwards = run.next(index);
-        if (onwards != index) {
-            show(onwards);
-        }
-    }
-
-    /** A manual move buys a full interval on the picture arrived at. */
-    private void resetTimer() {
-        nextAdvanceAt.set(System.currentTimeMillis()
-                + context.settings().get().slideshowSeconds() * 1000L);
-    }
-}
-```
-
-- [ ] **Step 3: Add the fade-out helper and the styles**
-
-`Motion` offers `fadeIn` and `slideFadeIn`; there is no fade-out. Add one, beside
-them:
-
-```java
-    /** Holds a caption long enough to be read, then takes it away. */
-    public static void fadeOutAfter(Node node) {
-        FadeTransition fade = new FadeTransition(GENTLE, node);
-        fade.setDelay(Duration.seconds(3));
-        fade.setFromValue(1);
-        fade.setToValue(0);
-        fade.setInterpolator(EASE);
-        fade.setOnFinished(event -> node.setVisible(false));
-        fade.playFromStart();
-    }
-```
-
-In `mediacenter.css`, add styles for the two new classes — a black page and a
-legible caption over any photograph:
-
-```css
-.photo-view {
-    -fx-background-color: black;
-}
-
-.photo-overlay {
-    -fx-font-size: 26px;
-    -fx-text-fill: white;
-    -fx-background-color: rgba(0, 0, 0, 0.55);
-    -fx-background-radius: 8;
-    -fx-padding: 10 18 10 18;
-}
-```
-
-These colours are deliberately literal rather than `-mc-*` variables: a
-photograph is not themed, and a caption over one needs the same contrast in
-either theme.
-
-- [ ] **Step 4: Compile**
-
-Run: `./gradlew test`
-Expected: PASS. `PhotoView` has no test of its own — it is JavaFX. Its rules live
-in `PhotoRun` (Task 7) and its retention in `PhotoCache` (Task 6), both tested.
-It is exercised by screenshot in Task 10. Note this task will not compile until
-Task 11 adds `slideshowSeconds` — **implement Task 11 before compiling this one,
-or add the settings field first and its Settings row later.** See the note at the
-end of Task 11.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/main/java/mediacenter/ui src/main/resources/mediacenter/ui/mediacenter.css
-git commit -m "Show photographs full screen, one viewing at a time"
-```
-
----
-
-### Task 10: The way in
-
-**Files:**
-- Modify: `src/main/java/mediacenter/ui/BrowseView.java`
-
-**Interfaces:**
-- Consumes: `PhotoWalker.hasPhotos(Path)`, `Navigation.openSlideshow(Path)`, `Navigation.openPhoto(Path, Path)`, `ActionTile`.
-
-- [ ] **Step 1: Offer the tile, guarded like every other late result**
-
-`BrowseView` already guards asynchronous results with `loadGeneration`. The probe
-must do the same, or an F5 — or a theme change, which refreshes every stacked
-view — lets a stale answer repopulate the grid.
-
-In the method that sets the grid's tiles (the one that turns `List<MediaItem>`
-into tiles), after `grid.setTiles(tiles)`, add:
-
-```java
-        offerSlideshow(tiles, generation);
-```
-
-and add:
-
-```java
-    /**
-     * The Slideshow tile only makes sense where there are photographs, and finding
-     * that out means walking the tree — so the grid is filled first and the tile
-     * appears a moment later, rather than the folder waiting on the answer.
-     */
-    private void offerSlideshow(List<Tile> tiles, long generation) {
-        FxTasks.run(
-                context.backgroundExecutor(),
-                () -> PhotoWalker.hasPhotos(folder),
-                hasPhotos -> {
-                    if (!hasPhotos || generation != loadGeneration) {
-                        return;
-                    }
-                    int selected = grid.selectedIndex();
-                    List<Tile> withSlideshow = new ArrayList<>();
-                    withSlideshow.add(new ActionTile("▣", "Slideshow", "Every photograph, including subfolders"));
-                    withSlideshow.addAll(tiles);
-                    grid.setTiles(withSlideshow);
-                    // Everything shifted by one; the selection must shift with it,
-                    // or the highlight silently lands on a different picture.
-                    grid.setSelectedIndex(selected < 0 ? 0 : selected + 1);
-                },
-                failure -> { });
-    }
-```
-
-- [ ] **Step 2: Handle activation**
-
-In `BrowseView.activate(Tile tile)`, before the `instanceof MediaTile` check:
-
-```java
-        if (tile instanceof ActionTile) {
-            context.navigation().openSlideshow(folder);
-            return;
-        }
-```
-
-and in the branch that currently sends a file to VLC:
-
-```java
-        if (item.isImage()) {
-            // The path, not a position: this grid and the walk that fills the
-            // viewer are ordered by different code, and an index would drift.
-            context.navigation().openPhoto(folder, item.path());
-            return;
-        }
-```
-
-Add the imports `mediacenter.ui.components.ActionTile` and
-`mediacenter.media.PhotoWalker`; `FxTasks` and `ArrayList` are already imported.
-
-- [ ] **Step 3: Verify by screenshot**
-
-Put a few `.jpg` files into a folder under your configured media root, including
-at least one in a subfolder, then:
-
-```bash
-./gradlew run --args="--snapshot=/tmp/photos-grid.png --snapshot-keys=RIGHT,ENTER,ENTER"
-```
-
-Expected: the folder's grid shows a **Slideshow** tile first, then the
-photographs as their own thumbnails.
-
-```bash
-./gradlew run --args="--snapshot=/tmp/photos-show.png --snapshot-keys=RIGHT,ENTER,ENTER,ENTER"
-```
-
-Expected: a full-screen photograph on black with **no header and no hint bar**,
-and a caption reading the file name and `1 of N` or `1 of N+`.
-
-```bash
-./gradlew run --args="--snapshot=/tmp/photos-right.png --snapshot-keys=RIGHT,ENTER,ENTER,ENTER,RIGHT"
-```
-
-Expected: the *second* photograph, proving the arrow keys reach the view.
-
-**Look at all three images.** A blank frame means the viewer failed to launch; an
-unchanged frame in the third means the key filter is not receiving events.
-
-- [ ] **Step 4: Run the whole suite**
-
-Run: `./gradlew test`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/main/java/mediacenter/ui/BrowseView.java
-git commit -m "Offer a slideshow on folders that have photographs beneath them"
-```
-
----
-
-### Task 11: How long each photograph stays
+### Task 9: How long each photograph stays
 
 **Files:**
 - Modify: `src/main/java/mediacenter/config/ApplicationSettings.java`
@@ -2204,7 +1701,8 @@ same step or the build is red.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `ApplicationSettingsTest`:
+Add to `ApplicationSettingsTest` — it has no `import org.junit.jupiter.api.DisplayName;`
+yet, so add that too:
 
 ```java
     @Test
@@ -2315,13 +1813,31 @@ which is a 10-foot control needing no typing:
             toggles.add(toggle);
         }
         navigationRows.add(List.copyOf(toggles));
-        ...
+
+        HBox controls = new HBox(12);
+        controls.getChildren().addAll(toggles);
+        controls.setAlignment(Pos.CENTER_RIGHT);
+        HBox.setHgrow(controls, Priority.ALWAYS);
+        controls.setMaxWidth(Double.MAX_VALUE);
+
+        HBox line = new HBox(16, name, controls);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(8, line);
+        card.getStyleClass().add("setting-row");
+        return card;
     }
 ```
 
+Read `themeRow()` before writing this and follow whatever it actually does — the
+sketch above is the shape, not a transcription.
+
 Keep a `private final List<ToggleButton> slideshowToggles = new ArrayList<>();`
 field and select the matching one in `readSettings()`, exactly as the theme
-toggles are handled.
+toggles are handled. A hand-edited `config.json` may hold a value the buttons do
+not offer — `30` is legal, since the record clamps to `[2, 60]` — in which case
+**no toggle is selected**, which is honest: the row still takes the keyboard, and
+pressing either button adopts that value.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -2345,10 +1861,724 @@ git add src/main/java/mediacenter/config src/main/java/mediacenter/ui/SettingsVi
 git commit -m "Let the viewer choose how long each photograph stays"
 ```
 
-**Ordering note:** `PhotoView` (Task 9) reads `slideshowSeconds()`, so the source
-will not compile until this task's Step 3 has run. Either do Task 11 Step 3 before
-Task 9 Step 4, or accept that Task 9 is committed together with Task 11. Do not
-introduce a temporary constant only to delete it.
+**Why this comes before the viewer:** `PhotoView` reads `slideshowSeconds()`. With
+the settings in place first, every task still ends with a green build and one
+commit, which is the rule this plan works to.
+
+---
+
+### Task 10: The photograph viewer
+
+**Files:**
+- Create: `src/main/java/mediacenter/ui/PhotoView.java`
+- Modify: `src/main/java/mediacenter/ui/Navigation.java`
+- Modify: `src/main/java/mediacenter/ui/MediaCenterShell.java`
+- Modify: `src/main/resources/mediacenter/ui/mediacenter.css`
+
+**Interfaces:**
+- Consumes: `PhotoRun`, `PhotoCache<Image>`, `PhotoWalker.collect`, `ExifOrientation.degreesFor`, `FxTasks`, `View.fullBleed/onHidden`.
+- Produces:
+  - `Navigation.openSlideshow(Path folder)`
+  - `Navigation.openPhoto(Path folder, Path photo)` — **the path, not an index.** The grid's ordering and the walk's ordering are produced by different code; handing an index across that boundary was a defect in the first draft of this plan. The view seeks the path as batches arrive.
+  - `PhotoView implements View`, `fullBleed()` → `true`.
+
+**The whole class is given below** rather than described, because the first draft
+of this plan described it and review found eight defects hiding in the prose.
+
+- [ ] **Step 1: Add the navigation entry points**
+
+In `Navigation.java`:
+
+```java
+    /** Runs every photograph beneath a folder as a slideshow. */
+    void openSlideshow(Path folder);
+
+    /** Opens one photograph, with the arrows moving through its own folder. */
+    void openPhoto(Path folder, Path photo);
+```
+
+In `MediaCenterShell`:
+
+```java
+    @Override
+    public void openSlideshow(Path folder) {
+        push(new PhotoView(context, folder, true, null));
+    }
+
+    @Override
+    public void openPhoto(Path folder, Path photo) {
+        push(new PhotoView(context, folder, false, photo));
+    }
+```
+
+- [ ] **Step 2: Write the view**
+
+```java
+package mediacenter.ui;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.control.Label;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.StackPane;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javafx.animation.FadeTransition;
+
+import mediacenter.media.ExifOrientation;
+import mediacenter.media.MediaAccessException;
+import mediacenter.media.PhotoWalker;
+import mediacenter.ui.components.ActivationGate;
+import mediacenter.ui.components.Motion;
+import mediacenter.ui.components.PhotoCache;
+
+/**
+ * Photographs, full screen.
+ *
+ * <p>Two viewings share this class: a slideshow of everything beneath a folder,
+ * advancing on its own and looping; and one photograph with the arrows moving
+ * through its own folder. The difference is entirely in what is collected and in
+ * {@link PhotoRun}'s wrapping rule.
+ */
+final class PhotoView implements View {
+
+    private static final Logger LOG = Logger.getLogger(PhotoView.class.getName());
+
+    /**
+     * A ceiling on one viewing. Large enough for any real shelf of holidays,
+     * small enough that a wrong turn into a system directory cannot collect for
+     * ever. Reaching it leaves the run incomplete, so the counter keeps its "+".
+     */
+    private static final int PHOTO_LIMIT = 5_000;
+
+    /** Where a photograph goes before the window has been laid out. */
+    private static final double FALLBACK_SIZE = 1920;
+
+    private final UiContext context;
+    private final Path folder;
+    private final boolean slideshow;
+    private final Path startAt;
+
+    private final StackPane root = new StackPane();
+    private final ImageView imageView = new ImageView();
+    private final Label overlay = new Label();
+    private final PhotoRun run;
+    private final PhotoCache<Image> cache =
+            new PhotoCache<>(PhotoCache.imageLoader(), PhotoCache.imageDisposer());
+
+    private final ActivationGate activationGate = new ActivationGate();
+    /** Orientation is read from disk, so it is remembered rather than re-read on every repaint. */
+    private final Map<Path, Integer> orientations = new HashMap<>();
+    private FadeTransition captionFade;
+
+    private int index;
+    private boolean showingSomething;
+    private boolean seekDone;
+    private int failuresSinceLastSuccess;
+    private double lastPaintedWidth;
+    private double lastPaintedHeight;
+
+    /** Set from the JavaFX thread, read by the timer thread. */
+    private volatile boolean cancelled;
+    private volatile boolean advancing;
+    private final AtomicLong nextAdvanceAt = new AtomicLong(Long.MAX_VALUE);
+
+    PhotoView(UiContext context, Path folder, boolean slideshow, Path startAt) {
+        this.context = context;
+        this.folder = folder;
+        this.slideshow = slideshow;
+        this.startAt = startAt;
+        this.run = new PhotoRun(slideshow);
+
+        root.getStyleClass().add("photo-view");
+        root.setAlignment(Pos.CENTER);
+        // Without this the arrow keys never arrive: an event filter only sees
+        // events aimed at this node or below it.
+        root.setFocusTraversable(true);
+
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+
+        overlay.getStyleClass().add("photo-overlay");
+        overlay.setVisible(false);
+        StackPane.setAlignment(overlay, Pos.BOTTOM_LEFT);
+
+        root.getChildren().addAll(imageView, overlay);
+        root.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKey);
+        root.addEventFilter(KeyEvent.KEY_RELEASED, event -> {
+            if (event.getCode() == javafx.scene.input.KeyCode.ENTER
+                    || event.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                activationGate.released();
+            }
+        });
+
+        // The scene does not exist yet — this view is constructed before it is put
+        // into the frame — so the first sizing waits for the pane to be laid out.
+        // Only a real change in size is worth acting on. A drag or a full-screen
+        // transition fires these listeners on every pulse, and each repaint would
+        // otherwise re-open the file and re-decode at the new size.
+        InvalidationListener resize = observable -> {
+            if (showingSomething && sizeChanged()) {
+                cache.clear();
+                display();
+            }
+        };
+        root.widthProperty().addListener(resize);
+        root.heightProperty().addListener(resize);
+
+        startWalk();
+        if (slideshow) {
+            startTimer();
+        }
+    }
+
+    @Override
+    public Node node() {
+        return root;
+    }
+
+    @Override
+    public String title() {
+        Path name = folder.getFileName();
+        return name == null ? folder.toString() : name.toString();
+    }
+
+    @Override
+    public boolean fullBleed() {
+        return true;
+    }
+
+    @Override
+    public void focusSelection() {
+        root.requestFocus();
+    }
+
+    @Override
+    public void onHidden() {
+        // Nothing else stops these: the shell only pops the stack. The walk reads
+        // this flag through the supplier it was given, so it stops between
+        // directories rather than running on against a page nobody is looking at.
+        cancelled = true;
+        advancing = false;
+        cache.clear();
+    }
+
+    // -- collecting ---------------------------------------------------------
+
+    private void startWalk() {
+        context.backgroundExecutor().execute(() -> {
+            try {
+                PhotoWalker.Walk walk = PhotoWalker.collect(folder, slideshow, PHOTO_LIMIT,
+                        () -> cancelled, batch -> Platform.runLater(() -> onBatch(batch)));
+                Platform.runLater(() -> {
+                    if (walk.truncated()) {
+                        run.markTruncated();
+                    }
+                    run.markComplete();
+                    if (run.isEmpty()) {
+                        // A black screen with no explanation is the worst outcome
+                        // here: nothing on it would say that Esc is the way out.
+                        showCaption("No photographs here.");
+                    } else {
+                        refreshOverlay();
+                    }
+                });
+            } catch (MediaAccessException | RuntimeException e) {
+                LOG.log(Level.WARNING, "Could not collect photographs in " + folder, e);
+                Platform.runLater(() -> {
+                    run.markComplete();
+                    if (!showingSomething) {
+                        showCaption("These photographs are not available.");
+                    }
+                });
+            }
+        });
+    }
+
+    /** On the JavaFX thread: the run is only ever mutated here. */
+    private void onBatch(List<Path> batch) {
+        if (cancelled) {
+            return;
+        }
+        run.add(batch);
+        if (!showingSomething) {
+            // The photograph that was activated, if it has been collected yet.
+            int wanted = startAt == null ? -1 : run.indexOf(startAt);
+            seekDone = startAt == null || wanted >= 0;
+            show(Math.max(wanted, 0));
+        } else if (!seekDone) {
+            // Seek once and once only. Re-seeking on every batch would drag the
+            // viewer back to where they started after they had arrowed away.
+            int wanted = run.indexOf(startAt);
+            if (wanted >= 0) {
+                seekDone = true;
+                show(wanted);
+            }
+        } else {
+            refreshOverlay();
+        }
+    }
+
+    // -- showing ------------------------------------------------------------
+
+    private void show(int target) {
+        if (run.isEmpty()) {
+            return;
+        }
+        index = Math.floorMod(target, run.size());
+        showingSomething = true;
+        resetTimer();
+        display();
+        refreshOverlay();
+    }
+
+    /**
+     * Reading the orientation opens the file, so it happens on the background
+     * executor. The photograph already on screen stays until the answer arrives,
+     * which reads better than showing one sideways and snapping it upright.
+     */
+    private void display() {
+        Path photo = run.get(index);
+        Integer known = orientations.get(photo);
+        if (known != null) {
+            paint(photo, known);
+            return;
+        }
+        int shownIndex = index;
+        FxTasks.run(
+                context.backgroundExecutor(),
+                () -> ExifOrientation.degreesFor(photo),
+                degrees -> {
+                    orientations.put(photo, degrees);
+                    if (!cancelled && shownIndex == index) {
+                        paint(photo, degrees);
+                    }
+                },
+                failure -> {
+                    orientations.put(photo, 0);
+                    if (!cancelled && shownIndex == index) {
+                        paint(photo, 0);
+                    }
+                });
+    }
+
+    /** Whether the page has been given a different size since the last painting. */
+    private boolean sizeChanged() {
+        return Math.abs(root.getWidth() - lastPaintedWidth) >= 1
+                || Math.abs(root.getHeight() - lastPaintedHeight) >= 1;
+    }
+
+    private void paint(Path photo, int degrees) {
+        double width = root.getWidth() > 0 ? root.getWidth() : FALLBACK_SIZE;
+        double height = root.getHeight() > 0 ? root.getHeight() : FALLBACK_SIZE;
+        boolean quarterTurn = degrees == 90 || degrees == 270;
+
+        // A rotation is applied after layout and does not re-lay-out, so a portrait
+        // photograph has to be fitted into the box it will occupy once turned —
+        // otherwise it is fitted landscape and then hangs off both sides.
+        double fitWidth = quarterTurn ? height : width;
+        double fitHeight = quarterTurn ? width : height;
+
+        lastPaintedWidth = width;
+        lastPaintedHeight = height;
+        Image image = cache.show(run.photosView(), index, run.neighbours(index), fitWidth, fitHeight);
+        imageView.setFitWidth(fitWidth);
+        imageView.setFitHeight(fitHeight);
+        imageView.setRotate(degrees);
+        imageView.setImage(image);
+        watchForFailure(image, photo);
+    }
+
+    /**
+     * A background-loading image reports failure later, not when it is handed
+     * over, so the answer has to be waited for rather than asked for.
+     *
+     * <p>The listener watches progress as well as error and removes itself from
+     * both, exactly as {@code MediaTile.revealWhenLoaded} does: a listener
+     * registered on one property is never invalidated by the other, so watching
+     * only the error would leave the success path dead and the listener attached
+     * to a cached image for as long as it lives.
+     */
+    private void watchForFailure(Image image, Path photo) {
+        if (image.isError()) {
+            onDecodeFailed(photo);
+            return;
+        }
+        if (image.getProgress() >= 1.0) {
+            // Already decoded — a cache hit, or a repaint after a resize.
+            // Registering again would stack a listener per repaint on one image.
+            failuresSinceLastSuccess = 0;
+            return;
+        }
+        InvalidationListener[] listener = new InvalidationListener[1];
+        listener[0] = observable -> {
+            if (image.isError()) {
+                stopListening(image, listener[0]);
+                if (!cancelled && run.get(index).equals(photo)) {
+                    onDecodeFailed(photo);
+                }
+            } else if (image.getProgress() >= 1.0) {
+                stopListening(image, listener[0]);
+                failuresSinceLastSuccess = 0;
+            }
+        };
+        image.progressProperty().addListener(listener[0]);
+        image.errorProperty().addListener(listener[0]);
+    }
+
+    private static void stopListening(Image image, InvalidationListener listener) {
+        image.progressProperty().removeListener(listener);
+        image.errorProperty().removeListener(listener);
+    }
+
+    /**
+     * A photograph that will not decode must not stop the show. The caption is
+     * left up only when there is nowhere to advance to — the last of a run, or a
+     * single photograph — because advancing immediately would replace it before
+     * anyone could read it. Giving up after a full pass keeps a folder of broken
+     * files from spinning for ever.
+     */
+    private void onDecodeFailed(Path photo) {
+        LOG.log(Level.FINE, () -> "Could not decode " + photo);
+        failuresSinceLastSuccess++;
+        if (failuresSinceLastSuccess >= Math.max(run.size(), 1)) {
+            LOG.warning("None of these photographs could be shown");
+            imageView.setImage(null);
+            showCaption("These photographs could not be shown.");
+            return;
+        }
+        int onwards = run.next(index);
+        if (onwards != index) {
+            show(onwards);
+        } else {
+            imageView.setImage(null);
+            showCaption("This photograph could not be shown.");
+        }
+    }
+
+    private void refreshOverlay() {
+        if (run.isEmpty()) {
+            return;
+        }
+        Path photo = run.get(index);
+        Path name = photo.getFileName();
+        showCaption((name == null ? photo.toString() : name.toString())
+                + "        " + run.counterText(index));
+    }
+
+    /**
+     * One transition, restarted. A new one per caption would leave several running
+     * on the same label during a walk, and an older one finishing would hide a
+     * caption a newer one had just put up.
+     */
+    private void showCaption(String text) {
+        overlay.setText(text);
+        overlay.setVisible(true);
+        overlay.setOpacity(1);
+        if (captionFade == null) {
+            captionFade = Motion.fadeOutAfter(overlay);
+        }
+        captionFade.playFromStart();
+    }
+
+    // -- input --------------------------------------------------------------
+
+    private void handleKey(KeyEvent event) {
+        switch (event.getCode()) {
+            case LEFT -> {
+                show(run.previous(index));
+                event.consume();
+            }
+            case RIGHT -> {
+                show(run.next(index));
+                event.consume();
+            }
+            case ENTER, SPACE -> {
+                // A thumb resting on the remote opened this page; without the gate
+                // the auto-repeat would toggle the show off before it had begun.
+                if (slideshow && activationGate.pressed(System.nanoTime())) {
+                    advancing = !advancing;
+                    resetTimer();
+                }
+                event.consume();
+            }
+            default -> { }
+        }
+    }
+
+    // -- advancing ----------------------------------------------------------
+
+    /**
+     * Timed on an ordinary daemon thread rather than an animation: an animation
+     * stops with the rendering pulse, and a display that goes to sleep would stop
+     * the slideshow with it. The thread owns nothing but the deadline; every
+     * change to what is on screen happens on the JavaFX thread.
+     */
+    private void startTimer() {
+        advancing = true;
+        resetTimer();
+        Thread timer = new Thread(() -> {
+            while (!cancelled) {
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                if (advancing && System.currentTimeMillis() >= nextAdvanceAt.get()) {
+                    Platform.runLater(this::advance);
+                }
+            }
+        }, "photo-slideshow");
+        timer.setDaemon(true);
+        timer.start();
+    }
+
+    private void advance() {
+        if (cancelled || run.isEmpty()) {
+            return;
+        }
+        // Checked again here: an arrow pressed between the timer reading the
+        // deadline and this running would otherwise be skipped straight past.
+        if (System.currentTimeMillis() < nextAdvanceAt.get()) {
+            return;
+        }
+        int onwards = run.next(index);
+        if (onwards != index) {
+            show(onwards);
+        } else {
+            // Nothing to advance to yet — wait out another interval rather than
+            // spinning on the deadline.
+            resetTimer();
+        }
+    }
+
+    /** A manual move buys a full interval on the picture arrived at. */
+    private void resetTimer() {
+        nextAdvanceAt.set(System.currentTimeMillis()
+                + context.settings().get().slideshowSeconds() * 1000L);
+    }
+}
+```
+
+- [ ] **Step 3: Add the fade-out helper and the styles**
+
+`Motion` offers `fadeIn` and `slideFadeIn`; there is no fade-out. Add one, beside
+them:
+
+```java
+    /** Holds a caption long enough to be read, then takes it away. */
+    public static FadeTransition fadeOutAfter(Node node) {
+        FadeTransition fade = new FadeTransition(GENTLE, node);
+        fade.setDelay(Duration.seconds(3));
+        fade.setFromValue(1);
+        fade.setToValue(0);
+        fade.setInterpolator(EASE);
+        fade.setOnFinished(event -> node.setVisible(false));
+        return fade;
+    }
+```
+
+In `mediacenter.css`, add styles for the two new classes — a black page and a
+legible caption over any photograph:
+
+```css
+.photo-view {
+    -fx-background-color: black;
+}
+
+.photo-overlay {
+    -fx-font-size: 26px;
+    -fx-text-fill: white;
+    -fx-background-color: rgba(0, 0, 0, 0.55);
+    -fx-background-radius: 8;
+    -fx-padding: 10 18 10 18;
+}
+```
+
+These colours are deliberately literal rather than `-mc-*` variables: a
+photograph is not themed, and a caption over one needs the same contrast in
+either theme.
+
+- [ ] **Step 4: Compile**
+
+Run: `./gradlew test`
+Expected: PASS. `PhotoView` has no test of its own — it is JavaFX. Its rules live
+in `PhotoRun` and its retention in `PhotoCache`, both tested. It is exercised by
+screenshot in the next task. `slideshowSeconds()` already exists, because the
+settings task comes before this one.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/main/java/mediacenter/ui src/main/resources/mediacenter/ui/mediacenter.css
+git commit -m "Show photographs full screen, one viewing at a time"
+```
+
+---
+
+### Task 11: The way in
+
+**Files:**
+- Modify: `src/main/java/mediacenter/ui/BrowseView.java`
+
+**Interfaces:**
+- Consumes: `PhotoWalker.hasPhotos(Path)`, `Navigation.openSlideshow(Path)`, `Navigation.openPhoto(Path, Path)`, `ActionTile`.
+
+- [ ] **Step 1: Offer the tile, guarded like every other late result**
+
+`BrowseView` already guards asynchronous results with `loadGeneration`. The probe
+must do the same, or an F5 — or a theme change, which refreshes every stacked
+view — lets a stale answer repopulate the grid.
+
+`showItems(List<MediaItem>)` is where tiles are set. Note that `generation` is a
+**local variable of `load()`** and is not in scope there — read the field
+instead. Also note `showItems` returns early when the folder is empty, so the
+call has to go in both paths: a folder whose own entries are all hidden may still
+have photographs several levels below it.
+
+```java
+    private void showItems(List<MediaItem> scanned) {
+        items = scanned;
+        long generation = loadGeneration;
+        if (items.isEmpty()) {
+            grid.clear();
+            grid.showMessage("This folder has nothing to show.");
+            offerSlideshow(List.of(), generation);
+            return;
+        }
+        ...
+        grid.setTiles(tiles);
+        grid.focusSelection();
+        offerSlideshow(tiles, generation);
+    }
+```
+
+and add:
+
+```java
+    /**
+     * The Slideshow tile only makes sense where there are photographs, and finding
+     * that out means walking the tree — so the grid is filled first and the tile
+     * appears a moment later, rather than the folder waiting on the answer.
+     */
+    private void offerSlideshow(List<Tile> tiles, long generation) {
+        FxTasks.run(
+                context.backgroundExecutor(),
+                () -> PhotoWalker.hasPhotos(folder),
+                hasPhotos -> {
+                    if (!hasPhotos || generation != loadGeneration) {
+                        return;
+                    }
+                    int selected = grid.selectedIndex();
+                    grid.showMessage(null);
+                    List<Tile> withSlideshow = new ArrayList<>();
+                    withSlideshow.add(new ActionTile("▣", "Slideshow", "Every photograph, including subfolders"));
+                    withSlideshow.addAll(tiles);
+                    grid.setTiles(withSlideshow);
+                    // Everything shifted by one; the selection must shift with it,
+                    // or the highlight silently lands on a different picture.
+                    grid.setSelectedIndex(selected < 0 ? 0 : selected + 1);
+                },
+                failure -> { });
+    }
+```
+
+- [ ] **Step 2: Let the grid size itself from all its tiles, not just the first**
+
+`TileGrid.setTiles` takes the cell size from `tiles.getFirst()`. That was safe
+while every tile in a grid was the same kind. It is not any more: an `ActionTile`
+is 280 × 210 and a poster `MediaTile` is 210 × 407 and pins itself with
+`setMinSize`/`setMaxSize`, so a first tile of the wrong kind makes every poster
+overflow its cell.
+
+```java
+        if (!tiles.isEmpty()) {
+            // The largest, not the first: a grid may hold an action tile beside
+            // media tiles, and a cell sized for the smaller clips the larger.
+            double widest = tiles.stream().mapToDouble(Tile::getPrefWidth).max().orElse(0);
+            double tallest = tiles.stream().mapToDouble(Tile::getPrefHeight).max().orElse(0);
+            tilePane.setPrefTileWidth(widest);
+            tilePane.setPrefTileHeight(tallest);
+        }
+```
+
+- [ ] **Step 3: Handle activation**
+
+In `BrowseView.activate(Tile tile)`, before the `instanceof MediaTile` check:
+
+```java
+        if (tile instanceof ActionTile) {
+            context.navigation().openSlideshow(folder);
+            return;
+        }
+```
+
+and in the branch that currently sends a file to VLC:
+
+```java
+        if (item.isImage()) {
+            // The path, not a position: this grid and the walk that fills the
+            // viewer are ordered by different code, and an index would drift.
+            context.navigation().openPhoto(folder, item.path());
+            return;
+        }
+```
+
+Add the imports `mediacenter.ui.components.ActionTile` and
+`mediacenter.media.PhotoWalker`; `FxTasks` and `ArrayList` are already imported.
+
+- [ ] **Step 4: Verify by screenshot**
+
+Put a few `.jpg` files into a folder under your configured media root, including
+at least one in a subfolder, then:
+
+```bash
+./gradlew run --args="--snapshot=/tmp/photos-grid.png --snapshot-keys=RIGHT,ENTER,ENTER"
+```
+
+Expected: the folder's grid shows a **Slideshow** tile first, then the
+photographs as their own thumbnails.
+
+```bash
+./gradlew run --args="--snapshot=/tmp/photos-show.png --snapshot-keys=RIGHT,ENTER,ENTER,ENTER"
+```
+
+Expected: a full-screen photograph on black with **no header and no hint bar**,
+and a caption reading the file name and `1 of N` or `1 of N+`.
+
+```bash
+./gradlew run --args="--snapshot=/tmp/photos-right.png --snapshot-keys=RIGHT,ENTER,ENTER,ENTER,RIGHT"
+```
+
+Expected: the *second* photograph, proving the arrow keys reach the view.
+
+**Look at all three images.** A blank frame means the viewer failed to launch; an
+unchanged frame in the third means the key filter is not receiving events.
+
+- [ ] **Step 5: Run the whole suite**
+
+Run: `./gradlew test`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/main/java/mediacenter/ui/BrowseView.java src/main/java/mediacenter/ui/components/TileGrid.java
+git commit -m "Offer a slideshow on folders that have photographs beneath them"
+```
 
 ---
 
@@ -2409,35 +2639,34 @@ git commit -m "Ship the photo viewer with a heap it can rely on"
 
 ## Self-Review
 
-**Spec coverage.** Slideshow tile only where photographs exist beneath — Task 10.
-Enter on a photograph opens its own folder without auto-advance — Tasks 9 (the
+**Spec coverage.** Slideshow tile only where photographs exist beneath — Task 11.
+Enter on a photograph opens its own folder without auto-advance — Tasks 10 (the
 `slideshow` flag drives both `PhotoWalker`'s `recursive` and `PhotoRun`'s
 wrapping) and 10. Folder order depth first — Task 4. Loops at the end — Task 7.
-Streaming with batches to the JavaFX thread — Tasks 4 and 9. Counter with `+` —
+Streaming with batches to the JavaFX thread — Tasks 4 and 10. Counter with `+` —
 Task 7. `PhotoFiles`, `MediaItemType.IMAGE`, scanner — Tasks 1 and 3.
 `PhotoWalker` serving both jobs — Task 4. Keys — Task 9. `View.fullBleed` — Task
-8. `PhotoCache` three at screen size — Task 6. Interval — Task 11. Decode failure
-shows a placeholder caption and advances — Task 9 (`onDecodeFailed`). Share
+8. `PhotoCache` three at screen size — Task 6. Interval — Task 9. Decode failure
+shows a placeholder caption and advances — Task 10 (`onDecodeFailed`). Share
 disappearing: the root throws `MediaAccessException` (Task 4) and the viewer says
 so (Task 9); a subdirectory going away ends that branch only. No photographs
-means no tile — Task 10. HEIC excluded — Task 1, documented Task 12. EXIF — Task
-5, applied off-thread in Task 9. `-Xmx` — Task 12. README premise change — Task
-12.
+means no tile — Task 11. HEIC excluded — Task 1, documented Task 12. EXIF — Task
+5, applied off-thread in Task 9. `-Xmx` — Task 12. README premise change — Task 12.
 
 **Placeholders.** None. The two steps the previous draft left as prose are now
-shown as code: the viewer is given in full in Task 9 Step 2, and Task 11 Step 3
+shown as code: the viewer is given in full in Task 10 Step 2, and Task 9 Step 3
 names all four canonical-constructor call sites and the control type. The
 remaining prose — "the method that sets the grid's tiles", "adjust to whatever
 `SettingsStore`'s method names are" — asks the implementer to read one named
 class, which is not the same as leaving a decision open.
 
 **Type consistency.** `PhotoWalker.collect(Path, boolean, int, Consumer<List<Path>>)`
-returns `Walk` and is called that way in Task 9. `hasPhotos(Path)` returns
-`boolean`, used so in Task 10. `PhotoCache<Image>.show(List<Path>, int,
-List<Integer>, double, double)` matches its call in Task 9. Every `PhotoRun`
-method used in Task 9 is defined in Task 7. `Navigation.openSlideshow(Path)` and
-`openPhoto(Path, Path)` are declared once, in Task 9, and called with those
-signatures in Task 10 — the previous draft declared `openPhoto` twice, with
+returns `Walk` and is called that way in Task 10. `hasPhotos(Path)` returns
+`boolean`, used so in Task 11. `PhotoCache<Image>.show(List<Path>, int,
+List<Integer>, double, double)` matches its call in Task 10. Every `PhotoRun`
+method used in Task 10 is defined in Task 7. `Navigation.openSlideshow(Path)` and
+`openPhoto(Path, Path)` are declared once, in Task 10, and called with those
+signatures in Task 11 — the previous draft declared `openPhoto` twice, with
 different types, and this draft states it in exactly one place.
 
 **Known limitations, recorded rather than hidden.**
