@@ -356,10 +356,13 @@ has no `import java.util.Optional`, matching its existing style):
         Files.createFile(temp.resolve("movie.mkv"));
         Files.createFile(temp.resolve("movie.jpg"));
         Files.createFile(temp.resolve("holiday.jpg"));
+        // A second film, so the single-video folder-name rule stays out of the
+        // way — this test is about the sidecar, not about naming.
+        Files.createFile(temp.resolve("other.mkv"));
 
         List<MediaItem> items = scanner.scan(temp);
 
-        assertEquals(List.of("holiday", "movie"),
+        assertEquals(List.of("holiday", "movie", "other"),
                 items.stream().map(MediaItem::displayName).toList());
     }
 
@@ -415,72 +418,44 @@ In `MediaItem.java`, beside the existing factories:
     }
 ```
 
-In `MediaScanner`, in the listing loop that currently tests
-`VideoFiles.isVideoFileName(fileName)`, collect photographs into a **separate**
-`List<Path> photos` with a parallel `List<Long> photoTimestamps` filled from the
-same attributes the loop already reads for videos.
-
-Exclude artwork with a rule written **once**, in `ArtworkResolver`, and called
-from both the scanner and the walker. The grid and the walk must reach the same
-verdict: if they disagree, `openPhoto` hands over a photograph the walk never
-collected and the viewer silently shows a different one.
-
-The rule is unconditional — `selectCover` claims `poster`/`folder`/`cover`
-whether or not a video is present, because `MediaScanner` already uses that name
-as the folder tile's own artwork.
-
-`ArtworkResolver`'s imports do not currently include these; add
-`import java.util.HashSet;` and `import java.util.Set;`.
+In `MediaScanner`, collect photographs alongside videos in the listing loop, then
+build them **after the loop closes** — the artwork rule needs the complete list
+of names, and `DirectoryStream` order is unspecified, so a sidecar tested inside
+the loop gives a different answer depending on what the filesystem returned
+first.
 
 ```java
-    /**
-     * Whether this image belongs to something else in the folder — a film's
-     * poster or its sidecar — rather than being a photograph in its own right.
-     *
-     * <p>One rule, called from both the scanner and the slideshow walker. They
-     * must agree about every file in a folder, or a photograph shown in the grid
-     * cannot be found in the run the viewer is given.
-     */
-    public static Set<String> artworkNames(Collection<String> fileNames) {
-        Set<String> artwork = new HashSet<>();
-        selectCover(fileNames).ifPresent(artwork::add);
-        for (String name : fileNames) {
-            if (VideoFiles.isVideoFileName(name)) {
-                selectSidecar(VideoFiles.withoutExtension(name), fileNames).ifPresent(artwork::add);
-            }
+        // in the listing loop, beside the existing video branch
+        } else if (PhotoFiles.isPhotoFileName(fileName)) {
+            photos.add(entry);
+            photoTimestamps.add(attributes.lastModifiedTime().toMillis());
         }
-        return artwork;
-    }
-```
 
-Computed once per directory rather than per photograph: the sidecar lookup walks
-every sibling, and asking it for each picture in turn makes a folder of five
-hundred films and five hundred photographs quadratic on a background thread that
-`hasPhotos` runs for every folder opened.
+        // after the try-with-resources closes, over the completed fileNames
+        Set<String> artwork = ArtworkResolver.artworkNames(fileNames);
+        List<MediaItem> photoItems = new ArrayList<>();
+        for (int i = 0; i < photos.size(); i++) {
+            Path photo = photos.get(i);
+            if (artwork.contains(photo.getFileName().toString())) {
+                // A film's poster or sidecar: the grid shows it as that film's
+                // artwork, and the slideshow skips it for the same reason.
+                continue;
+            }
+            photoItems.add(MediaItem.image(photo, DisplayNames.forFile(photo),
+                    Optional.of(photo), photoTimestamps.get(i)));
+        }
 
-**The exclusion must happen after the listing loop closes**, over the completed
-list of names. `MediaScanner` fills `fileNames` as it iterates the
-`DirectoryStream`, and that stream's order is unspecified — a sidecar test run
-inside the loop would see a partial list and give a different answer depending on
-the order the filesystem happened to return. Build them with `MediaItem.image(photo, DisplayNames.forFile(photo),
-Optional.of(photo), timestamp)`, `videoItems` sorts **its own** list and returns it, so appending photographs to
-the result leaves them all after the films. Sort the combined block instead —
-`BY_FILE_NAME` is a `Comparator<MediaItem>`, not a comparator of paths:
-
-```java
-        List<MediaItem> files = new ArrayList<>(videoItems(videos, ...));
+        // videoItems sorts its own list, so the two are combined and sorted again
+        List<MediaItem> files = new ArrayList<>(videoItems(videos, videoTimestamps, ...));
         files.addAll(photoItems);
         files.sort(BY_FILE_NAME);
         items.addAll(files);
 ```
 
-That interleaving is what `listsPhotographs` asserts with
-`["beach", "one", "two"]`, and it is also what makes the grid's order match the
-walker's.
-
-**Leave `videoItems`' `videos.size() == 1` rule reading the video list only** —
-photographs must not be added to `videos`, or a folder holding one film and one
-photograph stops borrowing the folder's name.
+Declare `photos` and `photoTimestamps` beside the existing `videos` and its
+timestamps, and pass the video list to `videoItems` unchanged — **photographs must
+not be added to `videos`**, or a folder holding one film and one photograph stops
+borrowing the folder's name for the film.
 
 In `MediaTile.placeholder()`, the symbol is currently
 `item.isDirectory() ? "▤" : "▶"`. A photograph is not played:
@@ -767,9 +742,14 @@ import java.util.logging.Logger;
  * whole shelf of holidays to be counted before anything appears is the
  * experience this is built to avoid.
  *
- * <p>Sorts and filters exactly as {@link MediaScanner} does — case-insensitively
- * by file name, skipping what the system hides. The two must agree: a viewer who
- * opens the third photograph in a grid must be shown the third photograph here.
+ * <p>Sorts and filters as {@link MediaScanner} does — case-insensitively by file
+ * name, skipping what the system hides and what it calls junk. The two must
+ * agree: a viewer who opens the third photograph in a grid must be shown the
+ * third photograph here.
+ *
+ * <p>One deliberate difference: a symbolic link to a directory is browsable in
+ * the grid and is not descended into here. Following one that points back up the
+ * tree would walk for ever, and a slideshow is worth less than a hang.
  *
  * <p>Runs on a background thread and calls back on that same thread; marshalling
  * to the JavaFX thread is the caller's job.
@@ -816,7 +796,7 @@ public final class PhotoWalker {
         // the viewer must not hold more than the ceiling allows.
         List<Path> collected = new ArrayList<>();
         walk(rootListing, recursive, limit, 0, cancelled, onBatch, collected);
-        boolean truncated = anyBeyond(rootListing, recursive, limit, collected);
+        boolean truncated = anyBeyond(rootListing, recursive, limit, cancelled, collected);
         return new Walk(collected.size(), truncated);
     }
 
@@ -842,14 +822,24 @@ public final class PhotoWalker {
     /**
      * Whether the tree holds even one photograph beyond those collected. Asked
      * only after a full walk has hit its ceiling, so the cost falls on the rare
-     * library that is larger than the ceiling, not on every folder.
+     * library larger than the ceiling, not on every folder.
+     *
+     * <p>A second traversal, deliberately. Carrying the answer out of the first
+     * would be free, but it would mean walking to {@code limit + 1} and handing
+     * only {@code limit} to the viewer — and a walker that collects more than it
+     * reports is how the count and the run drifted apart once already.
      */
-    private static boolean anyBeyond(Listing rootListing, boolean recursive, int limit, List<Path> collected) {
+    private static boolean anyBeyond(Listing rootListing, boolean recursive, int limit,
+            BooleanSupplier cancelled, List<Path> collected) {
         if (collected.size() < limit) {
             return false;
         }
+        // Cancellable like the walk it follows: a viewer who leaves the moment the
+        // ceiling is reached must not leave a second traversal of the share
+        // running behind them. A cancelled probe reports "no more", which costs
+        // nothing — the run it would have marked is being torn down anyway.
         List<Path> probe = new ArrayList<>();
-        walk(rootListing, recursive, limit + 1, 0, () -> false, batch -> { }, probe);
+        walk(rootListing, recursive, limit + 1, 0, cancelled, batch -> { }, probe);
         return probe.size() > limit;
     }
 
@@ -922,7 +912,7 @@ public final class PhotoWalker {
         if (recursive && depth < MAX_DEPTH) {
             for (Path subdirectory : listing.subdirectories()) {
                 if (cancelled.getAsBoolean() || collected.size() >= limit) {
-                    return truncated || collected.size() >= limit;
+                    return;
                 }
                 // A share that goes away mid-walk ends that branch and no more:
                 // what has already been collected is still worth showing.
@@ -2274,10 +2264,14 @@ final class PhotoView implements View {
         // directories rather than running on against a page nobody is looking at.
         cancelled = true;
         advancing = false;
-        // The one asynchronous thing here that is not guarded by a flag: a pending
-        // debounce would otherwise settle after Esc and repaint a dead page,
-        // filling a cache that will never be cleared again.
+        // The two asynchronous things here that no flag guards: a pending debounce
+        // would settle after Esc and repaint a dead page, filling a cache that
+        // will never be cleared again, and a caption fade would go on running
+        // against a detached label.
         resizeSettled.stop();
+        if (captionFade != null) {
+            captionFade.stop();
+        }
         cache.clear();
     }
 
@@ -2374,7 +2368,12 @@ final class PhotoView implements View {
         showingFailure = false;
         resetTimer();
         display();
-        refreshOverlay();
+        // display() can fail synchronously — a revisited photograph whose image is
+        // cached and already in error reports it from inside paint() — and the
+        // caption it puts up must survive.
+        if (!showingFailure) {
+            refreshOverlay();
+        }
     }
 
     /**
@@ -2498,6 +2497,10 @@ final class PhotoView implements View {
         // and one bad photograph in the first batch would end the show.
         if (run.complete() && failuresSinceLastSuccess >= Math.max(run.size(), 1)) {
             LOG.warning("None of these photographs could be shown");
+            // Stopped, not merely reported: leaving the timer running would take
+            // the next interval, fail again, and arrive back here for ever, at one
+            // full-screen decode a time. The arrows still work.
+            advancing = false;
             imageView.setImage(null);
             showingFailure = true;
             showCaption("These photographs could not be shown.");
@@ -2808,7 +2811,8 @@ and in the branch that currently sends a file to VLC:
 ```
 
 Add the imports `mediacenter.ui.components.ActionTile` and
-`mediacenter.media.PhotoWalker`; `FxTasks` and `ArrayList` are already imported.
+`mediacenter.media.PhotoWalker`. `ArrayList` is already imported and `FxTasks`
+needs no import — it is in this package.
 
 - [ ] **Step 4: Verify by screenshot**
 
@@ -2932,8 +2936,8 @@ excluded — Task 1, documented Task 12. EXIF — Task 5, applied off-thread in 
 10. `-Xmx` — Task 12. README premise change — Task 12.
 
 **Placeholders.** No open decisions. Every piece of new logic has a body: the
-viewer in Task 10 Step 2, the artwork rule in Task 3 Step 3, `slideshowRow` and
-the toggle selection in Task 9 Step 3.
+viewer in Task 10 Step 2, the artwork rule **and its call site** in Task 3 Step 3,
+`slideshowRow` and the toggle selection in Task 9 Step 3.
 
 Three steps do ask the implementer to read an existing class rather than trusting
 a transcription of it — the `SettingsStore` constructor and save/load names in
@@ -2967,8 +2971,12 @@ consumed in Task 4.
 - `FileVisibilityTest`'s hidden-attribute case runs only on Windows, which is the
   platform the attribute exists on; elsewhere it is skipped rather than faked.
 
-**Four rounds of adversarial review** found roughly fifty defects in this plan, a
-majority of them introduced by the previous round's fixes. Two are worth carrying
+**Six rounds of adversarial review** found around eighty defects in this plan.
+In every single round, the blocking defects were introduced by the previous
+round's fixes — a walker restructured three times, a `void` conversion that left
+two stray returns, a trim added to remove a cosmetic "+" that reinstated a full
+network traversal. Treat any further edit to `PhotoWalker` or `PhotoView` as
+likely to break something, and re-read the tests around it. Two are worth carrying
 into implementation as warnings rather than as corrected text: `Image.cancel()`
 sets `error = true` one pulse later, so anything that drops a decoding image must
 not be read as a decode failure; and a `PauseTransition` stops with the rendering
