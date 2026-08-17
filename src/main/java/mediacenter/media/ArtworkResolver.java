@@ -72,6 +72,14 @@ public final class ArtworkResolver {
      * <p>Unconditional: a cover name is claimed whether or not a video is present,
      * because {@code MediaScanner} already uses it as the folder tile's artwork.
      *
+     * <p>Every match is claimed, not just the best one. {@link #selectCover} and
+     * {@link #selectSidecar} stop at their first hit because a tile needs exactly
+     * one image, but a Kodi- or Plex-organised folder routinely holds
+     * {@code poster.jpg} and {@code folder.jpg} side by side, and a film can have
+     * both a {@code .jpg} and a {@code .png} sidecar. Claiming only the winner
+     * leaves the others to appear as browsable tiles captioned "folder" or named
+     * after the film they belong to.
+     *
      * <p>Computed once per directory. The sidecar lookup walks every sibling, and
      * asking it per photograph makes a folder of five hundred films and five
      * hundred photographs quadratic — on a thread that runs for every folder the
@@ -79,13 +87,36 @@ public final class ArtworkResolver {
      */
     public static Set<String> artworkNames(Collection<String> fileNames) {
         Set<String> artwork = new HashSet<>();
-        selectCover(fileNames).ifPresent(artwork::add);
+        if (fileNames == null) {
+            return artwork;
+        }
+        for (String baseName : COVER_BASE_NAMES) {
+            collectSidecars(baseName, fileNames, artwork);
+        }
         for (String name : fileNames) {
             if (VideoFiles.isVideoFileName(name)) {
-                selectSidecar(VideoFiles.withoutExtension(name), fileNames).ifPresent(artwork::add);
+                collectSidecars(VideoFiles.withoutExtension(name), fileNames, artwork);
             }
         }
         return artwork;
+    }
+
+    /** Adds every {@code <baseName>.jpg|jpeg|png} sibling, matched case-insensitively. */
+    private static void collectSidecars(String baseName, Collection<String> fileNames, Set<String> into) {
+        if (baseName == null || baseName.isBlank()) {
+            return;
+        }
+        String normalizedBase = baseName.toLowerCase(Locale.ROOT);
+        for (String extension : IMAGE_EXTENSIONS) {
+            String wanted = normalizedBase + "." + extension;
+            for (String candidate : fileNames) {
+                if (candidate != null && candidate.toLowerCase(Locale.ROOT).equals(wanted)) {
+                    // The sibling's own spelling, not the normalised one: the caller
+                    // compares these against real file names off a listing.
+                    into.add(candidate);
+                }
+            }
+        }
     }
 
     /** Picks {@code <baseName>.jpg|jpeg|png} from a set of file names, case-insensitively. */
