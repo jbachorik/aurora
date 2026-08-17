@@ -389,3 +389,15 @@
     -fx-pref-height: 0;
     -fx-padding: 0;
 }
+
+.photo-view {
+    -fx-background-color: black;
+}
+
+.photo-overlay {
+    -fx-font-size: 26px;
+    -fx-text-fill: white;
+    -fx-background-color: rgba(0, 0, 0, 0.55);
+    -fx-background-radius: 8;
+    -fx-padding: 10 18 10 18;
+}

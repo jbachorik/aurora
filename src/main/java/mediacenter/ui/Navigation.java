@@ -26,6 +26,12 @@ public interface Navigation {
     /** Plays a file that is not part of the current listing (e.g. from history). */
     void play(Path mediaFile, String displayTitle);
 
+    /** Runs every photograph beneath a folder as a slideshow. */
+    void openSlideshow(Path folder);
+
+    /** Opens one photograph, with the arrows moving through its own folder. */
+    void openPhoto(Path folder, Path photo);
+
     void goBack();
 
     void goHome();

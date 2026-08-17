@@ -323,6 +323,16 @@ public final class MediaCenterShell implements Navigation {
     }
 
     @Override
+    public void openSlideshow(Path folder) {
+        push(new PhotoView(context, folder, true, null));
+    }
+
+    @Override
+    public void openPhoto(Path folder, Path photo) {
+        push(new PhotoView(context, folder, false, photo));
+    }
+
+    @Override
     public void goBack() {
         if (viewStack.size() <= 1) {
             return;
