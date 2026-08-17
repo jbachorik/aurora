@@ -156,9 +156,11 @@ rule moves somewhere both can reach before either needs it.
 - Test: `src/test/java/mediacenter/media/FileVisibilityTest.java`
 
 **Interfaces:**
-- Produces: `FileVisibility.isHiddenOrSystem(Path)` — `boolean`, `false` when the
-  attributes cannot be read (an entry that cannot be described is not evidence
-  of being hidden, and the caller will fail to open it soon enough anyway).
+- Produces: `FileVisibility.isHiddenOrSystem(Path)` — `boolean`. True when the
+  entry is hidden or a system file, and **true when it is not there at all**:
+  `MediaScanner` skips an entry whose attributes it cannot read, so this must
+  skip the same ones or the grid and the slideshow disagree about a folder. A
+  filesystem with no DOS view simply has no hidden bit, and returns false.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -301,7 +303,7 @@ git commit -m "Share one rule for what the operating system hides"
 
 **Interfaces:**
 - Consumes: `PhotoFiles.isPhoto(Path)`, `ArtworkResolver.selectCover(Collection<String>)`.
-- Produces: `MediaItemType.IMAGE`, `MediaItem.isImage()`, `MediaItem.image(Path, String, Optional<Path>, long)`.
+- Produces: `MediaItemType.IMAGE`, `MediaItem.isImage()`, `MediaItem.image(Path, String, Optional<Path>, long)`, `ArtworkResolver.artworkNames(Collection<String>)` → `Set<String>`.
 
 **Two traps this task exists to avoid**, both found by review:
 
@@ -427,6 +429,9 @@ The rule is unconditional — `selectCover` claims `poster`/`folder`/`cover`
 whether or not a video is present, because `MediaScanner` already uses that name
 as the folder tile's own artwork.
 
+`ArtworkResolver`'s imports do not currently include these; add
+`import java.util.HashSet;` and `import java.util.Set;`.
+
 ```java
     /**
      * Whether this image belongs to something else in the folder — a film's
@@ -458,11 +463,20 @@ list of names. `MediaScanner` fills `fileNames` as it iterates the
 `DirectoryStream`, and that stream's order is unspecified — a sidecar test run
 inside the loop would see a partial list and give a different answer depending on
 the order the filesystem happened to return. Build them with `MediaItem.image(photo, DisplayNames.forFile(photo),
-Optional.of(photo), timestamp)`, and append them to the same item list the videos produce, so the
-existing `BY_FILE_NAME` sort — which is a `Comparator<MediaItem>`, not a
-comparator of paths — interleaves photographs and films in one block after the
-directories. That is what `listsPhotographs` asserts with
-`["beach", "one", "two"]`.
+Optional.of(photo), timestamp)`, `videoItems` sorts **its own** list and returns it, so appending photographs to
+the result leaves them all after the films. Sort the combined block instead —
+`BY_FILE_NAME` is a `Comparator<MediaItem>`, not a comparator of paths:
+
+```java
+        List<MediaItem> files = new ArrayList<>(videoItems(videos, ...));
+        files.addAll(photoItems);
+        files.sort(BY_FILE_NAME);
+        items.addAll(files);
+```
+
+That interleaving is what `listsPhotographs` asserts with
+`["beach", "one", "two"]`, and it is also what makes the grid's order match the
+walker's.
 
 **Leave `videoItems`' `videos.size() == 1` rule reading the video list only** —
 photographs must not be added to `videos`, or a folder holding one film and one
@@ -796,23 +810,47 @@ public final class PhotoWalker {
         if (rootListing == null) {
             throw new MediaAccessException(root, MediaScanner.cannotAccessMessage(root), null);
         }
-        // Collected one past the limit and then trimmed, so that a folder holding
-        // exactly the limit is reported as finished rather than carrying a "+"
-        // that says, wrongly, that there is more.
+        // One is looked for past the limit, so that a folder holding exactly the
+        // limit is reported as finished rather than carrying a "+" that says,
+        // wrongly, that there is more. The extra one is never handed to onBatch:
+        // the viewer must not hold more than the ceiling allows.
         List<Path> collected = new ArrayList<>();
-        walk(rootListing, recursive, limit + 1, 0, cancelled, onBatch, collected);
-        boolean truncated = collected.size() > limit;
-        return new Walk(Math.min(collected.size(), limit), truncated);
+        walk(rootListing, recursive, limit, 0, cancelled, onBatch, collected);
+        boolean truncated = anyBeyond(rootListing, recursive, limit, collected);
+        return new Walk(collected.size(), truncated);
     }
 
-    /** Whether there is any photograph at all beneath this folder. Never throws. */
+    /**
+     * Whether there is any photograph at all beneath this folder. Never throws.
+     *
+     * <p>Deliberately not routed through {@link #collect}, which looks one past
+     * its limit to decide whether it was cut short. Here the first photograph is
+     * the whole answer, and the walk must stop on it — this runs for every folder
+     * the viewer opens, over a share.
+     */
     public static boolean hasPhotos(Path root) {
-        try {
-            return collect(root, true, 1, () -> false, batch -> { }).count() > 0;
-        } catch (MediaAccessException e) {
-            LOG.log(Level.FINE, "Cannot look for photographs in " + root, e);
+        Listing listing = list(root);
+        if (listing == null) {
+            LOG.log(Level.FINE, () -> "Cannot look for photographs in " + root);
             return false;
         }
+        List<Path> found = new ArrayList<>();
+        walk(listing, true, 1, 0, () -> false, batch -> { }, found);
+        return !found.isEmpty();
+    }
+
+    /**
+     * Whether the tree holds even one photograph beyond those collected. Asked
+     * only after a full walk has hit its ceiling, so the cost falls on the rare
+     * library that is larger than the ceiling, not on every folder.
+     */
+    private static boolean anyBeyond(Listing rootListing, boolean recursive, int limit, List<Path> collected) {
+        if (collected.size() < limit) {
+            return false;
+        }
+        List<Path> probe = new ArrayList<>();
+        walk(rootListing, recursive, limit + 1, 0, () -> false, batch -> { }, probe);
+        return probe.size() > limit;
     }
 
     /** A directory's entries, already split and sorted. */
@@ -858,11 +896,11 @@ public final class PhotoWalker {
         return new Listing(photos, subdirectories);
     }
 
-    /** @return whether the walk stopped at the limit */
-    private static boolean walk(Listing listing, boolean recursive, int limit,
+    /** Collects until the limit, the end of the tree, or the viewer leaving. */
+    private static void walk(Listing listing, boolean recursive, int limit,
             int depth, BooleanSupplier cancelled, Consumer<List<Path>> onBatch, List<Path> collected) {
         if (cancelled.getAsBoolean() || collected.size() >= limit) {
-            return collected.size() >= limit;
+            return;
         }
 
         List<Path> batch = new ArrayList<>();
@@ -876,8 +914,7 @@ public final class PhotoWalker {
         if (!batch.isEmpty()) {
             onBatch.accept(List.copyOf(batch));
         }
-        boolean truncated = collected.size() >= limit;
-        if (truncated) {
+        if (collected.size() >= limit) {
             // Nothing below can be wanted, and listing it costs a round trip per
             // directory. This is what makes hasPhotos cheap: it asks for one.
             return true;
@@ -891,11 +928,10 @@ public final class PhotoWalker {
                 // what has already been collected is still worth showing.
                 Listing below = list(subdirectory);
                 if (below != null) {
-                    truncated |= walk(below, true, limit, depth + 1, cancelled, onBatch, collected);
+                    walk(below, true, limit, depth + 1, cancelled, onBatch, collected);
                 }
             }
         }
-        return truncated;
     }
 }
 ```
@@ -1197,8 +1233,16 @@ git commit -m "Read which way up a photograph was taken"
   - `PhotoCache<T>` with `interface Loader<T> { T load(Path photo, double width, double height); }`
   - `PhotoCache(Loader<T> loader, Consumer<T> onEvict)`
   - `T PhotoCache.show(List<Path> photos, int index, List<Integer> neighbours, double width, double height)`
+  - `void PhotoCache.clear()` — releases everything held, for leaving the viewer
   - `int PhotoCache.size()`
   - `static Loader<Image> PhotoCache.imageLoader()`, `static Consumer<Image> PhotoCache.imageDisposer()`
+
+**A cost worth knowing before someone "simplifies" the key:** because the box
+depends on the rotation of the photograph being shown, a neighbour prefetched
+beside a portrait photograph is keyed to the swapped box and is evicted unused
+when it is arrived at. That wastes one decode across an orientation change. It is
+the price of never displaying an upscaled photograph, and keying on the path
+alone would trade a visible fault for an invisible one.
 
 **Three review findings shaped this signature.** It is **generic**, so the shipping
 path never holds `Object` and eviction can call a typed method. It takes an
@@ -1942,7 +1986,12 @@ which is a 10-foot control needing no typing:
             ToggleButton toggle = new ToggleButton(seconds + "s");
             toggle.setToggleGroup(group);
             toggle.setUserData(seconds);
-            toggle.setOnAction(event -> update(settings().withSlideshowSeconds(seconds)));
+            toggle.setOnAction(event -> {
+                // A toggle group lets a second click clear the selection, which
+                // would leave the row showing no interval at all.
+                toggle.setSelected(true);
+                update(settings().withSlideshowSeconds(seconds));
+            });
             slideshowToggles.add(toggle);
             toggles.add(toggle);
         }
@@ -1967,8 +2016,17 @@ Read `themeRow()` before writing this and follow whatever it actually does — t
 sketch above is the shape, not a transcription.
 
 Keep a `private final List<ToggleButton> slideshowToggles = new ArrayList<>();`
-field and select the matching one in `readSettings()`, exactly as the theme
-toggles are handled. A hand-edited `config.json` may hold a value the buttons do
+field. In `readSettings()`, select the matching button — note that the theme
+row's `getUserData() == settings.theme()` pattern cannot be copied here, because
+the user data is an `Integer` and the setting is an `int`, which will not compile
+as a reference comparison:
+
+```java
+        Integer configured = settings.slideshowSeconds();
+        for (ToggleButton toggle : slideshowToggles) {
+            toggle.setSelected(configured.equals(toggle.getUserData()));
+        }
+``` A hand-edited `config.json` may hold a value the buttons do
 not offer — `30` is legal, since the record clamps to `[2, 60]` — in which case
 **no toggle is selected**, which is honest: the row still takes the keyboard, and
 pressing either button adopts that value.
@@ -2125,6 +2183,7 @@ final class PhotoView implements View {
     private int index;
     private boolean showingSomething;
     private boolean seekDone;
+    private boolean showingFailure;
     private int failuresSinceLastSuccess;
     private double lastPaintedWidth;
     private double lastPaintedHeight;
@@ -2295,7 +2354,9 @@ final class PhotoView implements View {
 
     /** Keeps the count honest as the walk grows, without re-showing a faded caption. */
     private void updateCounterIfShowing() {
-        if (overlay.isVisible() && !run.isEmpty()) {
+        // Never over a failure message: that one is the only thing on a black
+        // screen, and replacing it with a file name would leave no explanation.
+        if (overlay.isVisible() && !showingFailure && !run.isEmpty()) {
             Path name = run.get(index).getFileName();
             overlay.setText((name == null ? run.get(index).toString() : name.toString())
                     + "        " + run.counterText(index));
@@ -2310,6 +2371,7 @@ final class PhotoView implements View {
         }
         index = Math.floorMod(target, run.size());
         showingSomething = true;
+        showingFailure = false;
         resetTimer();
         display();
         refreshOverlay();
@@ -2437,6 +2499,7 @@ final class PhotoView implements View {
         if (run.complete() && failuresSinceLastSuccess >= Math.max(run.size(), 1)) {
             LOG.warning("None of these photographs could be shown");
             imageView.setImage(null);
+            showingFailure = true;
             showCaption("These photographs could not be shown.");
             return;
         }
@@ -2456,6 +2519,7 @@ final class PhotoView implements View {
             });
         } else {
             imageView.setImage(null);
+            showingFailure = true;
             showCaption("This photograph could not be shown.");
         }
     }
@@ -2762,8 +2826,11 @@ photographs as their own thumbnails.
 ./gradlew run --args="--snapshot=/tmp/photos-show.png --snapshot-keys=RIGHT,ENTER,ENTER,ENTER"
 ```
 
-Expected: a full-screen photograph on black with **no header and no hint bar**,
-and a caption reading the file name and `1 of N` or `1 of N+`.
+Expected: a full-screen photograph on black with **no header and no hint bar**.
+The caption may or may not have faded — `SceneSnapshot`'s settle and the
+caption's delay are both three seconds, so the capture lands on the fade. Judge
+the photograph and the missing chrome here; the caption is checked by the third
+capture below, which arrives fresh after a key press.
 
 ```bash
 ./gradlew run --args="--snapshot=/tmp/photos-right.png --snapshot-keys=RIGHT,ENTER,ENTER,ENTER,RIGHT"
