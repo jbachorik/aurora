@@ -166,6 +166,7 @@ rule moves somewhere both can reach before either needs it.
 package mediacenter.media;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -173,6 +174,8 @@ import java.nio.file.Path;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class FileVisibilityTest {
@@ -183,9 +186,19 @@ class FileVisibilityTest {
     }
 
     @Test
-    @DisplayName("an entry that cannot be described is not treated as hidden")
-    void anUnreadableEntryIsNotHidden(@TempDir Path temp) {
-        assertFalse(FileVisibility.isHiddenOrSystem(temp.resolve("gone.jpg")));
+    @DisplayName("an entry that is not there is skipped, exactly as the scanner skips it")
+    void anEntryThatIsNotThereIsSkipped(@TempDir Path temp) {
+        assertTrue(FileVisibility.isHiddenOrSystem(temp.resolve("gone.jpg")));
+    }
+
+    @Test
+    @DisplayName("on Windows the hidden attribute is honoured")
+    @EnabledOnOs(OS.WINDOWS)
+    void honoursTheHiddenAttribute(@TempDir Path temp) throws IOException {
+        Path hidden = Files.createFile(temp.resolve("hidden.jpg"));
+        Files.setAttribute(hidden, "dos:hidden", true);
+
+        assertTrue(FileVisibility.isHiddenOrSystem(hidden));
     }
 }
 ```
@@ -222,6 +235,11 @@ public final class FileVisibility {
     private FileVisibility() {
     }
 
+    /**
+     * @return true when the entry is hidden, or when it cannot be described at
+     *         all — the scanner skips such an entry, and the slideshow must skip
+     *         the same ones or the two disagree about what a folder contains
+     */
     public static boolean isHiddenOrSystem(Path entry) {
         try {
             // On Windows this single call also yields the hidden/system flags.
@@ -230,6 +248,11 @@ public final class FileVisibility {
         } catch (IOException | RuntimeException e) {
             // UnsupportedOperationException lands here on filesystems without the
             // DOS view, where there is no hidden attribute to consult.
+            if (!Files.exists(entry)) {
+                // Gone, or unreadable: the scanner drops these, so this does too.
+                return true;
+            }
+            // No DOS view on this filesystem, which simply means no hidden bit.
             LOG.log(Level.FINEST, "No DOS attributes for " + entry, e);
             return false;
         }
@@ -254,7 +277,7 @@ accidental:
 - [ ] **Step 5: Run the suite**
 
 Run: `./gradlew test`
-Expected: PASS, whole suite, two tests more than before.
+Expected: PASS, whole suite. The Windows-only case is skipped elsewhere; that is the platform whose hidden attribute this exists for.
 
 - [ ] **Step 6: Commit**
 
@@ -271,6 +294,7 @@ git commit -m "Share one rule for what the operating system hides"
 - Modify: `src/main/java/mediacenter/media/MediaItemType.java`
 - Modify: `src/main/java/mediacenter/media/MediaItem.java`
 - Modify: `src/main/java/mediacenter/media/MediaScanner.java`
+- Modify: `src/main/java/mediacenter/media/ArtworkResolver.java`
 - Modify: `src/main/java/mediacenter/ui/components/MediaTile.java`
 - Modify: `src/main/java/mediacenter/ui/BrowseView.java`
 - Test: `src/test/java/mediacenter/media/MediaScannerTest.java`
@@ -322,6 +346,19 @@ has no `import java.util.Optional`, matching its existing style):
 
         assertEquals(1, items.size(), "the poster is the film's artwork: " + items);
         assertTrue(items.getFirst().isVideo());
+    }
+
+    @Test
+    @DisplayName("a film's sidecar image is artwork wherever the listing happens to reach it")
+    void doesNotListASidecarAsAPhotograph(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("movie.mkv"));
+        Files.createFile(temp.resolve("movie.jpg"));
+        Files.createFile(temp.resolve("holiday.jpg"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(List.of("holiday", "movie"),
+                items.stream().map(MediaItem::displayName).toList());
     }
 
     @Test
@@ -381,17 +418,55 @@ In `MediaScanner`, in the listing loop that currently tests
 `List<Path> photos` with a parallel `List<Long> photoTimestamps` filled from the
 same attributes the loop already reads for videos.
 
-Exclude artwork with **exactly the rule `PhotoWalker.isArtworkFor` uses** — the
-grid and the walk must reach the same verdict, or the two disagree about what is
-in a folder and `openPhoto` cannot find the photograph that was activated. That
-rule is unconditional: `ArtworkResolver.selectCover(names)` claims
-`poster`/`folder`/`cover` whether or not a video is present, because
-`MediaScanner` already uses that name as the folder tile's own artwork. Extract
-it once, as `ArtworkResolver.isArtwork(String fileName, List<String> siblings)`,
-and call it from both places rather than writing it twice. Build them with `MediaItem.image(photo, DisplayNames.forFile(photo),
-Optional.of(photo), timestamp)`, sort them into the same list with the existing
-`BY_FILE_NAME` comparator, and **leave `videoItems`' `videos.size() == 1` rule
-reading the video list only** — photographs must not be added to `videos`.
+Exclude artwork with a rule written **once**, in `ArtworkResolver`, and called
+from both the scanner and the walker. The grid and the walk must reach the same
+verdict: if they disagree, `openPhoto` hands over a photograph the walk never
+collected and the viewer silently shows a different one.
+
+The rule is unconditional — `selectCover` claims `poster`/`folder`/`cover`
+whether or not a video is present, because `MediaScanner` already uses that name
+as the folder tile's own artwork.
+
+```java
+    /**
+     * Whether this image belongs to something else in the folder — a film's
+     * poster or its sidecar — rather than being a photograph in its own right.
+     *
+     * <p>One rule, called from both the scanner and the slideshow walker. They
+     * must agree about every file in a folder, or a photograph shown in the grid
+     * cannot be found in the run the viewer is given.
+     */
+    public static Set<String> artworkNames(Collection<String> fileNames) {
+        Set<String> artwork = new HashSet<>();
+        selectCover(fileNames).ifPresent(artwork::add);
+        for (String name : fileNames) {
+            if (VideoFiles.isVideoFileName(name)) {
+                selectSidecar(VideoFiles.withoutExtension(name), fileNames).ifPresent(artwork::add);
+            }
+        }
+        return artwork;
+    }
+```
+
+Computed once per directory rather than per photograph: the sidecar lookup walks
+every sibling, and asking it for each picture in turn makes a folder of five
+hundred films and five hundred photographs quadratic on a background thread that
+`hasPhotos` runs for every folder opened.
+
+**The exclusion must happen after the listing loop closes**, over the completed
+list of names. `MediaScanner` fills `fileNames` as it iterates the
+`DirectoryStream`, and that stream's order is unspecified — a sidecar test run
+inside the loop would see a partial list and give a different answer depending on
+the order the filesystem happened to return. Build them with `MediaItem.image(photo, DisplayNames.forFile(photo),
+Optional.of(photo), timestamp)`, and append them to the same item list the videos produce, so the
+existing `BY_FILE_NAME` sort — which is a `Comparator<MediaItem>`, not a
+comparator of paths — interleaves photographs and films in one block after the
+directories. That is what `listsPhotographs` asserts with
+`["beach", "one", "two"]`.
+
+**Leave `videoItems`' `videos.size() == 1` rule reading the video list only** —
+photographs must not be added to `videos`, or a folder holding one film and one
+photograph stops borrowing the folder's name.
 
 In `MediaTile.placeholder()`, the symbol is currently
 `item.isDirectory() ? "▤" : "▶"`. A photograph is not played:
@@ -428,7 +503,7 @@ git commit -m "List photographs in the browse grid"
 - Test: `src/test/java/mediacenter/media/PhotoWalkerTest.java`
 
 **Interfaces:**
-- Consumes: `PhotoFiles.isPhoto(Path)`, `FileVisibility.isHiddenOrSystem(Path)`, `MediaAccessException`, `MediaScanner.cannotAccessMessage(Path)` (package-private static, same package), `ArtworkResolver.selectCover(Collection<String>)`, `ArtworkResolver.selectSidecar(String, Collection<String>)`.
+- Consumes: `PhotoFiles.isPhoto(Path)`, `FileVisibility.isHiddenOrSystem(Path)`, `MediaAccessException`, `MediaScanner.cannotAccessMessage(Path)` (package-private static, same package), `ArtworkResolver.artworkNames(Collection<String>)` (added in Task 3).
 - Produces:
   - `record PhotoWalker.Walk(long count, boolean truncated)`
   - `PhotoWalker.collect(Path root, boolean recursive, int limit, BooleanSupplier cancelled, Consumer<List<Path>> onBatch)` → `Walk`, **`throws MediaAccessException`** — it is a checked exception with a `(Path, String, Throwable)` constructor, so both the `throws` clause and the arguments matter. Called on a background thread; `onBatch` runs on that thread.
@@ -579,6 +654,19 @@ class PhotoWalkerTest {
     }
 
     @Test
+    @DisplayName("a folder holding exactly the limit has not been cut short")
+    void aFolderOfExactlyTheLimitIsNotTruncated(@TempDir Path root) throws Exception {
+        for (int i = 0; i < 4; i++) {
+            Files.createFile(root.resolve("photo-" + i + ".jpg"));
+        }
+
+        PhotoWalker.Walk walk = PhotoWalker.collect(root, true, 4, () -> false, batch -> { });
+
+        assertEquals(4, walk.count());
+        assertFalse(walk.truncated());
+    }
+
+    @Test
     @DisplayName("a folder that cannot be listed at all is an error, not an empty slideshow")
     void refusesAnUnreachableRoot(@TempDir Path temp) throws Exception {
         Path missing = temp.resolve("offline-share");
@@ -651,6 +739,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -707,9 +796,13 @@ public final class PhotoWalker {
         if (rootListing == null) {
             throw new MediaAccessException(root, MediaScanner.cannotAccessMessage(root), null);
         }
+        // Collected one past the limit and then trimmed, so that a folder holding
+        // exactly the limit is reported as finished rather than carrying a "+"
+        // that says, wrongly, that there is more.
         List<Path> collected = new ArrayList<>();
-        boolean truncated = walk(rootListing, recursive, limit, 0, cancelled, onBatch, collected);
-        return new Walk(collected.size(), truncated);
+        walk(rootListing, recursive, limit + 1, 0, cancelled, onBatch, collected);
+        boolean truncated = collected.size() > limit;
+        return new Walk(Math.min(collected.size(), limit), truncated);
     }
 
     /** Whether there is any photograph at all beneath this folder. Never throws. */
@@ -755,30 +848,14 @@ public final class PhotoWalker {
             LOG.log(Level.FINE, "Could not list " + directory, e);
             return null;
         }
-        photos.removeIf(photo -> isArtworkFor(photo, names));
+        // One set per directory, from the rule the scanner uses: asking per
+        // photograph would be quadratic, and writing the rule twice would let the
+        // grid and the slideshow drift apart.
+        Set<String> artwork = ArtworkResolver.artworkNames(names);
+        photos.removeIf(photo -> artwork.contains(photo.getFileName().toString()));
         photos.sort(BY_FILE_NAME);
         subdirectories.sort(BY_FILE_NAME);
         return new Listing(photos, subdirectories);
-    }
-
-    /**
-     * Whether this image is a film's artwork rather than a photograph in its own
-     * right. The grid hides these; the slideshow must hide the same ones, or the
-     * two disagree about what is in a folder.
-     */
-    private static boolean isArtworkFor(Path photo, List<String> siblingFileNames) {
-        String name = photo.getFileName().toString();
-        if (ArtworkResolver.selectCover(siblingFileNames).filter(name::equals).isPresent()) {
-            return true;
-        }
-        for (String sibling : siblingFileNames) {
-            if (VideoFiles.isVideoFileName(sibling)
-                    && ArtworkResolver.selectSidecar(VideoFiles.withoutExtension(sibling), siblingFileNames)
-                            .filter(name::equals).isPresent()) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** @return whether the walk stopped at the limit */
@@ -826,7 +903,7 @@ public final class PhotoWalker {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `./gradlew test --tests '*PhotoWalkerTest*'`
-Expected: PASS, thirteen tests.
+Expected: PASS, fourteen tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1249,10 +1326,9 @@ package mediacenter.ui.components;
 
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import javafx.scene.image.Image;
@@ -1281,7 +1357,17 @@ public final class PhotoCache<T> {
 
     private final Loader<T> loader;
     private final Consumer<T> onEvict;
-    private final Map<Path, T> held = new HashMap<>();
+    /**
+     * Keyed on the size as well as the path, exactly as {@code ArtworkCache} is.
+     * The box a photograph is decoded into depends on the rotation of whatever is
+     * on screen, so a neighbour prefetched beside a portrait photograph would
+     * otherwise be reused, upscaled, in a landscape box and never decoded again.
+     */
+    private final Map<String, T> held = new HashMap<>();
+
+    private static String keyFor(Path photo, double width, double height) {
+        return photo + "@" + Math.round(width) + "x" + Math.round(height);
+    }
 
     public PhotoCache(Loader<T> loader, Consumer<T> onEvict) {
         this.loader = loader;
@@ -1310,24 +1396,23 @@ public final class PhotoCache<T> {
      *                   wraps, and this class does not
      */
     public T show(List<Path> photos, int index, List<Integer> neighbours, double width, double height) {
-        Set<Path> wanted = new LinkedHashSet<>();
-        wanted.add(photos.get(index));
+        Map<String, Path> wanted = new LinkedHashMap<>();
+        wanted.put(keyFor(photos.get(index), width, height), photos.get(index));
         for (int neighbour : neighbours) {
             if (neighbour >= 0 && neighbour < photos.size()) {
-                wanted.add(photos.get(neighbour));
+                Path photo = photos.get(neighbour);
+                wanted.putIfAbsent(keyFor(photo, width, height), photo);
             }
         }
         held.entrySet().removeIf(entry -> {
-            if (wanted.contains(entry.getKey())) {
+            if (wanted.containsKey(entry.getKey())) {
                 return false;
             }
             onEvict.accept(entry.getValue());
             return true;
         });
-        for (Path photo : wanted) {
-            held.computeIfAbsent(photo, path -> loader.load(path, width, height));
-        }
-        return held.get(photos.get(index));
+        wanted.forEach((key, photo) -> held.computeIfAbsent(key, ignored -> loader.load(photo, width, height)));
+        return held.get(keyFor(photos.get(index), width, height));
     }
 
     /** Everything held is released; for leaving the viewer. */
@@ -1540,9 +1625,12 @@ final class PhotoRun {
     }
 
     /**
-     * The walk stopped at its limit. Such a run is never complete: looping over a
-     * fraction of a library, and a counter claiming that fraction is all of it,
-     * would both be lies.
+     * The walk ended at its limit rather than at the end of the tree.
+     *
+     * <p>Such a run still wraps over what it holds — freezing on the last of five
+     * thousand would be worse than looping them — but its counter keeps its "+",
+     * because there really are more. Do not "restore" an invariant here that
+     * suppresses {@link #markComplete}: wrapping is deliberate.
      */
     void markTruncated() {
         truncated = true;
@@ -2081,6 +2169,9 @@ final class PhotoView implements View {
         // and a drag changes the size on every pulse, so reacting to each one
         // would clear the cache and start three fresh decodes many times a second.
         resizeSettled.setOnFinished(event -> {
+            if (cancelled) {
+                return;
+            }
             if (showingSomething && sizeChanged()) {
                 cache.clear();
                 display();
@@ -2124,6 +2215,10 @@ final class PhotoView implements View {
         // directories rather than running on against a page nobody is looking at.
         cancelled = true;
         advancing = false;
+        // The one asynchronous thing here that is not guarded by a flag: a pending
+        // debounce would otherwise settle after Esc and repaint a dead page,
+        // filling a cache that will never be cleared again.
+        resizeSettled.stop();
         cache.clear();
     }
 
@@ -2135,6 +2230,9 @@ final class PhotoView implements View {
                 PhotoWalker.Walk walk = PhotoWalker.collect(folder, slideshow, PHOTO_LIMIT,
                         () -> cancelled, batch -> Platform.runLater(() -> onBatch(batch)));
                 Platform.runLater(() -> {
+                    if (cancelled) {
+                        return;
+                    }
                     if (walk.truncated()) {
                         run.markTruncated();
                     }
@@ -2144,12 +2242,21 @@ final class PhotoView implements View {
                         // here: nothing on it would say that Esc is the way out.
                         showCaption("No photographs here.");
                     } else {
+                        if (startAt != null && !seekDone) {
+                            // The grid offered a photograph the walk never found.
+                            // The two are meant to agree; if they ever do not, say
+                            // so in the log rather than silently showing another.
+                            LOG.warning("Not among the photographs collected: " + startAt);
+                        }
                         refreshOverlay();
                     }
                 });
             } catch (MediaAccessException | RuntimeException e) {
                 LOG.log(Level.WARNING, "Could not collect photographs in " + folder, e);
                 Platform.runLater(() -> {
+                    if (cancelled) {
+                        return;
+                    }
                     run.markComplete();
                     if (!showingSomething) {
                         showCaption("These photographs are not available.");
@@ -2179,7 +2286,19 @@ final class PhotoView implements View {
                 show(wanted);
             }
         } else {
-            refreshOverlay();
+            // Deliberately not refreshOverlay(): the caption belongs to a change
+            // of photograph, and re-showing it for every directory the walk
+            // finishes would leave it up for the whole walk.
+            updateCounterIfShowing();
+        }
+    }
+
+    /** Keeps the count honest as the walk grows, without re-showing a faded caption. */
+    private void updateCounterIfShowing() {
+        if (overlay.isVisible() && !run.isEmpty()) {
+            Path name = run.get(index).getFileName();
+            overlay.setText((name == null ? run.get(index).toString() : name.toString())
+                    + "        " + run.counterText(index));
         }
     }
 
@@ -2278,11 +2397,14 @@ final class PhotoView implements View {
         listener[0] = observable -> {
             if (image.isError()) {
                 stopListening(image, listener[0]);
-                // Compared by identity against what is actually on screen, not by
-                // path. Image.cancel() reports itself as an error one pulse later,
-                // so an image discarded by a resize would otherwise be taken for a
-                // photograph that failed to decode — and skipped.
-                if (!cancelled && imageView.getImage() == image) {
+                // Both tests are needed. Image.cancel() reports itself as an
+                // error one pulse later, so an image dropped by a resize must not
+                // be read as a failure — hence the identity test. And display()
+                // is asynchronous while an orientation is still being read, so
+                // the image on screen can belong to the previous photograph —
+                // hence the path test, without which a resize during that gap
+                // skips the photograph that was never even tried.
+                if (!cancelled && photo.equals(run.get(index)) && imageView.getImage() == image) {
                     onDecodeFailed(photo);
                 }
             } else if (image.getProgress() >= 1.0) {
@@ -2309,19 +2431,26 @@ final class PhotoView implements View {
     private void onDecodeFailed(Path photo) {
         LOG.log(Level.FINE, () -> "Could not decode " + photo);
         failuresSinceLastSuccess++;
-        if (failuresSinceLastSuccess >= Math.max(run.size(), 1)) {
+        // Only once the run has ended does a full pass of failures mean anything.
+        // While the walk continues, size() is whatever has been collected so far,
+        // and one bad photograph in the first batch would end the show.
+        if (run.complete() && failuresSinceLastSuccess >= Math.max(run.size(), 1)) {
             LOG.warning("None of these photographs could be shown");
             imageView.setImage(null);
             showCaption("These photographs could not be shown.");
             return;
         }
-        int onwards = run.next(index);
-        if (onwards != index) {
+        int from = index;
+        int onwards = run.next(from);
+        if (onwards != from) {
             // Posted rather than called: a cached image that is already in error
             // reports it from inside paint(), and advancing straight away would
             // nest paint() inside paint() once per broken file.
             Platform.runLater(() -> {
-                if (!cancelled && index != onwards) {
+                // Compared against the index that failed, not against where we are
+                // going: an arrow pressed in this pulse has already moved the
+                // viewer, and they must not be dragged onwards from it.
+                if (!cancelled && index == from) {
                     show(onwards);
                 }
             });
@@ -2502,6 +2631,7 @@ git commit -m "Show photographs full screen, one viewing at a time"
 
 **Files:**
 - Modify: `src/main/java/mediacenter/ui/BrowseView.java`
+- Modify: `src/main/java/mediacenter/ui/components/TileGrid.java`
 
 **Interfaces:**
 - Consumes: `PhotoWalker.hasPhotos(Path)`, `Navigation.openSlideshow(Path)`, `Navigation.openPhoto(Path, Path)`, `ActionTile`.
