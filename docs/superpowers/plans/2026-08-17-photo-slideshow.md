@@ -2459,7 +2459,10 @@ have photographs several levels below it.
             offerSlideshow(List.of(), generation);
             return;
         }
-        ...
+        List<Tile> tiles = new ArrayList<>(items.size());
+        for (MediaItem item : items) {
+            tiles.add(new MediaTile(item, shape, context.artworkCache(), context.settings().get().theme()));
+        }
         grid.setTiles(tiles);
         grid.focusSelection();
         offerSlideshow(tiles, generation);
