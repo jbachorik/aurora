@@ -66,7 +66,8 @@ class SettingsStoreTest {
                 Optional.of(Path.of("C:\\Program Files\\Mozilla Firefox\\firefox.exe")),
                 false,
                 Theme.LIGHT,
-                List.of(movies, tv));
+                List.of(movies, tv),
+                5);
 
         assertTrue(store.save(original));
         ApplicationSettings reloaded = store.load();
@@ -78,6 +79,23 @@ class SettingsStoreTest {
         assertEquals(2, reloaded.mediaRoots().size());
         assertEquals(movies, reloaded.mediaRoots().getFirst());
         assertEquals("\\\\synology\\video\\Movies", reloaded.mediaRoots().getFirst().displayPath());
+    }
+
+    @Test
+    @DisplayName("the interval survives being written and read back")
+    void roundTripsTheSlideshowInterval(@TempDir Path temp) {
+        SettingsStore store = new SettingsStore(temp);
+        assertTrue(store.save(ApplicationSettings.defaults().withSlideshowSeconds(9)));
+
+        assertEquals(9, store.load().slideshowSeconds());
+    }
+
+    @Test
+    @DisplayName("a configuration written before slideshows still loads")
+    void defaultsTheIntervalWhenTheKeyIsAbsent(@TempDir Path temp) throws IOException {
+        Files.writeString(temp.resolve("config.json"), "{\"fullScreen\": true, \"theme\": \"DARK\"}");
+
+        assertEquals(5, new SettingsStore(temp).load().slideshowSeconds());
     }
 
     @Test

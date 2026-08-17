@@ -85,6 +85,12 @@ dependencies {
 application {
     mainModule = applicationModuleName
     mainClass = applicationMainClass
+    // Pinned rather than left to the default: a photograph decoded at screen
+    // size is about eight megabytes, three are held at once, and an unspecified
+    // heap turns a large picture into an unpredictable failure on a machine
+    // with little to spare. Matches the jpackage --java-options below so that
+    // a local `./gradlew run` exercises the same ceiling the shipped image has.
+    applicationDefaultJvmArgs = listOf("-Xmx512m")
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -261,7 +267,12 @@ val jpackage = tasks.register<Exec>("jpackage") {
                 "--description", "Lightweight media center frontend",
                 "--runtime-image", runtimePath,
                 "--module", "$applicationModuleName/$applicationMainClass",
-                "--dest", destPath
+                "--dest", destPath,
+                // Pinned rather than left to the default: a photograph decoded at
+                // screen size is about eight megabytes, three are held at once, and
+                // an unspecified heap turns a large picture into an unpredictable
+                // failure on a machine with little to spare.
+                "--java-options", "-Xmx512m"
             ) + platformOptions + iconOptions
         }
     )

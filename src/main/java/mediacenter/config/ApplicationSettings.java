@@ -17,37 +17,45 @@ public record ApplicationSettings(
         Optional<Path> browserPath,
         boolean fullScreen,
         Theme theme,
-        List<MediaRoot> mediaRoots) {
+        List<MediaRoot> mediaRoots,
+        int slideshowSeconds) {
 
     public ApplicationSettings {
         vlcPath = vlcPath == null ? Optional.empty() : vlcPath;
         browserPath = browserPath == null ? Optional.empty() : browserPath;
         theme = theme == null ? Theme.DARK : theme;
         mediaRoots = mediaRoots == null ? List.of() : List.copyOf(mediaRoots);
+        // Under two seconds nobody can take the picture in; over a minute the
+        // screen looks stuck.
+        slideshowSeconds = Math.clamp(slideshowSeconds, 2, 60);
     }
 
     public static ApplicationSettings defaults() {
-        return new ApplicationSettings(Optional.empty(), Optional.empty(), true, Theme.DARK, List.of());
+        return new ApplicationSettings(Optional.empty(), Optional.empty(), true, Theme.DARK, List.of(), 5);
     }
 
     public ApplicationSettings withVlcPath(Optional<Path> newVlcPath) {
-        return new ApplicationSettings(newVlcPath, browserPath, fullScreen, theme, mediaRoots);
+        return new ApplicationSettings(newVlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds);
     }
 
     public ApplicationSettings withBrowserPath(Optional<Path> newBrowserPath) {
-        return new ApplicationSettings(vlcPath, newBrowserPath, fullScreen, theme, mediaRoots);
+        return new ApplicationSettings(vlcPath, newBrowserPath, fullScreen, theme, mediaRoots, slideshowSeconds);
     }
 
     public ApplicationSettings withFullScreen(boolean newFullScreen) {
-        return new ApplicationSettings(vlcPath, browserPath, newFullScreen, theme, mediaRoots);
+        return new ApplicationSettings(vlcPath, browserPath, newFullScreen, theme, mediaRoots, slideshowSeconds);
     }
 
     public ApplicationSettings withTheme(Theme newTheme) {
-        return new ApplicationSettings(vlcPath, browserPath, fullScreen, newTheme, mediaRoots);
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, newTheme, mediaRoots, slideshowSeconds);
     }
 
     public ApplicationSettings withMediaRoots(List<MediaRoot> newMediaRoots) {
-        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, newMediaRoots);
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, newMediaRoots, slideshowSeconds);
+    }
+
+    public ApplicationSettings withSlideshowSeconds(int newSlideshowSeconds) {
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, mediaRoots, newSlideshowSeconds);
     }
 
     /** Adds a root, replacing any existing root with the same id. */

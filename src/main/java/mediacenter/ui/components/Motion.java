@@ -45,6 +45,17 @@ public final class Motion {
         fade.play();
     }
 
+    /** Holds a caption long enough to be read, then takes it away. */
+    public static FadeTransition fadeOutAfter(Node node) {
+        FadeTransition fade = new FadeTransition(GENTLE, node);
+        fade.setDelay(Duration.seconds(3));
+        fade.setFromValue(1);
+        fade.setToValue(0);
+        fade.setInterpolator(EASE);
+        fade.setOnFinished(event -> node.setVisible(false));
+        return fade;
+    }
+
     /**
      * Slides a node in horizontally while fading it up.
      *

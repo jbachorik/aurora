@@ -56,6 +56,8 @@ public final class SettingsView implements View {
     private final Label browserStatus = new Label();
     private final ToggleButton fullScreenToggle = new ToggleButton();
     private final ToggleGroup themeGroup = new ToggleGroup();
+    private final Label slideshowValue = new Label();
+    private final List<ToggleButton> slideshowToggles = new ArrayList<>();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
 
@@ -115,10 +117,13 @@ public final class SettingsView implements View {
         Node fullScreenRow = settingRow("Full screen", new Label(), null, fullScreenToggle);
         navigationRows.add(List.of(fullScreenToggle));
 
+        // The order these are built in is the order the arrow keys walk: each
+        // appends its own row to navigationRows as it goes.
         Node themeRow = themeRow();
+        Node slideshowRow = slideshowRow();
         Node rootsSection = mediaRootsSection();
 
-        root.getChildren().addAll(vlcRow, browserRow, fullScreenRow, themeRow, rootsSection);
+        root.getChildren().addAll(vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, rootsSection);
 
         installArrowNavigation();
         readSettings();
@@ -234,6 +239,46 @@ public final class SettingsView implements View {
         navigationRows.add(List.copyOf(toggles));
 
         HBox line = new HBox(16, name, value, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
+    }
+
+    /**
+     * How long each photograph stays. Two toggles rather than a number field:
+     * from the far side of a room there is nothing to type with.
+     */
+    private Node slideshowRow() {
+        Label name = new Label("Slideshow");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        slideshowValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(slideshowValue, Priority.ALWAYS);
+        slideshowValue.setMaxWidth(Double.MAX_VALUE);
+
+        ToggleGroup group = new ToggleGroup();
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        for (int seconds : List.of(5, 10)) {
+            ToggleButton button = new ToggleButton(seconds + "s");
+            button.setUserData(seconds);
+            button.setToggleGroup(group);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            // A toggle group lets a second click clear the selection, which would
+            // leave the row showing no interval at all.
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withSlideshowSeconds(seconds));
+            });
+            choices.getChildren().add(button);
+            slideshowToggles.add(button);
+        }
+        navigationRows.add(List.copyOf(slideshowToggles));
+
+        HBox line = new HBox(16, name, slideshowValue, choices);
         line.setAlignment(Pos.CENTER_LEFT);
 
         VBox card = new VBox(line);
@@ -457,6 +502,17 @@ public final class SettingsView implements View {
         fullScreenToggle.setText(settings.fullScreen() ? "On" : "Off");
         for (var toggle : themeGroup.getToggles()) {
             toggle.setSelected(toggle.getUserData() == settings.theme());
+        }
+        // A hand-edited config.json may hold an interval the buttons do not offer
+        // — 30 is legal — in which case none is selected, which is honest: the row
+        // still takes the keyboard, and pressing either button adopts that value.
+        Integer configuredInterval = settings.slideshowSeconds();
+        // Spelled out beside the toggles, as the rows above spell out their
+        // values: an interval the buttons do not offer selects neither of them,
+        // and this line is then the only thing on screen that says what it is.
+        slideshowValue.setText(configuredInterval + "s");
+        for (ToggleButton toggle : slideshowToggles) {
+            toggle.setSelected(configuredInterval.equals(toggle.getUserData()));
         }
 
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();

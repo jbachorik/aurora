@@ -22,6 +22,13 @@ import javafx.scene.layout.TilePane;
  * <p>Selection is simply which tile has the focus, and movement is computed from
  * the tiles' actual laid-out positions rather than from an assumed column count,
  * so a ragged last row behaves the way a viewer expects.
+ *
+ * <p>The grid also owns that focus: {@link #wire} refuses any focus a tile
+ * receives that the grid did not itself request through {@link #select}, so
+ * keyboard (Tab) traversal into or within the grid never sticks. Nothing in this
+ * codebase currently relies on Tab reaching a tile, so this is a documented trade
+ * rather than a regression — but a future page mixing a {@code TileGrid} with
+ * another focusable control would need to revisit it.
  */
 public final class TileGrid extends ScrollPane {
 
@@ -136,14 +143,61 @@ public final class TileGrid extends ScrollPane {
             wire(tile);
         }
         tilePane.getChildren().setAll(tiles);
-        if (!tiles.isEmpty()) {
-            tilePane.setPrefTileWidth(tiles.getFirst().getPrefWidth());
-            tilePane.setPrefTileHeight(tiles.getFirst().getPrefHeight());
-        }
+        sizeCells();
         fitTiles();
 
         selectedIndex = tiles.isEmpty() ? -1 : Math.min(Math.max(previousIndex, 0), tiles.size() - 1);
         showMessage(null);
+    }
+
+    /**
+     * Adds a single tile at a position, leaving the others exactly as they are.
+     *
+     * <p>Deliberately not {@link #setTiles} with a rebuilt list. Replacing the
+     * children takes the focused tile out of the scene. {@code Node.focusSetDirty}
+     * marks the scene focus-dirty whenever a focus-traversable node enters or
+     * leaves it, and {@code Tile}'s constructor calls {@code setFocusTraversable
+     * (true)}, so the next pulse runs {@code focusCleanup()} — before layout — and
+     * then {@code focusInitial()} hands the focus to the first traversable node,
+     * i.e. tile 0, whether or not that is the tile the viewer was looking at.
+     *
+     * <p>Inserting does not, by itself, avoid that pulse: a newly inserted tile is
+     * also focus-traversable, so it sets the same {@code focusDirty} flag and
+     * {@code focusCleanup()} still runs. This method is a no-op for focus only
+     * when the selected tile happens to already be a live focus owner at the
+     * moment of insertion — which is why {@code insertTile} alone was not a
+     * complete fix (see the fix table in the task-11 report). The actual
+     * guarantee comes from {@link #wire}'s refusal of focus it did not request,
+     * which fires inside {@code FocusOwnerProperty.invalidated()} — synchronously,
+     * strictly before any key event can be delivered. The race between rebuild
+     * and pulse still exists; the recovery from it is what is deterministic.
+     */
+    public void insertTile(int index, Tile tile) {
+        int at = Math.min(Math.max(index, 0), tiles.size());
+        wire(tile);
+        tiles.add(at, tile);
+        tilePane.getChildren().add(at, tile);
+        sizeCells();
+        fitTiles();
+        if (selectedIndex >= at) {
+            // Everything from here on has moved one place along, and the selection
+            // has to move with it or the highlight lands on a different tile.
+            selectedIndex++;
+        }
+        showMessage(null);
+    }
+
+    /**
+     * Sizes every cell from the largest tile, not the first: a grid may hold an
+     * action tile beside media tiles, and a cell sized for the smaller clips the
+     * larger.
+     */
+    private void sizeCells() {
+        if (tiles.isEmpty()) {
+            return;
+        }
+        tilePane.setPrefTileWidth(tiles.stream().mapToDouble(Tile::getPrefWidth).max().orElse(0));
+        tilePane.setPrefTileHeight(tiles.stream().mapToDouble(Tile::getPrefHeight).max().orElse(0));
     }
 
     /** Shows a centred message instead of tiles (loading, empty folder, error). */
@@ -219,14 +273,33 @@ public final class TileGrid extends ScrollPane {
 
     private void wire(Tile tile) {
         tile.focusedProperty().addListener((observable, wasFocused, isFocused) -> {
-            if (isFocused) {
-                int index = tiles.indexOf(tile);
-                if (index >= 0 && index != selectedIndex) {
-                    selectedIndex = index;
-                    onSelectionChanged.accept(tile);
-                }
-                ensureVisible(tile);
+            if (!isFocused) {
+                return;
             }
+            int index = tiles.indexOf(tile);
+            if (index < 0) {
+                return;
+            }
+            if (selectedIndex >= 0 && index != selectedIndex) {
+                // Nobody here asked for this. Every move the viewer makes — an
+                // arrow, a click — goes through select(), which moves the selection
+                // before the focus, so the two only disagree when JavaFX has moved
+                // the focus on its own: it empties the focus owner during the pulse
+                // whenever the node holding it has left the scene, which is every
+                // change of page, and then hands the focus to the first tile it can
+                // find. Following that would move the highlight — and what Enter
+                // opens — without the viewer touching anything, so the selection
+                // takes the focus back instead. Keyboard traversal is given up
+                // with it, which this grid has never used.
+                select(selectedIndex);
+                return;
+            }
+            if (selectedIndex < 0) {
+                // Nothing was selected yet, so whatever has taken the focus is it.
+                selectedIndex = index;
+                onSelectionChanged.accept(tile);
+            }
+            ensureVisible(tile);
         });
         tile.setOnMousePressed(event -> {
             if (event.getButton() != MouseButton.PRIMARY) {

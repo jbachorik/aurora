@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -80,5 +81,43 @@ class ArtworkResolverTest {
 
         assertTrue(artwork.isPresent());
         assertEquals("folder.png", artwork.get().getFileName().toString());
+    }
+
+    @Test
+    @DisplayName("every cover name is artwork, not just the one a tile would show")
+    void claimsAllCoverNames() {
+        assertEquals(
+                Set.of("poster.jpg", "folder.jpg", "cover.png"),
+                ArtworkResolver.artworkNames(
+                        List.of("Film.mkv", "poster.jpg", "folder.jpg", "cover.png", "holiday.jpg")));
+    }
+
+    @Test
+    @DisplayName("a film claims every sidecar extension it has, not only the best one")
+    void claimsEverySidecarOfAFilm() {
+        assertEquals(
+                Set.of("movie.jpg", "movie.png"),
+                ArtworkResolver.artworkNames(List.of("movie.mkv", "movie.jpg", "movie.png")));
+    }
+
+    @Test
+    @DisplayName("names come back spelled as the listing spelled them")
+    void keepsTheOriginalCaseOfClaimedNames() {
+        // The caller matches these against real file names, so a lower-cased or
+        // reconstructed spelling would silently match nothing.
+        assertEquals(
+                Set.of("POSTER.JPG", "Film.JPEG"),
+                ArtworkResolver.artworkNames(List.of("Film.mkv", "POSTER.JPG", "Film.JPEG")));
+    }
+
+    @Test
+    void claimsNothingInAFolderOfPlainPhotographs() {
+        assertEquals(Set.of(), ArtworkResolver.artworkNames(List.of("holiday.jpg", "beach.png", "notes.txt")));
+        assertEquals(Set.of(), ArtworkResolver.artworkNames(List.of()));
+    }
+
+    @Test
+    void toleratesANullListingLikeTheOtherLookups() {
+        assertEquals(Set.of(), ArtworkResolver.artworkNames(null));
     }
 }

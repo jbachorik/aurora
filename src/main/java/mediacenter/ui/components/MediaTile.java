@@ -189,7 +189,11 @@ public final class MediaTile extends Tile {
         placeholder.getStyleClass().add("media-tile-placeholder");
         placeholder.setStyle(PlaceholderColors.backgroundFor(item.displayName(), theme));
 
-        Label symbol = new Label(item.isDirectory() ? "▤" : "▶");
+        Label symbol = new Label(switch (item.type()) {
+            case DIRECTORY -> "▤";
+            case IMAGE -> "▣";
+            case VIDEO -> "▶";
+        });
         symbol.getStyleClass().add("media-tile-placeholder-symbol");
         StackPane.setAlignment(symbol, Pos.CENTER);
 

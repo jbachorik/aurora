@@ -418,6 +418,36 @@ In `MediaItem.java`, beside the existing factories:
     }
 ```
 
+Add to `ArtworkResolver`, along with `import java.util.HashSet;` and
+`import java.util.Set;` — it currently imports `Collection` but neither of those.
+This is the rule the walker in Task 4 calls too; written once so the grid and the
+slideshow cannot drift apart about what a folder contains:
+
+```java
+    /**
+     * The names in this folder that belong to something else — a film's poster or
+     * its sidecar — rather than being photographs in their own right.
+     *
+     * <p>Unconditional: a cover name is claimed whether or not a video is present,
+     * because {@code MediaScanner} already uses it as the folder tile's artwork.
+     *
+     * <p>Computed once per directory. The sidecar lookup walks every sibling, and
+     * asking it per photograph makes a folder of five hundred films and five
+     * hundred photographs quadratic — on a thread that runs for every folder the
+     * viewer opens.
+     */
+    public static Set<String> artworkNames(Collection<String> fileNames) {
+        Set<String> artwork = new HashSet<>();
+        selectCover(fileNames).ifPresent(artwork::add);
+        for (String name : fileNames) {
+            if (VideoFiles.isVideoFileName(name)) {
+                selectSidecar(VideoFiles.withoutExtension(name), fileNames).ifPresent(artwork::add);
+            }
+        }
+        return artwork;
+    }
+```
+
 In `MediaScanner`, collect photographs alongside videos in the listing loop, then
 build them **after the loop closes** — the artwork rule needs the complete list
 of names, and `DirectoryStream` order is unspecified, so a sidecar tested inside
@@ -928,7 +958,7 @@ public final class PhotoWalker {
         if (collected.size() >= limit) {
             // Nothing below can be wanted, and listing it costs a round trip per
             // directory. This is what makes hasPhotos cheap: it asks for one.
-            return true;
+            return;
         }
         if (recursive && depth < MAX_DEPTH) {
             for (Path subdirectory : listing.subdirectories()) {

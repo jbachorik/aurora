@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import mediacenter.media.MediaRoot;
@@ -65,6 +66,23 @@ class ApplicationSettingsTest {
         assertEquals(Optional.of(MediaRootType.TV), MediaRootType.parse("tv"));
         assertEquals(Optional.empty(), MediaRootType.parse("films"));
         assertEquals(Optional.empty(), MediaRootType.parse(null));
+    }
+
+    @Test
+    @DisplayName("an interval nobody could watch is brought back to something usable")
+    void clampsTheSlideshowInterval() {
+        assertEquals(5, ApplicationSettings.defaults().slideshowSeconds());
+        assertEquals(2, ApplicationSettings.defaults().withSlideshowSeconds(0).slideshowSeconds());
+        assertEquals(60, ApplicationSettings.defaults().withSlideshowSeconds(3600).slideshowSeconds());
+    }
+
+    @Test
+    @DisplayName("changing one setting leaves the interval alone")
+    void carriesTheIntervalThroughOtherChanges() {
+        ApplicationSettings settings = ApplicationSettings.defaults().withSlideshowSeconds(9);
+
+        assertEquals(9, settings.withFullScreen(false).slideshowSeconds());
+        assertEquals(9, settings.withTheme(Theme.LIGHT).slideshowSeconds());
     }
 
     @Test
