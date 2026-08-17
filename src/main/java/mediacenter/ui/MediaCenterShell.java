@@ -213,6 +213,15 @@ public final class MediaCenterShell implements Navigation {
     private void showCurrentView(Direction direction) {
         View view = currentView();
         frame.setCenter(view.node());
+
+        // A full-bleed page takes the header and the hint bar with it, and gives
+        // them back when it leaves.
+        boolean chrome = !view.fullBleed();
+        frame.getTop().setVisible(chrome);
+        frame.getTop().setManaged(chrome);
+        frame.getBottom().setVisible(chrome);
+        frame.getBottom().setManaged(chrome);
+
         titleLabel.setText(view.title());
         String subtitle = view.subtitle();
         subtitleLabel.setText(subtitle);
@@ -318,7 +327,8 @@ public final class MediaCenterShell implements Navigation {
         if (viewStack.size() <= 1) {
             return;
         }
-        viewStack.pop();
+        View leaving = viewStack.pop();
+        leaving.onHidden();
         showCurrentView(Direction.BACKWARD);
     }
 
@@ -326,7 +336,7 @@ public final class MediaCenterShell implements Navigation {
     public void goHome() {
         boolean moved = viewStack.size() > 1;
         while (viewStack.size() > 1) {
-            viewStack.pop();
+            viewStack.pop().onHidden();
         }
         showCurrentView(moved ? Direction.BACKWARD : Direction.NONE);
     }

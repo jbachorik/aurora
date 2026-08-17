@@ -28,4 +28,21 @@ public interface View {
     default void onShown() {
         focusSelection();
     }
+
+    /**
+     * Whether this page wants the screen to itself, without the header and the
+     * hint bar. A photograph fills the screen; everything else is furniture
+     * around it.
+     */
+    default boolean fullBleed() {
+        return false;
+    }
+
+    /**
+     * Called when this page leaves the stack for good. A page that started a
+     * thread or a walk stops it here — nothing else will.
+     */
+    default void onHidden() {
+        // Most pages hold nothing that outlives them.
+    }
 }
