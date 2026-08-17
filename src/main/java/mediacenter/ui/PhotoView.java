@@ -65,8 +65,23 @@ final class PhotoView implements View {
             new PhotoCache<>(PhotoCache.imageLoader(), PhotoCache.imageDisposer());
 
     private final ActivationGate activationGate = new ActivationGate();
-    /** Orientation is read from disk, so it is remembered rather than re-read on every repaint. */
+    /**
+     * Orientation is read from disk, so it is remembered rather than re-read on every
+     * repaint.
+     *
+     * <p>Append-only on purpose: never cleared, never capped. It is what makes
+     * {@link #display()} take its synchronous branch for the photograph already on
+     * screen, and that is what puts the new image into the {@link ImageView} before
+     * the one it replaced reports the error that {@link Image#cancel()} defers by a
+     * pulse. The identity test in {@link #watchForFailure} rests on that ordering, so
+     * clearing or capping this map would silently turn every cancelled decode back
+     * into a counted failure. Five thousand paths and boxed integers is a trivial cost
+     * beside a single decoded photograph.
+     */
     private final Map<Path, Integer> orientations = new HashMap<>();
+    /** The image a failure listener is attached to, and that listener; set and cleared together. */
+    private Image watchedImage;
+    private InvalidationListener watchedListener;
     private FadeTransition captionFade;
     /** A resize is acted on once it has stopped, not while it is happening. */
     private final PauseTransition resizeSettled = new PauseTransition(Duration.millis(250));
@@ -112,6 +127,13 @@ final class PhotoView implements View {
                 activationGate.released();
             }
         });
+        // The Enter that opened this page is still down, and its auto-repeat lands
+        // here, on the page that has just taken the focus. A gate that starts armed
+        // would let that first repeat through and pause the show on photograph one,
+        // with nothing on screen to say why. Primed as though it had already seen
+        // that press, so a press only counts once the key has been let go — the
+        // release does arrive here, unlike the one that starts playback.
+        activationGate.pressed(System.nanoTime());
 
         // The scene does not exist yet — this view is constructed before it is put
         // into the frame — so the first sizing waits for the pane to be laid out.
@@ -345,6 +367,21 @@ final class PhotoView implements View {
      * to a cached image for as long as it lives.
      */
     private void watchForFailure(Image image, Path photo) {
+        if (image == watchedImage) {
+            // Already being watched, and still in flight. paint() is handed the
+            // very same object more than once: an arrow at the end of a run that
+            // does not wrap shows the photograph already on screen, and a resize
+            // during the first orientation read paints it a second time. A
+            // listener per repaint would count one failure once per listener, and
+            // enough of those would trip the give-up branch on a run that is
+            // mostly fine.
+            return;
+        }
+        // At most one image is ever watched. Whatever was being watched is no
+        // longer the one on screen, so its outcome no longer matters — and left
+        // attached it would be a second listener the next time that image came
+        // back round as a neighbour.
+        stopWatching();
         if (image.isError()) {
             onDecodeFailed(photo);
             return;
@@ -358,7 +395,7 @@ final class PhotoView implements View {
         InvalidationListener[] listener = new InvalidationListener[1];
         listener[0] = observable -> {
             if (image.isError()) {
-                stopListening(image, listener[0]);
+                stopWatching();
                 // Both tests are needed. Image.cancel() reports itself as an
                 // error one pulse later, so an image dropped by a resize must not
                 // be read as a failure — hence the identity test. And display()
@@ -366,16 +403,32 @@ final class PhotoView implements View {
                 // the image on screen can belong to the previous photograph —
                 // hence the path test, without which a resize during that gap
                 // skips the photograph that was never even tried.
+                //
+                // Both rest on {@code orientations} never being cleared: that is
+                // what keeps display() synchronous for the photograph on screen,
+                // so the swap to the new image happens in the same pulse as the
+                // cancel and is in place before the error arrives.
                 if (!cancelled && photo.equals(run.get(index)) && imageView.getImage() == image) {
                     onDecodeFailed(photo);
                 }
             } else if (image.getProgress() >= 1.0) {
-                stopListening(image, listener[0]);
+                stopWatching();
                 failuresSinceLastSuccess = 0;
             }
         };
+        watchedImage = image;
+        watchedListener = listener[0];
         image.progressProperty().addListener(listener[0]);
         image.errorProperty().addListener(listener[0]);
+    }
+
+    /** Lets go of the image being watched, so the two fields are only ever set together. */
+    private void stopWatching() {
+        if (watchedListener != null) {
+            stopListening(watchedImage, watchedListener);
+        }
+        watchedImage = null;
+        watchedListener = null;
     }
 
     private static void stopListening(Image image, InvalidationListener listener) {
