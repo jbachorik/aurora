@@ -91,6 +91,21 @@ class PhotoCacheTest {
     }
 
     @Test
+    @DisplayName("leaving the viewer releases the neighbourhood, it does not merely forget it")
+    void releasesEverythingWhenTheViewerLeaves() {
+        List<String> evicted = new ArrayList<>();
+        PhotoCache<String> cache = cacheOf(evicted);
+
+        cache.show(photos(10), 5, List.of(4, 6), 1920, 1080);
+        cache.clear();
+
+        assertEquals(0, cache.size());
+        // Three full-screen photographs is around twenty-five megabytes on a heap
+        // of five hundred: dropping the references is not the same as letting go.
+        assertEquals(3, evicted.size(), evicted.toString());
+    }
+
+    @Test
     void aSinglePhotographIsItsOwnNeighbourhood() {
         PhotoCache<String> cache = cacheOf(new ArrayList<>());
 

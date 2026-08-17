@@ -56,6 +56,7 @@ public final class SettingsView implements View {
     private final Label browserStatus = new Label();
     private final ToggleButton fullScreenToggle = new ToggleButton();
     private final ToggleGroup themeGroup = new ToggleGroup();
+    private final Label slideshowValue = new Label();
     private final List<ToggleButton> slideshowToggles = new ArrayList<>();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
@@ -254,10 +255,9 @@ public final class SettingsView implements View {
         name.getStyleClass().add("setting-name");
         name.setMinWidth(320);
 
-        Label value = new Label();
-        value.getStyleClass().add("setting-value");
-        HBox.setHgrow(value, Priority.ALWAYS);
-        value.setMaxWidth(Double.MAX_VALUE);
+        slideshowValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(slideshowValue, Priority.ALWAYS);
+        slideshowValue.setMaxWidth(Double.MAX_VALUE);
 
         ToggleGroup group = new ToggleGroup();
         HBox choices = new HBox(12);
@@ -278,7 +278,7 @@ public final class SettingsView implements View {
         }
         navigationRows.add(List.copyOf(slideshowToggles));
 
-        HBox line = new HBox(16, name, value, choices);
+        HBox line = new HBox(16, name, slideshowValue, choices);
         line.setAlignment(Pos.CENTER_LEFT);
 
         VBox card = new VBox(line);
@@ -507,6 +507,10 @@ public final class SettingsView implements View {
         // — 30 is legal — in which case none is selected, which is honest: the row
         // still takes the keyboard, and pressing either button adopts that value.
         Integer configuredInterval = settings.slideshowSeconds();
+        // Spelled out beside the toggles, as the rows above spell out their
+        // values: an interval the buttons do not offer selects neither of them,
+        // and this line is then the only thing on screen that says what it is.
+        slideshowValue.setText(configuredInterval + "s");
         for (ToggleButton toggle : slideshowToggles) {
             toggle.setSelected(configuredInterval.equals(toggle.getUserData()));
         }

@@ -1,6 +1,7 @@
 package mediacenter.media;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -8,6 +9,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -84,6 +91,65 @@ class ExifOrientationTest {
         Path file = Files.write(temp.resolve("pixels.jpg"), jpeg.toByteArray());
 
         assertEquals(0, ExifOrientation.degreesFor(file));
+    }
+
+    @Test
+    @DisplayName("an offset near the top of the int range is refused, not caught")
+    void refusesAnEnormousIfdOffset(@TempDir Path temp) throws IOException {
+        // The header is 64K at most, so this offset points nowhere. Added to the
+        // segment's position it also overflows a signed int, which is what makes it
+        // more than a duplicate of the other bounds checks: an int sum wraps
+        // negative, sails through a "> header.length" guard, and is caught several
+        // frames up instead. The answer is 0 either way — the log is where the
+        // difference between a check and a catch shows.
+        ByteArrayOutputStream tiff = new ByteArrayOutputStream();
+        ByteBuffer header = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN);
+        header.put((byte) 'M').put((byte) 'M').putShort((short) 42).putInt(Integer.MAX_VALUE - 4);
+        tiff.write(header.array());
+
+        byte[] exifBody = tiff.toByteArray();
+        ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
+        jpeg.write(new byte[] {(byte) 0xFF, (byte) 0xD8});
+        jpeg.write(new byte[] {(byte) 0xFF, (byte) 0xE1});
+        int segmentLength = 2 + 6 + exifBody.length;
+        jpeg.write((segmentLength >> 8) & 0xFF);
+        jpeg.write(segmentLength & 0xFF);
+        jpeg.write(new byte[] {'E', 'x', 'i', 'f', 0, 0});
+        jpeg.write(exifBody);
+        jpeg.write(new byte[] {(byte) 0xFF, (byte) 0xD9});
+        Path file = Files.write(temp.resolve("corrupt.jpg"), jpeg.toByteArray());
+
+        List<LogRecord> complaints = new ArrayList<>();
+        Logger reader = Logger.getLogger(ExifOrientation.class.getName());
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                complaints.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        handler.setLevel(Level.ALL);
+        Level level = reader.getLevel();
+        boolean useParents = reader.getUseParentHandlers();
+        reader.setLevel(Level.ALL);
+        reader.setUseParentHandlers(false);
+        reader.addHandler(handler);
+        try {
+            assertEquals(0, ExifOrientation.degreesFor(file));
+            assertTrue(complaints.isEmpty(),
+                    "the offset was caught rather than checked: " + complaints);
+        } finally {
+            reader.removeHandler(handler);
+            reader.setLevel(level);
+            reader.setUseParentHandlers(useParents);
+        }
     }
 
     @Test

@@ -32,7 +32,14 @@ public final class BrowseView implements View {
     private final MediaTile.Shape shape;
 
     private List<MediaItem> items = List.of();
-    private int loadGeneration;
+    /**
+     * Read by the walker thread through the cancellation supplier below, so it is
+     * volatile: a plain int would let that thread go on reading the generation it
+     * saw when the walk began and never notice the load that replaced it.
+     */
+    private volatile int loadGeneration;
+    /** Set once, when the page leaves the stack for good; see {@link #onHidden()}. */
+    private volatile boolean discarded;
 
     public BrowseView(UiContext context, MediaRoot root, Path folder) {
         this.context = context;
@@ -67,6 +74,14 @@ public final class BrowseView implements View {
     @Override
     public void refresh() {
         load();
+    }
+
+    @Override
+    public void onHidden() {
+        // The search for photographs below this folder can be a walk of the whole
+        // subtree over a share. Nothing else will stop it, and a viewer who has
+        // gone back is not waiting for its answer.
+        discarded = true;
     }
 
     public Path folder() {
@@ -115,6 +130,15 @@ public final class BrowseView implements View {
         }
         grid.setTiles(tiles);
         grid.focusSelection();
+        // A photograph in this very folder settles the question with no walk at
+        // all, and this is the folder a viewer of photographs is usually in. The
+        // walk below is the expensive case — a shelf of films whose posters are
+        // all claimed as artwork holds no photographs at any depth, so it descends
+        // the entire subtree, over a share, only to answer "no".
+        if (items.stream().anyMatch(MediaItem::isImage)) {
+            addSlideshowTile();
+            return;
+        }
         offerSlideshow(generation);
     }
 
@@ -126,7 +150,10 @@ public final class BrowseView implements View {
     private void offerSlideshow(int generation) {
         FxTasks.run(
                 context.backgroundExecutor(),
-                () -> PhotoWalker.hasPhotos(folder),
+                // The walk stops as soon as this page is gone or a newer load has
+                // begun. Both are read from the walker's own thread, which is why
+                // the two fields behind them are volatile.
+                () -> PhotoWalker.hasPhotos(folder, () -> discarded || generation != loadGeneration),
                 hasPhotos -> {
                     // Guarded like every other late result: an F5, or a theme
                     // change — which refreshes every stacked page — would
@@ -134,18 +161,22 @@ public final class BrowseView implements View {
                     if (!hasPhotos || generation != loadGeneration) {
                         return;
                     }
-                    // Inserted rather than set: the grid is already on screen with
-                    // the focus on one of its tiles, and rebuilding it would take
-                    // that tile out of the scene and the highlight with it. The
-                    // grid shifts the selection along by one for us.
-                    grid.insertTile(0,
-                            new ActionTile("▣", "Slideshow", "Every photograph, including subfolders"));
-                    // For the empty folder, whose only tile this now is; where the
-                    // grid already had tiles the insertion keeps the highlight
-                    // where it was, focus and all.
-                    grid.focusSelection();
+                    addSlideshowTile();
                 },
                 failure -> { });
+    }
+
+    /** The one insertion path, whether the answer took a walk or came for free. */
+    private void addSlideshowTile() {
+        // Inserted rather than set: the grid is already on screen with the focus
+        // on one of its tiles, and rebuilding it would take that tile out of the
+        // scene and the highlight with it. The grid shifts the selection along by
+        // one for us.
+        grid.insertTile(0, new ActionTile("▣", "Slideshow", "Every photograph, including subfolders"));
+        // For the empty folder, whose only tile this now is; where the grid
+        // already had tiles the insertion keeps the highlight where it was, focus
+        // and all.
+        grid.focusSelection();
     }
 
     private void showFailure(Exception failure) {

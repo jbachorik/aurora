@@ -70,7 +70,9 @@ public final class ExifOrientation {
 
         int ifdOffset = buffer.getInt(tiff + 4);
         // Checked rather than caught: a corrupt offset can be negative or enormous.
-        if (ifdOffset < 8 || tiff + ifdOffset + 2 > header.length) {
+        // The sum is taken in long because an offset near Integer.MAX_VALUE would
+        // otherwise wrap negative and slip past the very check meant to stop it.
+        if (ifdOffset < 8 || (long) tiff + ifdOffset + 2 > header.length) {
             return 0;
         }
         int ifd = tiff + ifdOffset;

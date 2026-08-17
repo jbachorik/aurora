@@ -30,7 +30,19 @@ public final class ArtworkCache {
         this.images = new LinkedHashMap<>(16, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, Image> eldest) {
-                return size() > ArtworkCache.this.capacity;
+                if (size() <= ArtworkCache.this.capacity) {
+                    return false;
+                }
+                // The entry handed to this method is the one about to be dropped,
+                // and nothing else is touched. A dropped image goes on decoding
+                // unless it is told not to: opening a folder of five hundred
+                // photographs starts five hundred decodes, and the ones evicted on
+                // the way would otherwise keep reading the share for thumbnails no
+                // longer held. Harmless on an image already loaded — cancel only
+                // affects one still in flight — and the tiles on screen are the
+                // most recently used, which is the far end of this queue.
+                eldest.getValue().cancel();
+                return true;
             }
         };
     }

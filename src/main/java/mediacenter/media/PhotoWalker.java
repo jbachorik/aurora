@@ -86,15 +86,23 @@ public final class PhotoWalker {
      * its limit to decide whether it was cut short. Here the first photograph is
      * the whole answer, and the walk must stop on it — this runs for every folder
      * the viewer opens, over a share.
+     *
+     * <p>Cancellable for the same reason {@link #collect} is, and more urgently: a
+     * folder of films whose posters are all claimed as artwork holds no
+     * photographs at any level, so this walks the whole subtree to say "no". A
+     * viewer who has moved on, or pressed F5, must not leave that running over a
+     * share while the next one starts.
+     *
+     * @param cancelled consulted between directories, exactly as in {@link #collect}
      */
-    public static boolean hasPhotos(Path root) {
+    public static boolean hasPhotos(Path root, BooleanSupplier cancelled) {
         Listing listing = list(root);
         if (listing == null) {
             LOG.log(Level.FINE, () -> "Cannot look for photographs in " + root);
             return false;
         }
         List<Path> found = new ArrayList<>();
-        walk(listing, true, 1, 0, () -> false, batch -> { }, found);
+        walk(listing, true, 1, 0, cancelled, batch -> { }, found);
         return !found.isEmpty();
     }
 

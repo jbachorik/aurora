@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -155,16 +156,16 @@ class PhotoWalkerTest {
     @Test
     void answersWhetherAFolderHasAnyPhotographsBeneathIt(@TempDir Path root) throws Exception {
         Path deep = Files.createDirectories(root.resolve("a/b"));
-        assertFalse(PhotoWalker.hasPhotos(root));
+        assertFalse(PhotoWalker.hasPhotos(root, () -> false));
 
         Files.createFile(deep.resolve("found.jpg"));
-        assertTrue(PhotoWalker.hasPhotos(root));
+        assertTrue(PhotoWalker.hasPhotos(root, () -> false));
     }
 
     @Test
     @DisplayName("an unreachable folder has no photographs rather than throwing")
     void hasPhotosSwallowsAnUnreachableFolder(@TempDir Path temp) throws Exception {
-        assertFalse(PhotoWalker.hasPhotos(temp.resolve("offline-share")));
+        assertFalse(PhotoWalker.hasPhotos(temp.resolve("offline-share"), () -> false));
     }
 
     @Test
@@ -246,6 +247,23 @@ class PhotoWalkerTest {
     }
 
     @Test
+    @DisplayName("a viewer who has moved on stops the search for photographs")
+    void hasPhotosStopsWhenCancelled(@TempDir Path root) throws Exception {
+        // No photograph above the deep one, so answering at all means descending —
+        // the shelf of films whose posters are all artwork, in miniature.
+        Path deep = Files.createDirectories(root.resolve("a/b"));
+        Files.createFile(deep.resolve("found.jpg"));
+
+        assertTrue(PhotoWalker.hasPhotos(root, () -> false));
+
+        // Cancelled from the second consultation on: the root is listed, and then
+        // the descent that would have found the photograph is abandoned.
+        AtomicInteger asked = new AtomicInteger();
+        assertFalse(PhotoWalker.hasPhotos(root, () -> asked.incrementAndGet() > 1));
+        assertTrue(asked.get() >= 2, "cancellation was never consulted between directories");
+    }
+
+    @Test
     @DisplayName("finding one photograph is the whole answer: hasPhotos does not walk on")
     void hasPhotosStopsAtTheFirstPhotograph(@TempDir Path root) throws Exception {
         Path first = Files.createFile(root.resolve("first.jpg"));
@@ -263,7 +281,7 @@ class PhotoWalkerTest {
             walker.setUseParentHandlers(false);
             walker.addHandler(handler);
             try {
-                assertTrue(PhotoWalker.hasPhotos(root));
+                assertTrue(PhotoWalker.hasPhotos(root, () -> false));
                 assertTrue(descents.isEmpty(),
                         "hasPhotos listed a subfolder after it already had its answer: " + descents);
 
@@ -271,7 +289,7 @@ class PhotoWalkerTest {
                 // the detector above fires rather than being blind to a descent.
                 Files.delete(first);
                 descents.clear();
-                assertFalse(PhotoWalker.hasPhotos(root));
+                assertFalse(PhotoWalker.hasPhotos(root, () -> false));
                 assertFalse(descents.isEmpty(), "a descent leaves no trace, so the assertion above proves nothing");
             } finally {
                 walker.removeHandler(handler);
