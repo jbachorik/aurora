@@ -2845,44 +2845,56 @@ git commit -m "Ship the photo viewer with a heap it can rely on"
 
 ## Self-Review
 
+Checked against the task numbering as it now stands: 1 PhotoFiles, 2
+FileVisibility, 3 scanner and grid, 4 PhotoWalker, 5 ExifOrientation, 6
+PhotoCache, 7 PhotoRun, 8 View flags, 9 settings interval, 10 PhotoView, 11
+BrowseView entry, 12 shipping.
+
 **Spec coverage.** Slideshow tile only where photographs exist beneath — Task 11.
-Enter on a photograph opens its own folder without auto-advance — Tasks 10 (the
+Enter on a photograph opens its own folder without auto-advance — Task 10 (the
 `slideshow` flag drives both `PhotoWalker`'s `recursive` and `PhotoRun`'s
-wrapping) and 10. Folder order depth first — Task 4. Loops at the end — Task 7.
-Streaming with batches to the JavaFX thread — Tasks 4 and 10. Counter with `+` —
-Task 7. `PhotoFiles`, `MediaItemType.IMAGE`, scanner — Tasks 1 and 3.
-`PhotoWalker` serving both jobs — Task 4. Keys — Task 9. `View.fullBleed` — Task
+wrapping) and Task 11. Folder order depth first — Task 4. Loops at the end — Task
+7. Streaming with batches to the JavaFX thread — Tasks 4 and 10. Counter with
+`+` — Task 7. `PhotoFiles`, `MediaItemType.IMAGE`, scanner — Tasks 1 and 3.
+`PhotoWalker` serving both jobs — Task 4. Keys — Task 10. `View.fullBleed` — Task
 8. `PhotoCache` three at screen size — Task 6. Interval — Task 9. Decode failure
-shows a placeholder caption and advances — Task 10 (`onDecodeFailed`). Share
-disappearing: the root throws `MediaAccessException` (Task 4) and the viewer says
-so (Task 9); a subdirectory going away ends that branch only. No photographs
-means no tile — Task 11. HEIC excluded — Task 1, documented Task 12. EXIF — Task
-5, applied off-thread in Task 9. `-Xmx` — Task 12. README premise change — Task 12.
+shows a caption and advances — Task 10. Share disappearing: the root throws
+`MediaAccessException` (Task 4) and the viewer says so (Task 10); a subdirectory
+going away ends that branch only. No photographs means no tile — Task 11. HEIC
+excluded — Task 1, documented Task 12. EXIF — Task 5, applied off-thread in Task
+10. `-Xmx` — Task 12. README premise change — Task 12.
 
-**Placeholders.** None. The two steps the previous draft left as prose are now
-shown as code: the viewer is given in full in Task 10 Step 2, and Task 9 Step 3
-names all four canonical-constructor call sites and the control type. The
-remaining prose — "the method that sets the grid's tiles", "adjust to whatever
-`SettingsStore`'s method names are" — asks the implementer to read one named
-class, which is not the same as leaving a decision open.
+**Placeholders.** None. The viewer is given in full in Task 10 Step 2, the
+artwork rule has a body in Task 3 Step 3, and `slideshowRow` is complete in Task
+9 Step 3.
 
-**Type consistency.** `PhotoWalker.collect(Path, boolean, int, Consumer<List<Path>>)`
-returns `Walk` and is called that way in Task 10. `hasPhotos(Path)` returns
-`boolean`, used so in Task 11. `PhotoCache<Image>.show(List<Path>, int,
-List<Integer>, double, double)` matches its call in Task 10. Every `PhotoRun`
-method used in Task 10 is defined in Task 7. `Navigation.openSlideshow(Path)` and
-`openPhoto(Path, Path)` are declared once, in Task 10, and called with those
-signatures in Task 11 — the previous draft declared `openPhoto` twice, with
-different types, and this draft states it in exactly one place.
+**Type consistency.**
+`PhotoWalker.collect(Path, boolean, int, BooleanSupplier, Consumer<List<Path>>)`
+returns `Walk` and `throws MediaAccessException`; called that way in Task 10 and,
+via `hasPhotos(Path)` → `boolean`, in Task 11.
+`PhotoCache<Image>.show(List<Path>, int, List<Integer>, double, double)` matches
+its call in Task 10. Every `PhotoRun` method used in Task 10 is defined in Task 7.
+`Navigation.openSlideshow(Path)` and `openPhoto(Path, Path)` are declared once,
+in Task 10, and called with those signatures in Task 11.
+`ArtworkResolver.artworkNames(Collection<String>)` is defined in Task 3 and
+consumed in Task 4.
 
 **Known limitations, recorded rather than hidden.**
 
-- `PhotoWalker.hasPhotos` is cheap when a folder *has* photographs and expensive
-  when it does not: the negative answer walks the whole subtree, bounded only by
-  `MAX_DEPTH`. On a large movies share over SMB this is a full traversal per
-  folder entry, off-thread. If it proves slow on the target machine, cache the
-  answer per folder or bound the probe by time.
-- The caption's appearance is only ever checked by screenshot. There is no way to
-  assert it without a rendered scene.
-- `PhotoView` itself has no unit test, by design: every rule it obeys lives in
-  `PhotoRun` or `PhotoCache`, which do.
+- `hasPhotos` is cheap on a folder that has photographs — the walk stops at the
+  first — and costs a bounded traversal on one that does not. `BrowseView` runs it
+  per folder opened. If it is slow on the target machine, cache it per folder.
+- The caption, the full-bleed layout and the arrow keys are checked only by
+  screenshot. There is no way to assert them without a rendered scene.
+- `PhotoView` has no unit test by design: every rule it obeys lives in `PhotoRun`
+  or `PhotoCache`, which do.
+- `FileVisibilityTest`'s hidden-attribute case runs only on Windows, which is the
+  platform the attribute exists on; elsewhere it is skipped rather than faked.
+
+**Four rounds of adversarial review** found roughly fifty defects in this plan, a
+majority of them introduced by the previous round's fixes. Two are worth carrying
+into implementation as warnings rather than as corrected text: `Image.cancel()`
+sets `error = true` one pulse later, so anything that drops a decoding image must
+not be read as a decode failure; and a `PauseTransition` stops with the rendering
+pulse, so it is safe for a resize debounce and wrong for anything that must fire
+while the screen is asleep.
