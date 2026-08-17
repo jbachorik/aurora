@@ -66,6 +66,46 @@ MediaCenter.exe --windowed
 ```
 
 
+Photographs
+-----------
+
+A folder that contains photographs — directly, or in any folder beneath it —
+gets a **Slideshow** tile first in its grid. Activating it walks every
+photograph under that folder, depth first in folder order, showing each one
+full screen and advancing on its own; once the walk has reached the end it
+loops back to the first.
+
+`Enter` on a single photograph opens it the same way, except the arrows move
+only through the photographs in *that* folder, there is no auto-advance, and
+reaching either end simply stops rather than wrapping around.
+
+| Key                 | In the viewer                          |
+|---------------------|-----------------------------------------|
+| `← →`               | previous / next photograph             |
+| `Enter`, `Space`    | toggle auto-advance (slideshows only)  |
+| `Esc`, `Backspace`  | back to the grid                       |
+
+A manual `←`/`→` resets the interval rather than cancelling it, so pausing to
+look at one picture does not make the next automatic advance arrive early. The
+caption shows the file name and a counter — `2 of 380+` while a slideshow is
+still walking the folder tree in the background, `2 of 380` once that walk has
+finished and the `+` can safely come off.
+
+The interval is a **Slideshow** row in Settings offering 5s and 10s; a
+hand-edited `config.json` can hold anything, but the stored value is clamped to
+2–60 seconds rather than rejected outright.
+
+Supported formats are JPEG, PNG, GIF and BMP — the ones JavaFX itself can
+decode. **HEIC is not shown at all.** That is what a recent iPhone produces by
+default, and JavaFX cannot decode it, so a HEIC file is invisible rather than
+shown as a broken frame — worth knowing before "my photos are missing" turns
+into a support question. EXIF orientation is honoured, so a portrait
+photograph taken on a phone displays the right way up rather than sideways.
+
+A film's artwork — poster, folder and cover images, and any per-film sidecar —
+is never listed as a photograph, wherever it sits in the folder tree.
+
+
 How it is put together
 ----------------------
 
@@ -112,7 +152,9 @@ Design rules the code follows:
   through `FxTasks`. A disconnected NAS cannot freeze or crash the UI.
 * **VLC does the playing.** No libVLC, no decoding, no rendering. VLC is started
   with a `ProcessBuilder` argument list — never a composed shell string — so
-  spaces, Unicode names and UNC paths need no quoting.
+  spaces, Unicode names and UNC paths need no quoting. Photographs are the one
+  exception: a still image is not playback, VLC has nothing useful to offer,
+  and the application decodes and draws them itself.
 * **No dependencies at runtime.** The JDK and JavaFX cover everything; the
   handful of small JSON files are read and written by `mediacenter.json`.
 * **Errors are readable from the sofa.** Stack traces go to
@@ -150,6 +192,7 @@ logs/            application.log (rotating, 3 x 1 MiB)
   "vlcPath": "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
   "fullScreen": true,
   "theme": "DARK",
+  "slideshowSeconds": 5,
   "mediaRoots": [
     { "id": "…", "name": "Movies", "path": "\\\\synology\\video\\Movies", "type": "MOVIES" }
   ]
