@@ -3,7 +3,6 @@ package mediacenter.media;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -140,12 +139,24 @@ public final class PhotoWalker {
                         || FileVisibility.isHiddenOrSystem(entry)) {
                     continue;
                 }
-                // Links are not followed: one pointing back up the tree would walk
-                // for ever, and the depth cap is a second belt for junctions that
-                // Windows does not report as links at all.
-                if (Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
-                    subdirectories.add(entry);
-                } else if (Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) {
+                // What an entry IS is read through the link, exactly as the scanner
+                // reads it, so that a link to a photograph is a photograph in both.
+                // Reading the link itself instead would classify it as neither file
+                // nor directory and drop it, while the grid went on showing it — and
+                // then the grid's third photograph and the slideshow's third are
+                // different pictures. It has to reach the name list too, or a linked
+                // film's sidecar goes unclaimed and the slideshow shows the poster
+                // the grid hid.
+                if (Files.isDirectory(entry)) {
+                    // Link-ness governs descent, and only descent. A directory
+                    // reached through a link is browsable in the grid and is still
+                    // not descended into here: one pointing back up the tree would
+                    // walk for ever, and the depth cap is a second belt for the
+                    // junctions Windows does not report as links at all.
+                    if (!Files.isSymbolicLink(entry)) {
+                        subdirectories.add(entry);
+                    }
+                } else if (Files.isRegularFile(entry)) {
                     names.add(entry.getFileName().toString());
                     if (PhotoFiles.isPhoto(entry)) {
                         photos.add(entry);
