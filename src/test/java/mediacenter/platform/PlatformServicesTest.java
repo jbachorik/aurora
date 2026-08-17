@@ -178,6 +178,13 @@ class PlatformServicesTest {
 
     @Test
     @DisplayName("a bundle whose namesake file cannot be run falls through to the one that can")
+    // Windows cannot express the precondition: there is no execute bit to withhold,
+    // setExecutable is a no-op, and Files.isExecutable answers from the ACL, where the
+    // owner of a freshly created file holds execute rights. The namesake therefore looks
+    // runnable and is returned. Bundles are a macOS idea and this class only ever runs
+    // there, so the case is checked where it can be built rather than weakened to suit
+    // a platform that never meets it.
+    @EnabledOnOs({OS.LINUX, OS.MAC})
     void ignoresANamesakeThatIsNotExecutable(@TempDir Path temp) throws IOException {
         Path bundle = temp.resolve("VLC.app");
         Path macOs = Files.createDirectories(bundle.resolve("Contents").resolve("MacOS"));
