@@ -16,6 +16,7 @@ import mediacenter.json.JsonFiles;
 import mediacenter.json.JsonValue;
 import mediacenter.json.JsonValue.JsonArray;
 import mediacenter.json.JsonValue.JsonBoolean;
+import mediacenter.json.JsonValue.JsonNumber;
 import mediacenter.json.JsonValue.JsonObject;
 import mediacenter.json.JsonValue.JsonString;
 import mediacenter.media.MediaRoot;
@@ -82,6 +83,7 @@ public final class SettingsStore {
         settings.browserPath().ifPresent(path -> members.put("browserPath", new JsonString(path.toString())));
         members.put("fullScreen", new JsonBoolean(settings.fullScreen()));
         members.put("theme", new JsonString(settings.theme().name()));
+        members.put("slideshowSeconds", new JsonNumber(settings.slideshowSeconds()));
 
         List<JsonValue> roots = new ArrayList<>();
         for (MediaRoot root : settings.mediaRoots()) {
@@ -101,12 +103,14 @@ public final class SettingsStore {
         Optional<Path> browserPath = document.nonBlankString("browserPath").map(Path::of);
         boolean fullScreen = document.booleanValue("fullScreen", true);
         Theme theme = document.nonBlankString("theme").flatMap(Theme::parse).orElse(Theme.DARK);
+        // JsonValue reads numbers as longs; the interval is small enough to narrow.
+        int slideshowSeconds = document.longValue("slideshowSeconds").orElse(5L).intValue();
 
         List<MediaRoot> roots = new ArrayList<>();
         for (JsonObject rootDocument : document.objectArray("mediaRoots")) {
             readRoot(rootDocument).ifPresent(roots::add);
         }
-        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, roots);
+        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds);
     }
 
     private static Optional<MediaRoot> readRoot(JsonObject document) {
