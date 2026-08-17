@@ -2931,9 +2931,18 @@ going away ends that branch only. No photographs means no tile — Task 11. HEIC
 excluded — Task 1, documented Task 12. EXIF — Task 5, applied off-thread in Task
 10. `-Xmx` — Task 12. README premise change — Task 12.
 
-**Placeholders.** None. The viewer is given in full in Task 10 Step 2, the
-artwork rule has a body in Task 3 Step 3, and `slideshowRow` is complete in Task
-9 Step 3.
+**Placeholders.** No open decisions. Every piece of new logic has a body: the
+viewer in Task 10 Step 2, the artwork rule in Task 3 Step 3, `slideshowRow` and
+the toggle selection in Task 9 Step 3.
+
+Three steps do ask the implementer to read an existing class rather than trusting
+a transcription of it — the `SettingsStore` constructor and save/load names in
+Task 9 Step 1, `themeRow()`'s exact assembly in Task 9 Step 3, and the README
+prose in Task 12 Step 3. That is deliberate: those are places where this plan
+could go stale against the code, and a wrong transcription would be worse than an
+instruction to look. It is not the same as leaving a decision open, but it is not
+"nothing to write" either, and the distinction is worth stating plainly rather
+than claiming a clean sheet.
 
 **Type consistency.**
 `PhotoWalker.collect(Path, boolean, int, BooleanSupplier, Consumer<List<Path>>)`
