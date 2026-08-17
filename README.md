@@ -75,6 +75,11 @@ photograph under that folder, depth first in folder order, showing each one
 full screen and advancing on its own; once the walk has reached the end it
 loops back to the first.
 
+The walk does not follow symbolic links to directories — a link pointing back
+up the tree would let it go on for ever — so a folder whose only photographs
+live under a symlinked subdirectory gets no Slideshow tile, even though the
+grid still lets you browse into that subfolder and see them there.
+
 `Enter` on a single photograph opens it the same way, except the arrows move
 only through the photographs in *that* folder, there is no auto-advance, and
 reaching either end simply stops rather than wrapping around.
@@ -87,9 +92,10 @@ reaching either end simply stops rather than wrapping around.
 
 A manual `←`/`→` resets the interval rather than cancelling it, so pausing to
 look at one picture does not make the next automatic advance arrive early. The
-caption shows the file name and a counter — `2 of 380+` while a slideshow is
-still walking the folder tree in the background, `2 of 380` once that walk has
-finished and the `+` can safely come off.
+caption shows the file name and a counter: `2 of 380+` means there are at
+least that many, either because a slideshow is still walking the folder tree
+in the background or because the walk stopped short of the whole library;
+`2 of 380` — no `+` — means the walk finished and that really is all of them.
 
 The interval is a **Slideshow** row in Settings offering 5s and 10s; a
 hand-edited `config.json` can hold anything, but the stored value is clamped to
