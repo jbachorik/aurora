@@ -302,7 +302,7 @@ git commit -m "Share one rule for what the operating system hides"
 - Test: `src/test/java/mediacenter/media/MediaScannerTest.java`
 
 **Interfaces:**
-- Consumes: `PhotoFiles.isPhoto(Path)`, `ArtworkResolver.selectCover(Collection<String>)`.
+- Consumes: `PhotoFiles.isPhotoFileName(String)`.
 - Produces: `MediaItemType.IMAGE`, `MediaItem.isImage()`, `MediaItem.image(Path, String, Optional<Path>, long)`, `ArtworkResolver.artworkNames(Collection<String>)` → `Set<String>`.
 
 **Two traps this task exists to avoid**, both found by review:
@@ -424,14 +424,34 @@ of names, and `DirectoryStream` order is unspecified, so a sidecar tested inside
 the loop gives a different answer depending on what the filesystem returned
 first.
 
-```java
-        // in the listing loop, beside the existing video branch
-        } else if (PhotoFiles.isPhotoFileName(fileName)) {
-            photos.add(entry);
-            photoTimestamps.add(attributes.lastModifiedTime().toMillis());
-        }
+`MediaScanner.scan` needs `import java.util.Set;` (it has `ArrayList`, `Comparator`,
+`List` and `Optional`, but not `Set`), two new lists beside `videos` and
+`videoTimestamps`, and the photograph branch **inside** the existing
+`basic.isRegularFile()` block — not beside it. Put it outside and photographs
+never reach `fileNames`, so `artworkNames` sees a list with no `poster.jpg` in it
+and two of this task's tests fail:
 
-        // after the try-with-resources closes, over the completed fileNames
+```java
+        List<Path> photos = new ArrayList<>();
+        List<Long> photoTimestamps = new ArrayList<>();
+        ...
+                } else if (basic.isRegularFile()) {
+                    fileNames.add(fileName);
+                    if (VideoFiles.isVideoFileName(fileName)) {
+                        videos.add(entry);
+                        videoTimestamps.add(basic.lastModifiedTime().toMillis());
+                    } else if (PhotoFiles.isPhotoFileName(fileName)) {
+                        photos.add(entry);
+                        photoTimestamps.add(basic.lastModifiedTime().toMillis());
+                    }
+                }
+```
+
+Then, after the try-with-resources closes and over the completed `fileNames`,
+**replacing** the existing `items.addAll(videoItems(...))` statement rather than
+sitting beside it — leaving both lists every video twice:
+
+```java
         Set<String> artwork = ArtworkResolver.artworkNames(fileNames);
         List<MediaItem> photoItems = new ArrayList<>();
         for (int i = 0; i < photos.size(); i++) {
@@ -445,16 +465,17 @@ first.
                     Optional.of(photo), photoTimestamps.get(i)));
         }
 
-        // videoItems sorts its own list, so the two are combined and sorted again
-        List<MediaItem> files = new ArrayList<>(videoItems(videos, videoTimestamps, ...));
+        // videoItems sorts its own list, so the two are combined and sorted again.
+        List<MediaItem> files = new ArrayList<>(videoItems(
+                videos, videoTimestamps, fileNames, directory,
+                directories.isEmpty() && !directoryIsMediaRoot));
         files.addAll(photoItems);
         files.sort(BY_FILE_NAME);
         items.addAll(files);
 ```
 
-Declare `photos` and `photoTimestamps` beside the existing `videos` and its
-timestamps, and pass the video list to `videoItems` unchanged — **photographs must
-not be added to `videos`**, or a folder holding one film and one photograph stops
+The video list is passed to `videoItems` unchanged — **photographs must not be
+added to `videos`**, or a folder holding one film and one photograph stops
 borrowing the folder's name for the film.
 
 In `MediaTile.placeholder()`, the symbol is currently
@@ -2293,7 +2314,7 @@ final class PhotoView implements View {
                     if (run.isEmpty()) {
                         // A black screen with no explanation is the worst outcome
                         // here: nothing on it would say that Esc is the way out.
-                        showCaption("No photographs here.");
+                        showFinalCaption("No photographs here.");
                     } else {
                         if (startAt != null && !seekDone) {
                             // The grid offered a photograph the walk never found.
@@ -2312,7 +2333,7 @@ final class PhotoView implements View {
                     }
                     run.markComplete();
                     if (!showingSomething) {
-                        showCaption("These photographs are not available.");
+                        showFinalCaption("These photographs are not available.");
                     }
                 });
             }
@@ -2503,7 +2524,7 @@ final class PhotoView implements View {
             advancing = false;
             imageView.setImage(null);
             showingFailure = true;
-            showCaption("These photographs could not be shown.");
+            showFinalCaption("These photographs could not be shown.");
             return;
         }
         int from = index;
@@ -2523,7 +2544,7 @@ final class PhotoView implements View {
         } else {
             imageView.setImage(null);
             showingFailure = true;
-            showCaption("This photograph could not be shown.");
+            showFinalCaption("This photograph could not be shown.");
         }
     }
 
@@ -2543,13 +2564,29 @@ final class PhotoView implements View {
      * caption a newer one had just put up.
      */
     private void showCaption(String text) {
-        overlay.setText(text);
-        overlay.setVisible(true);
-        overlay.setOpacity(1);
+        putCaption(text);
         if (captionFade == null) {
             captionFade = Motion.fadeOutAfter(overlay);
         }
         captionFade.playFromStart();
+    }
+
+    /**
+     * A caption that stays. The three things this page can end on — no
+     * photographs, none available, none showable — are the only thing on a black
+     * screen, and fading them away leaves nothing to say that Esc is the way out.
+     */
+    private void showFinalCaption(String text) {
+        if (captionFade != null) {
+            captionFade.stop();
+        }
+        putCaption(text);
+    }
+
+    private void putCaption(String text) {
+        overlay.setText(text);
+        overlay.setVisible(true);
+        overlay.setOpacity(1);
     }
 
     // -- input --------------------------------------------------------------
@@ -2936,7 +2973,8 @@ excluded — Task 1, documented Task 12. EXIF — Task 5, applied off-thread in 
 10. `-Xmx` — Task 12. README premise change — Task 12.
 
 **Placeholders.** No open decisions. Every piece of new logic has a body: the
-viewer in Task 10 Step 2, the artwork rule **and its call site** in Task 3 Step 3,
+viewer in Task 10 Step 2, the artwork rule and its call site in Task 3 Step 3 — both were checked against
+the real `MediaScanner` after a round in which they were written from memory —
 `slideshowRow` and the toggle selection in Task 9 Step 3.
 
 Three steps do ask the implementer to read an existing class rather than trusting
@@ -2970,6 +3008,15 @@ consumed in Task 4.
   or `PhotoCache`, which do.
 - `FileVisibilityTest`'s hidden-attribute case runs only on Windows, which is the
   platform the attribute exists on; elsewhere it is skipped rather than faked.
+- `FileVisibility` returns true for an entry that is *not there*, but false for
+  one that exists and cannot be read — where `MediaScanner` skips both. A locked
+  file on Windows would therefore be hidden by the grid and offered by the
+  slideshow. Narrow, untested, and worth closing if it ever bites.
+- In single-photograph mode a failure caption suppresses the counter for good,
+  because nothing else will call `show()`. In slideshow mode the same state heals
+  when the next batch arrives. Deliberate, not an oversight.
+- `offerSlideshow` takes a `long` generation while `BrowseView.loadGeneration` is
+  an `int`. It widens, so it compiles; match the field if you prefer.
 
 **Six rounds of adversarial review** found around eighty defects in this plan.
 In every single round, the blocking defects were introduced by the previous
