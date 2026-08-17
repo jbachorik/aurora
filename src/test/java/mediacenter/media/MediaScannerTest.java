@@ -152,4 +152,74 @@ class MediaScannerTest {
     void verifyAccessibleAcceptsARealDirectory(@TempDir Path temp) {
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> scanner.verifyAccessible(temp));
     }
+
+    @Test
+    @DisplayName("photographs are listed beside videos, and are their own thumbnails")
+    void listsPhotographs(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("beach.jpg"));
+        // Two videos, so the single-video folder-name rule stays out of the way.
+        Files.createFile(temp.resolve("one.mkv"));
+        Files.createFile(temp.resolve("two.mkv"));
+        Files.createFile(temp.resolve("notes.txt"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(List.of("beach", "one", "two"),
+                items.stream().map(MediaItem::displayName).toList());
+        MediaItem photo = items.getFirst();
+        assertTrue(photo.isImage());
+        assertEquals(java.util.Optional.of(temp.resolve("beach.jpg")), photo.artworkPath());
+    }
+
+    @Test
+    @DisplayName("a film's poster is artwork, not a photograph to browse")
+    void doesNotListArtworkAsAPhotograph(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("Blade Runner 2049.mkv"));
+        Files.createFile(temp.resolve("poster.jpg"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(1, items.size(), "the poster is the film's artwork: " + items);
+        assertTrue(items.getFirst().isVideo());
+    }
+
+    @Test
+    @DisplayName("a film's sidecar image is artwork wherever the listing happens to reach it")
+    void doesNotListASidecarAsAPhotograph(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("movie.mkv"));
+        Files.createFile(temp.resolve("movie.jpg"));
+        Files.createFile(temp.resolve("holiday.jpg"));
+        // A second film, so the single-video folder-name rule stays out of the
+        // way — this test is about the sidecar, not about naming.
+        Files.createFile(temp.resolve("other.mkv"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(List.of("holiday", "movie", "other"),
+                items.stream().map(MediaItem::displayName).toList());
+    }
+
+    @Test
+    @DisplayName("a folder image is the folder's artwork even where there is no film")
+    void treatsAFolderImageAsArtworkEvenWithoutVideos(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("folder.jpg"));
+        Files.createFile(temp.resolve("holiday.jpg"));
+
+        List<MediaItem> items = scanner.scan(temp);
+
+        assertEquals(List.of("holiday"), items.stream().map(MediaItem::displayName).toList());
+    }
+
+    @Test
+    @DisplayName("a photograph does not stop a lone film borrowing its folder's name")
+    void photographsDoNotCountTowardTheSingleVideoRule(@TempDir Path temp) throws Exception {
+        Path folder = Files.createDirectory(temp.resolve("Blade Runner 2049 (2017)"));
+        Files.createFile(folder.resolve("Blade.Runner.2049.mkv"));
+        Files.createFile(folder.resolve("holiday.png"));
+
+        List<MediaItem> items = scanner.scan(folder);
+
+        assertEquals("Blade Runner 2049 (2017)",
+                items.stream().filter(MediaItem::isVideo).findFirst().orElseThrow().displayName());
+    }
 }

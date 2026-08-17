@@ -6,9 +6,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Purely local artwork lookup: no online metadata, no scraping.
@@ -61,6 +63,29 @@ public final class ArtworkResolver {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * The names in this folder that belong to something else — a film's poster or
+     * its sidecar — rather than being photographs in their own right.
+     *
+     * <p>Unconditional: a cover name is claimed whether or not a video is present,
+     * because {@code MediaScanner} already uses it as the folder tile's artwork.
+     *
+     * <p>Computed once per directory. The sidecar lookup walks every sibling, and
+     * asking it per photograph makes a folder of five hundred films and five
+     * hundred photographs quadratic — on a thread that runs for every folder the
+     * viewer opens.
+     */
+    public static Set<String> artworkNames(Collection<String> fileNames) {
+        Set<String> artwork = new HashSet<>();
+        selectCover(fileNames).ifPresent(artwork::add);
+        for (String name : fileNames) {
+            if (VideoFiles.isVideoFileName(name)) {
+                selectSidecar(VideoFiles.withoutExtension(name), fileNames).ifPresent(artwork::add);
+            }
+        }
+        return artwork;
     }
 
     /** Picks {@code <baseName>.jpg|jpeg|png} from a set of file names, case-insensitively. */

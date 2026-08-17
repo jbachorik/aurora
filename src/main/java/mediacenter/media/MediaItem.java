@@ -36,11 +36,20 @@ public record MediaItem(
         return new MediaItem(path, displayName, MediaItemType.VIDEO, artwork, lastModified);
     }
 
+    /** A photograph is its own thumbnail, so the artwork is the file itself. */
+    public static MediaItem image(Path path, String displayName, Optional<Path> artwork, long lastModified) {
+        return new MediaItem(path, displayName, MediaItemType.IMAGE, artwork, lastModified);
+    }
+
     public boolean isDirectory() {
         return type == MediaItemType.DIRECTORY;
     }
 
     public boolean isVideo() {
         return type == MediaItemType.VIDEO;
+    }
+
+    public boolean isImage() {
+        return type == MediaItemType.IMAGE;
     }
 }

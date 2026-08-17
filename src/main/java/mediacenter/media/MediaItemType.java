@@ -7,5 +7,8 @@ public enum MediaItemType {
     DIRECTORY,
 
     /** A playable video file. */
-    VIDEO
+    VIDEO,
+
+    /** A photograph, shown full screen rather than handed to the player. */
+    IMAGE
 }

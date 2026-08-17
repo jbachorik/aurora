@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -66,8 +67,10 @@ public final class MediaScanner {
 
         List<Path> directories = new ArrayList<>();
         List<Path> videos = new ArrayList<>();
+        List<Path> photos = new ArrayList<>();
         List<String> fileNames = new ArrayList<>();
         List<Long> videoTimestamps = new ArrayList<>();
+        List<Long> photoTimestamps = new ArrayList<>();
         List<Long> directoryTimestamps = new ArrayList<>();
 
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
@@ -93,6 +96,9 @@ public final class MediaScanner {
                     if (VideoFiles.isVideoFileName(fileName)) {
                         videos.add(entry);
                         videoTimestamps.add(basic.lastModifiedTime().toMillis());
+                    } else if (PhotoFiles.isPhotoFileName(fileName)) {
+                        photos.add(entry);
+                        photoTimestamps.add(basic.lastModifiedTime().toMillis());
                     }
                 }
             }
@@ -100,11 +106,29 @@ public final class MediaScanner {
             throw accessFailure(directory, e);
         }
 
+        Set<String> artwork = ArtworkResolver.artworkNames(fileNames);
+        List<MediaItem> photoItems = new ArrayList<>();
+        for (int i = 0; i < photos.size(); i++) {
+            Path photo = photos.get(i);
+            if (artwork.contains(photo.getFileName().toString())) {
+                // A film's poster or sidecar: the grid shows it as that film's
+                // artwork, and the slideshow skips it for the same reason.
+                continue;
+            }
+            photoItems.add(MediaItem.image(photo, DisplayNames.forFile(photo),
+                    Optional.of(photo), photoTimestamps.get(i)));
+        }
+
         List<MediaItem> items = new ArrayList<>();
         items.addAll(directoryItems(directories, directoryTimestamps));
-        items.addAll(videoItems(
+
+        // videoItems sorts its own list, so the two are combined and sorted again.
+        List<MediaItem> files = new ArrayList<>(videoItems(
                 videos, videoTimestamps, fileNames, directory,
                 directories.isEmpty() && !directoryIsMediaRoot));
+        files.addAll(photoItems);
+        files.sort(BY_FILE_NAME);
+        items.addAll(files);
         return List.copyOf(items);
     }
 

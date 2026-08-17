@@ -98,7 +98,7 @@ public final class BrowseView implements View {
         items = scanned;
         if (items.isEmpty()) {
             grid.clear();
-            grid.showMessage("This folder has no videos.");
+            grid.showMessage("This folder has nothing to show.");
             return;
         }
         List<Tile> tiles = new ArrayList<>(items.size());
