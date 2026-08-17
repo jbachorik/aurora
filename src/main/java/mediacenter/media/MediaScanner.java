@@ -244,6 +244,8 @@ public final class MediaScanner {
         }
     }
 
+    // The same verdict as FileVisibility.isHiddenOrSystem, reached from
+    // attributes this listing has already read.
     private static boolean isHiddenOrSystem(BasicFileAttributes attributes) {
         return attributes instanceof DosFileAttributes dos && (dos.isHidden() || dos.isSystem());
     }
