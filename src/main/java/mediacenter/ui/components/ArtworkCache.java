@@ -30,19 +30,18 @@ public final class ArtworkCache {
         this.images = new LinkedHashMap<>(16, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, Image> eldest) {
-                if (size() <= ArtworkCache.this.capacity) {
-                    return false;
-                }
-                // The entry handed to this method is the one about to be dropped,
-                // and nothing else is touched. A dropped image goes on decoding
-                // unless it is told not to: opening a folder of five hundred
-                // photographs starts five hundred decodes, and the ones evicted on
-                // the way would otherwise keep reading the share for thumbnails no
-                // longer held. Harmless on an image already loaded — cancel only
-                // affects one still in flight — and the tiles on screen are the
-                // most recently used, which is the far end of this queue.
-                eldest.getValue().cancel();
-                return true;
+                // Do not call eldest.getValue().cancel() here. BrowseView builds every
+                // MediaTile for a folder synchronously, and each tile's constructor
+                // starts loading its artwork immediately, so a large folder queues
+                // hundreds of decodes before any of them finish. With an access-order
+                // map at capacity, the eldest entries are the ones inserted first in
+                // that same loop, i.e. the tiles at the top of the visible grid, and
+                // their decodes are still in flight when eviction runs. Cancelling
+                // them makes Image report an error, and MediaTile hides its artwork
+                // on error, so the on-screen thumbnails would go blank permanently.
+                // Cancel-on-evict is only safe when the evicted value is known to be
+                // unreferenced elsewhere; here it is the opposite.
+                return size() > ArtworkCache.this.capacity;
             }
         };
     }
