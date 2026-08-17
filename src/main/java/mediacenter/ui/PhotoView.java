@@ -17,7 +17,9 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.StackPane;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
@@ -52,6 +54,23 @@ final class PhotoView implements View {
     /** Where a photograph goes before the window has been laid out. */
     private static final double FALLBACK_SIZE = 1920;
 
+    /**
+     * How quiet the activation key must go before a press counts as a new one.
+     *
+     * <p>Wider than {@link ActivationGate#DEFAULT_QUIET_GAP_NANOS} because the gap
+     * being measured here is a different one. The gate is primed at construction
+     * against the auto-repeat of the Enter that opened this page, so the interval it
+     * has to cover is one full initial key-repeat delay — around 500ms on macOS,
+     * Windows and GNOME, 660ms on X — and not the tens of milliseconds between
+     * repeats inside a held sequence, which is what the default is sized for. Against
+     * the default the first repeat lands outside the window, passes the gate, and
+     * pauses the show on photograph one.
+     *
+     * <p>Costs nothing in normal use: an observed release re-arms the gate without
+     * consulting this at all, so a deliberate second press always works.
+     */
+    private static final long ACTIVATION_QUIET_GAP_NANOS = 700_000_000L;
+
     private final UiContext context;
     private final Path folder;
     private final boolean slideshow;
@@ -64,7 +83,7 @@ final class PhotoView implements View {
     private final PhotoCache<Image> cache =
             new PhotoCache<>(PhotoCache.imageLoader(), PhotoCache.imageDisposer());
 
-    private final ActivationGate activationGate = new ActivationGate();
+    private final ActivationGate activationGate = new ActivationGate(ACTIVATION_QUIET_GAP_NANOS);
     /**
      * Orientation is read from disk, so it is remembered rather than re-read on every
      * repaint.
@@ -90,7 +109,16 @@ final class PhotoView implements View {
     private boolean showingSomething;
     private boolean seekDone;
     private boolean showingFailure;
-    private int failuresSinceLastSuccess;
+    /**
+     * Which photographs have failed since the last one that decoded — the set, not a
+     * count of attempts. What the give-up branch asks is whether every photograph in
+     * the run has been tried and failed, so it has to be told apart from one
+     * photograph failing over and over: an arrow held at the end of a run that does
+     * not wrap re-shows the same broken file once per auto-repeat, and counting
+     * attempts would walk a short run into "these photographs could not be shown"
+     * within a second of holding a key.
+     */
+    private final Set<Path> failedSinceLastSuccess = new HashSet<>();
     private double lastPaintedWidth;
     private double lastPaintedHeight;
 
@@ -195,6 +223,9 @@ final class PhotoView implements View {
         if (captionFade != null) {
             captionFade.stop();
         }
+        // The cancelled flag already makes the listener harmless; letting go of it
+        // here is so that the teardown inventory is the whole of it.
+        stopWatching();
         cache.clear();
     }
 
@@ -389,7 +420,7 @@ final class PhotoView implements View {
         if (image.getProgress() >= 1.0) {
             // Already decoded — a cache hit, or a repaint after a resize.
             // Registering again would stack a listener per repaint on one image.
-            failuresSinceLastSuccess = 0;
+            failedSinceLastSuccess.clear();
             return;
         }
         InvalidationListener[] listener = new InvalidationListener[1];
@@ -413,7 +444,7 @@ final class PhotoView implements View {
                 }
             } else if (image.getProgress() >= 1.0) {
                 stopWatching();
-                failuresSinceLastSuccess = 0;
+                failedSinceLastSuccess.clear();
             }
         };
         watchedImage = image;
@@ -445,11 +476,13 @@ final class PhotoView implements View {
      */
     private void onDecodeFailed(Path photo) {
         LOG.log(Level.FINE, () -> "Could not decode " + photo);
-        failuresSinceLastSuccess++;
+        // Recorded rather than counted, so that one broken photograph shown again and
+        // again — an arrow held where the run does not wrap — is still one failure.
+        failedSinceLastSuccess.add(photo);
         // Only once the run has ended does a full pass of failures mean anything.
         // While the walk continues, size() is whatever has been collected so far,
         // and one bad photograph in the first batch would end the show.
-        if (run.complete() && failuresSinceLastSuccess >= Math.max(run.size(), 1)) {
+        if (run.complete() && failedSinceLastSuccess.size() >= Math.max(run.size(), 1)) {
             LOG.warning("None of these photographs could be shown");
             // Stopped, not merely reported: leaving the timer running would take
             // the next interval, fail again, and arrive back here for ever, at one
