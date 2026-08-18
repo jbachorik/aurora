@@ -96,6 +96,13 @@ mode without the scale hint; any other browser just gets the address. Sites
 that require DRM (the big subscription services) work precisely *because*
 this is a real browser and not an embedded engine.
 
+**Leaving a site:** `Ctrl+Q` closes the browser and the media center returns
+— the same key that quits VLC, provided by a tiny bundled extension the
+kiosk launch loads into its own profile. `Ctrl+W` (close window) works
+everywhere as the fallback, including branded Google Chrome, which has
+stopped honouring `--load-extension`, and Firefox, which does not sideload
+extensions at all.
+
 
 Photographs
 -----------

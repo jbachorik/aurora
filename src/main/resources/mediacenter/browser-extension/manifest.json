@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Media Center Quit Key",
+  "version": "1.0",
+  "description": "Ctrl+Q closes the kiosk browser, the way it closes VLC.",
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["quit.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "commands": {
+    "quit-browser": {
+      "suggested_key": { "default": "Ctrl+Q" },
+      "description": "Close the browser and return to the media center"
+    }
+  }
+}

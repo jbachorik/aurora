@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * The command line that opens a website full screen, sized for a sofa.
@@ -33,16 +34,22 @@ public final class KioskBrowser {
     }
 
     /**
-     * @param browserExecutable the configured browser program
-     * @param url               the address, handed through verbatim
-     * @param scalePercent      how much larger to draw everything; 100 says nothing
-     * @param profileDirectory  the media center's own browser profile
+     * @param browserExecutable  the configured browser program
+     * @param url                the address, handed through verbatim
+     * @param scalePercent       how much larger to draw everything; 100 says nothing
+     * @param profileDirectory   the media center's own browser profile
+     * @param quitExtension      the unpacked Ctrl+Q extension, for the Chromium
+     *                           family only — Firefox refuses unsigned
+     *                           extensions from a command line, and branded
+     *                           Chrome has stopped honouring the switch, which
+     *                           costs nothing worse than the key not binding
      */
     public static List<String> commandFor(
-            Path browserExecutable, String url, int scalePercent, Path profileDirectory) {
+            Path browserExecutable, String url, int scalePercent, Path profileDirectory,
+            Optional<Path> quitExtension) {
         String program = fileNameOf(browserExecutable);
         if (isChromiumFamily(program)) {
-            return chromiumCommand(browserExecutable, url, scalePercent, profileDirectory);
+            return chromiumCommand(browserExecutable, url, scalePercent, profileDirectory, quitExtension);
         }
         if (program.contains("firefox")) {
             return List.of(browserExecutable.toString(), "--kiosk", url);
@@ -56,8 +63,9 @@ public final class KioskBrowser {
     }
 
     private static List<String> chromiumCommand(
-            Path browserExecutable, String url, int scalePercent, Path profileDirectory) {
-        List<String> command = new ArrayList<>(7);
+            Path browserExecutable, String url, int scalePercent, Path profileDirectory,
+            Optional<Path> quitExtension) {
+        List<String> command = new ArrayList<>(8);
         command.add(browserExecutable.toString());
         // Without its own profile the launch is handed to any Chromium already
         // running and every flag below is silently ignored.
@@ -66,6 +74,7 @@ public final class KioskBrowser {
         // offer to become the default browser — on a television.
         command.add("--no-first-run");
         command.add("--no-default-browser-check");
+        quitExtension.ifPresent(extension -> command.add("--load-extension=" + extension));
         if (scalePercent != 100) {
             command.add("--force-device-scale-factor="
                     + String.format(Locale.ROOT, "%.2f", scalePercent / 100.0));
