@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -34,19 +35,40 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
             "VLC could not be started.";
 
     private final Supplier<Optional<Path>> vlcExecutableSupplier;
+    private final List<String> platformOptions;
 
     /** @param vlcExecutableSupplier read on every playback so Settings changes take effect at once */
     public VlcPlayerLauncher(Supplier<Optional<Path>> vlcExecutableSupplier) {
+        this(vlcExecutableSupplier, List.of());
+    }
+
+    /**
+     * @param platformOptions extra options the running platform needs, from
+     *                        {@code PlatformServices.playerOptions()}; they are not
+     *                        hard-coded here because an option that one build of
+     *                        VLC needs is one another build refuses to start with
+     */
+    public VlcPlayerLauncher(Supplier<Optional<Path>> vlcExecutableSupplier, List<String> platformOptions) {
         this.vlcExecutableSupplier = vlcExecutableSupplier;
+        this.platformOptions = List.copyOf(platformOptions);
     }
 
     /** Command line VLC is started with, exposed for logging and tests. */
     public static List<String> commandFor(Path vlcExecutable, Path mediaFile) {
-        return List.of(
-                vlcExecutable.toString(),
-                "--fullscreen",
-                "--play-and-exit",
-                mediaFile.toString());
+        return commandFor(vlcExecutable, mediaFile, List.of());
+    }
+
+    /** @see #commandFor(Path, Path) */
+    public static List<String> commandFor(Path vlcExecutable, Path mediaFile, List<String> platformOptions) {
+        List<String> command = new ArrayList<>(4 + platformOptions.size());
+        command.add(vlcExecutable.toString());
+        command.add("--fullscreen");
+        command.add("--play-and-exit");
+        command.addAll(platformOptions);
+        // Last, so that a file whose name begins with a dash is still read as the
+        // file: everything after it is one.
+        command.add(mediaFile.toString());
+        return List.copyOf(command);
     }
 
     @Override
@@ -74,7 +96,7 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
             return PlaybackResult.Failed.of(MEDIA_MISSING);
         }
 
-        List<String> command = commandFor(vlcExecutable, mediaFile);
+        List<String> command = commandFor(vlcExecutable, mediaFile, platformOptions);
         LOG.log(Level.INFO, () -> "Starting playback: " + String.join(" ", command));
 
         Instant startedAt = Instant.now();

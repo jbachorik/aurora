@@ -33,6 +33,34 @@ class VlcPlayerLauncherTest {
     }
 
     @Test
+    @DisplayName("platform options are passed to VLC ahead of the file")
+    void placesPlatformOptionsBeforeTheFile() {
+        // Windows VLC hands the file to an instance that is already running and
+        // enqueues it there, ignoring --play-and-exit and --fullscreen along with
+        // the rest of the command line. The option that switches that off exists
+        // only on the platforms that have the behaviour, so it arrives from there.
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"),
+                Path.of("C:\\video\\episode.mkv"),
+                List.of("--no-one-instance"));
+
+        assertEquals(List.of(
+                "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+                "--fullscreen",
+                "--play-and-exit",
+                "--no-one-instance",
+                "C:\\video\\episode.mkv"), command);
+    }
+
+    @Test
+    @DisplayName("a platform that asks for nothing extra gets the plain command line")
+    void addsNothingWhenThePlatformOffersNoOptions() {
+        assertEquals(
+                VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv")),
+                VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), List.of()));
+    }
+
+    @Test
     @DisplayName("Unicode file names reach VLC unchanged")
     void passesUnicodeFileNamesThrough() {
         String unicodeName = "\\\\synology\\video\\Movies\\Amélie (2001)\\Amélie 岸辺.mkv";

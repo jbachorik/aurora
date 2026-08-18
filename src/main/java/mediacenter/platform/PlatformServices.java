@@ -98,6 +98,20 @@ public interface PlatformServices {
     }
 
     /**
+     * Extra options this platform needs on the media player's command line.
+     *
+     * <p>Empty almost everywhere. Windows VLC reuses an instance that is already
+     * running: the second launch hands its file to the first, which appends it to
+     * the playlist and carries on with what it was doing, so the viewer presses
+     * play and nothing happens. The option that turns that off exists only in the
+     * builds that have the behaviour — the macOS build rejects it outright and
+     * refuses to start — so it is asked for per platform rather than always sent.
+     */
+    default List<String> playerOptions() {
+        return List.of();
+    }
+
+    /**
      * Exposes the desktop, launching the configured browser when one is set.
      *
      * @param browserExecutable optional browser chosen in Settings

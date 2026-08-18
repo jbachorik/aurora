@@ -47,6 +47,18 @@ class PlatformServicesTest {
     }
 
     @Test
+    @DisplayName("only Windows asks VLC not to reuse a running instance")
+    void windowsAsksVlcForItsOwnInstance() {
+        // On Windows a second VLC hands its file to the first and that one puts it
+        // on the end of the playlist, so nothing appears to play. The option does
+        // not exist in the macOS build at all: passing it there makes VLC refuse
+        // to start, which is why this is not simply always on.
+        assertEquals(List.of("--no-one-instance"), new WindowsPlatformServices().playerOptions());
+        assertEquals(List.of(), new MacPlatformServices().playerOptions());
+        assertEquals(List.of(), new LinuxPlatformServices().playerOptions());
+    }
+
+    @Test
     @DisplayName("the application data directory exists and is named as documented")
     void createsTheApplicationDataDirectory() {
         Path directory = PlatformServices.detect().applicationDataDirectory();

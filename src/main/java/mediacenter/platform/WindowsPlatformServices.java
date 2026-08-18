@@ -27,6 +27,11 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
             "HKLM\\SOFTWARE\\WOW6432Node\\VideoLAN\\VLC");
 
     @Override
+    public List<String> playerOptions() {
+        return List.of("--no-one-instance");
+    }
+
+    @Override
     public String name() {
         return "Windows";
     }
