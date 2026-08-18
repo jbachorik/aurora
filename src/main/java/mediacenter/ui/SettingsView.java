@@ -67,6 +67,8 @@ public final class SettingsView implements View {
     private final List<ToggleButton> slideshowToggles = new ArrayList<>();
     private final Label bufferValue = new Label();
     private final List<ToggleButton> bufferToggles = new ArrayList<>();
+    private final Label embeddedPlayerValue = new Label();
+    private final ToggleButton embeddedPlayerToggle = new ToggleButton();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
 
@@ -143,10 +145,12 @@ public final class SettingsView implements View {
         Node themeRow = themeRow();
         Node slideshowRow = slideshowRow();
         Node bufferRow = bufferRow();
+        Node embeddedPlayerRow = embeddedPlayerRow();
         Node rootsSection = mediaRootsSection();
 
         root.getChildren().addAll(
-                vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow, rootsSection);
+                vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow,
+                embeddedPlayerRow, rootsSection);
 
         installArrowNavigation();
         readSettings();
@@ -270,10 +274,6 @@ public final class SettingsView implements View {
     }
 
     /**
-     * How long each photograph stays. Two toggles rather than a number field:
-     * from the far side of a room there is nothing to type with.
-     */
-    /**
      * How long the player reads ahead before it starts.
      *
      * <p>Offered because a share reached over a slow or distant link delivers in
@@ -318,6 +318,24 @@ public final class SettingsView implements View {
         return card;
     }
 
+    /**
+     * Whether video plays inside this window or in a VLC window of its own.
+     * The built-in player borrows libVLC from the same VLC install the row at
+     * the top points at; if that library cannot be loaded, playback simply
+     * falls back to the external window and says so.
+     */
+    private Node embeddedPlayerRow() {
+        embeddedPlayerToggle.setOnAction(event ->
+                update(settings().withEmbeddedPlayer(embeddedPlayerToggle.isSelected())));
+        Node row = settingRow("Built-in player", embeddedPlayerValue, null, embeddedPlayerToggle);
+        navigationRows.add(List.of(embeddedPlayerToggle));
+        return row;
+    }
+
+    /**
+     * How long each photograph stays. Two toggles rather than a number field:
+     * from the far side of a room there is nothing to type with.
+     */
     private Node slideshowRow() {
         Label name = new Label("Slideshow");
         name.getStyleClass().add("setting-name");
@@ -595,6 +613,11 @@ public final class SettingsView implements View {
         browserValue.setText(settings.browserPath().map(platform::programLabel).orElse("Not configured"));
         fullScreenToggle.setSelected(settings.fullScreen());
         fullScreenToggle.setText(settings.fullScreen() ? "On" : "Off");
+        embeddedPlayerToggle.setSelected(settings.embeddedPlayer());
+        embeddedPlayerToggle.setText(settings.embeddedPlayer() ? "On" : "Off");
+        embeddedPlayerValue.setText(settings.embeddedPlayer()
+                ? "Video plays inside this window"
+                : "Video opens in a VLC window");
         for (var toggle : themeGroup.getToggles()) {
             toggle.setSelected(toggle.getUserData() == settings.theme());
         }

@@ -88,6 +88,16 @@ public final class PlaybackService {
         });
     }
 
+    /**
+     * Writes one played file into the history — the embedded player's way in.
+     * That player knows, per episode, that a frame actually reached the
+     * screen, which is better evidence than the external player ever gives.
+     * Runs on the background executor; safe to call from the UI thread.
+     */
+    public void recordPlayed(Path mediaFile, String displayTitle) {
+        backgroundExecutor.execute(() -> recordHistory(mediaFile, displayTitle));
+    }
+
     private void recordHistory(Path mediaFile, String displayTitle) {
         try {
             history.record(mediaFile, displayTitle, Instant.now());

@@ -446,6 +446,30 @@
     -fx-background-color: black;
 }
 
+/* ---------------------------------------------------------------- player */
+
+.player-view {
+    -fx-background-color: black;
+}
+
+/* Same voice as the photo overlay: white on a soft black card, lower left. */
+.player-osd {
+    -fx-background-color: rgba(0, 0, 0, 0.55);
+    -fx-background-radius: 8;
+    -fx-padding: 12 20 12 20;
+}
+
+.player-osd-title {
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+}
+
+.player-osd-time {
+    -fx-font-size: 22px;
+    -fx-text-fill: rgba(255, 255, 255, 0.85);
+}
+
 .photo-overlay {
     -fx-font-size: 26px;
     -fx-text-fill: white;
