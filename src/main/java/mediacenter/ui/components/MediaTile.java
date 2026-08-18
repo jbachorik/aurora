@@ -62,10 +62,18 @@ public final class MediaTile extends Tile {
 
     private final MediaItem item;
     private final Theme theme;
+    private final Shape shape;
+    private final ArtworkCache artworkCache;
+
+    /** Kept so artwork that arrives after the tile is on screen has somewhere to go. */
+    private StackPane artworkArea;
+    private StackPane placeholder;
 
     public MediaTile(MediaItem item, Shape shape, ArtworkCache artworkCache, Theme theme) {
         this.item = item;
         this.theme = theme;
+        this.shape = shape;
+        this.artworkCache = artworkCache;
 
         getStyleClass().add("media-tile");
         setPrefSize(shape.width(), shape.totalHeight());
@@ -93,26 +101,39 @@ public final class MediaTile extends Tile {
      * width renders out over the rounded edge.
      */
     private StackPane artworkArea(Shape shape, ArtworkCache artworkCache) {
-        StackPane placeholder = placeholder();
+        placeholder = placeholder();
         StackPane area = new StackPane(placeholder);
         area.getStyleClass().add("media-tile-artwork");
         area.setPrefHeight(shape.artworkHeight());
         area.setMinHeight(shape.artworkHeight());
         area.setMaxHeight(shape.artworkHeight());
         roundTopCorners(area);
+        artworkArea = area;
 
-        Optional<Path> artworkPath = item.artworkPath();
-        if (artworkPath.isPresent()) {
-            Image image = artworkCache.load(artworkPath.get(), shape.width(), shape.artworkHeight());
-            ImageView view = new ImageView(image);
-            view.fitWidthProperty().bind(area.widthProperty());
-            view.setFitHeight(shape.artworkHeight());
-            view.setPreserveRatio(true);
-            view.setSmooth(true);
-            area.getChildren().add(view);
-            revealWhenLoaded(image, placeholder, view);
-        }
+        item.artworkPath().ifPresent(this::showArtwork);
         return area;
+    }
+
+    /**
+     * Puts artwork on a tile that is already on screen.
+     *
+     * <p>Artwork for a folder costs a directory listing to find, which over a
+     * share is slow enough that the grid is drawn without it and the posters are
+     * filled in as the answers come back. The tile fades from its placeholder
+     * exactly as it would have done had the path been known all along.
+     */
+    public void showArtwork(Path artworkPath) {
+        if (artworkArea == null) {
+            return;
+        }
+        Image image = artworkCache.load(artworkPath, shape.width(), shape.artworkHeight());
+        ImageView view = new ImageView(image);
+        view.fitWidthProperty().bind(artworkArea.widthProperty());
+        view.setFitHeight(shape.artworkHeight());
+        view.setPreserveRatio(true);
+        view.setSmooth(true);
+        artworkArea.getChildren().add(view);
+        revealWhenLoaded(image, placeholder, view);
     }
 
     /**

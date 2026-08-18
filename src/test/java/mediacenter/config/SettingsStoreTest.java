@@ -31,6 +31,18 @@ class SettingsStoreTest {
     }
 
     @Test
+    @DisplayName("the playback buffer survives a save and load, and an absent one is VLC's default")
+    void keepsThePlaybackBuffer(@TempDir Path temp) throws IOException {
+        SettingsStore store = new SettingsStore(temp);
+        store.save(ApplicationSettings.defaults().withPlayerBufferSeconds(10));
+
+        assertEquals(10, store.load().playerBufferSeconds());
+
+        Files.writeString(temp.resolve("config.json"), "{\"theme\":\"DARK\"}");
+        assertEquals(1, store.load().playerBufferSeconds());
+    }
+
+    @Test
     @DisplayName("a media center defaults to the dark theme")
     void theDefaultThemeIsDark(@TempDir Path temp) {
         assertEquals(Theme.DARK, new SettingsStore(temp).load().theme());
@@ -67,7 +79,8 @@ class SettingsStoreTest {
                 false,
                 Theme.LIGHT,
                 List.of(movies, tv),
-                5);
+                5,
+                10);
 
         assertTrue(store.save(original));
         ApplicationSettings reloaded = store.load();
@@ -79,6 +92,7 @@ class SettingsStoreTest {
         assertEquals(2, reloaded.mediaRoots().size());
         assertEquals(movies, reloaded.mediaRoots().getFirst());
         assertEquals("\\\\synology\\video\\Movies", reloaded.mediaRoots().getFirst().displayPath());
+        assertEquals(10, reloaded.playerBufferSeconds());
     }
 
     @Test

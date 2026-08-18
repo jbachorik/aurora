@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import javafx.collections.FXCollections;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -19,6 +20,7 @@ import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
@@ -37,6 +39,7 @@ import mediacenter.config.Theme;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaRootType;
 import mediacenter.platform.PlatformServices;
+import mediacenter.ui.components.ScrollGeometry;
 
 /**
  * Settings kept deliberately flat: one screen, large rows, no nested pages.
@@ -45,11 +48,15 @@ public final class SettingsView implements View {
 
     private static final double BUTTON_MIN_WIDTH = 160;
 
+    /** Breathing room left above and below a control scrolled into view. */
+    private static final double SCROLL_MARGIN = 24;
+
     private final UiContext context;
     private final PlatformServices platform;
     private final Consumer<ApplicationSettings> onSettingsChanged;
 
     private final VBox root = new VBox();
+    private final ScrollPane scroller = new ScrollPane(root);
     private final Label vlcValue = new Label();
     private final Label vlcStatus = new Label();
     private final Label browserValue = new Label();
@@ -58,6 +65,8 @@ public final class SettingsView implements View {
     private final ToggleGroup themeGroup = new ToggleGroup();
     private final Label slideshowValue = new Label();
     private final List<ToggleButton> slideshowToggles = new ArrayList<>();
+    private final Label bufferValue = new Label();
+    private final List<ToggleButton> bufferToggles = new ArrayList<>();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
 
@@ -85,6 +94,18 @@ public final class SettingsView implements View {
         root.getStyleClass().add("settings-view");
         root.setSpacing(18);
         root.setPadding(new Insets(24, 32, 24, 32));
+
+        // The page is taller than a small screen, and a bare VBox handed to the
+        // shell is laid out at *at least* its minimum height: the surplus simply
+        // hangs off the bottom of the window, taking the media folders and the
+        // hint bar with it, and no amount of pressing Down brings it back.
+        scroller.getStyleClass().add("settings-scroll");
+        scroller.setFitToWidth(true);
+        scroller.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroller.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        // Without this the viewport inherits the content's minimum height and the
+        // pane grows past the window instead of scrolling inside it.
+        scroller.setMinHeight(0);
 
         // "vlc.exe" means nothing on a Mac, where the same thing is an application
         // bundle, so every program label is worded by the platform.
@@ -121,9 +142,11 @@ public final class SettingsView implements View {
         // appends its own row to navigationRows as it goes.
         Node themeRow = themeRow();
         Node slideshowRow = slideshowRow();
+        Node bufferRow = bufferRow();
         Node rootsSection = mediaRootsSection();
 
-        root.getChildren().addAll(vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, rootsSection);
+        root.getChildren().addAll(
+                vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow, rootsSection);
 
         installArrowNavigation();
         readSettings();
@@ -131,7 +154,7 @@ public final class SettingsView implements View {
 
     @Override
     public Node node() {
-        return root;
+        return scroller;
     }
 
     @Override
@@ -250,6 +273,51 @@ public final class SettingsView implements View {
      * How long each photograph stays. Two toggles rather than a number field:
      * from the far side of a room there is nothing to type with.
      */
+    /**
+     * How long the player reads ahead before it starts.
+     *
+     * <p>Offered because a share reached over a slow or distant link delivers in
+     * fits: the average may be far above what the video needs while individual
+     * reads stall, and playback judders on the gaps rather than on any shortage.
+     * Reading further ahead covers them. It cannot help when the link is simply
+     * slower than the video's bitrate — that is a wait no buffer shortens.
+     */
+    private Node bufferRow() {
+        Label name = new Label("Playback buffer");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        bufferValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(bufferValue, Priority.ALWAYS);
+        bufferValue.setMaxWidth(Double.MAX_VALUE);
+
+        ToggleGroup group = new ToggleGroup();
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        // One second is what VLC does unasked, so the first choice is "leave it
+        // alone" under a name that means something from a sofa.
+        for (int seconds : List.of(1, 5, 10)) {
+            ToggleButton button = new ToggleButton(seconds + "s");
+            button.setUserData(seconds);
+            button.setToggleGroup(group);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withPlayerBufferSeconds(seconds));
+            });
+            choices.getChildren().add(button);
+            bufferToggles.add(button);
+        }
+        navigationRows.add(List.copyOf(bufferToggles));
+
+        HBox line = new HBox(16, name, bufferValue, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
+    }
+
     private Node slideshowRow() {
         Label name = new Label("Slideshow");
         name.getStyleClass().add("setting-name");
@@ -468,12 +536,39 @@ public final class SettingsView implements View {
         int clampedColumn = Math.clamp(column, 0, controls.size() - 1);
         Node target = controls.get(clampedColumn);
         target.requestFocus();
+        ensureVisible(target);
         lastPosition = new Position(row, clampedColumn);
         if (target == rootsList
                 && rootsList.getSelectionModel().isEmpty()
                 && !rootsList.getItems().isEmpty()) {
             rootsList.getSelectionModel().selectFirst();
         }
+    }
+
+    /**
+     * Scrolls a freshly focused control into the viewport.
+     *
+     * <p>The arrow keys are taken by the filter above, which stops the scroll
+     * pane's own skin from ever following the focus. Without this the focus does
+     * move onto a control below the fold and nothing appears to happen, because
+     * the control it moved to is painted past the bottom of the window.
+     */
+    private void ensureVisible(Node target) {
+        Bounds viewport = scroller.getViewportBounds();
+        if (viewport == null) {
+            return;
+        }
+        Bounds inContent = root.sceneToLocal(target.localToScene(target.getBoundsInLocal()));
+        if (inContent == null) {
+            return;
+        }
+        scroller.setVvalue(ScrollGeometry.vvalueFor(
+                scroller.getVvalue(),
+                root.getLayoutBounds().getHeight(),
+                viewport.getHeight(),
+                inContent.getMinY(),
+                inContent.getMaxY(),
+                SCROLL_MARGIN));
     }
 
     private static boolean isSelfOrAncestor(Node candidate, Node focused) {
@@ -513,6 +608,12 @@ public final class SettingsView implements View {
         slideshowValue.setText(configuredInterval + "s");
         for (ToggleButton toggle : slideshowToggles) {
             toggle.setSelected(configuredInterval.equals(toggle.getUserData()));
+        }
+
+        Integer configuredBuffer = settings.playerBufferSeconds();
+        bufferValue.setText(configuredBuffer + "s");
+        for (ToggleButton toggle : bufferToggles) {
+            toggle.setSelected(configuredBuffer.equals(toggle.getUserData()));
         }
 
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();
@@ -689,7 +790,11 @@ public final class SettingsView implements View {
                 context.backgroundExecutor(),
                 () -> {
                     context.scanner().verifyAccessible(selected.path());
-                    return context.scanner().scan(selected.path()).size();
+                    // Only the count is wanted, and artwork does not change it —
+                    // resolving it here would list every subfolder over the share
+                    // to answer a question nobody asked.
+                    return context.scanner()
+                            .scanWithoutDirectoryArtwork(selected.path(), true).size();
                 },
                 count -> showStatus(rootStatus,
                         selected.displayName() + " is reachable — " + count + " items."),

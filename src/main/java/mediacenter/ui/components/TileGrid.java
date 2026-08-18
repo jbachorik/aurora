@@ -392,22 +392,13 @@ public final class TileGrid extends ScrollPane {
     }
 
     private void ensureVisible(Tile tile) {
-        Bounds viewport = getViewportBounds();
-        double contentHeight = tilePane.getBoundsInParent().getHeight();
-        double viewportHeight = viewport.getHeight();
-        double scrollable = contentHeight - viewportHeight;
-        if (scrollable <= 0) {
-            setVvalue(0);
-            return;
-        }
         Bounds bounds = tile.getBoundsInParent();
-        double visibleTop = getVvalue() * scrollable;
-        double target = visibleTop;
-        if (bounds.getMinY() - SCROLL_MARGIN < visibleTop) {
-            target = bounds.getMinY() - SCROLL_MARGIN;
-        } else if (bounds.getMaxY() + SCROLL_MARGIN > visibleTop + viewportHeight) {
-            target = bounds.getMaxY() + SCROLL_MARGIN - viewportHeight;
-        }
-        setVvalue(Math.min(Math.max(target / scrollable, 0), 1));
+        setVvalue(ScrollGeometry.vvalueFor(
+                getVvalue(),
+                tilePane.getBoundsInParent().getHeight(),
+                getViewportBounds().getHeight(),
+                bounds.getMinY(),
+                bounds.getMaxY(),
+                SCROLL_MARGIN));
     }
 }

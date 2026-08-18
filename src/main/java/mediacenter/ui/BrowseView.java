@@ -3,6 +3,8 @@ package mediacenter.ui;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.Semaphore;
 
 import javafx.scene.Node;
 
@@ -24,6 +26,9 @@ import mediacenter.ui.components.TileGrid;
  * rather than a frozen screen.
  */
 public final class BrowseView implements View {
+
+    /** Concurrent folder-artwork lookups; matches what the scanner used to allow. */
+    private static final int ARTWORK_LOOKUP_PARALLELISM = 16;
 
     private final UiContext context;
     private final MediaRoot root;
@@ -98,7 +103,7 @@ public final class BrowseView implements View {
         grid.showMessage("Loading…");
         FxTasks.run(
                 context.backgroundExecutor(),
-                () -> context.scanner().scan(folder, folder.equals(root.path())),
+                () -> context.scanner().scanWithoutDirectoryArtwork(folder, folder.equals(root.path())),
                 scanned -> {
                     if (generation == loadGeneration) {
                         showItems(scanned);
@@ -109,6 +114,47 @@ public final class BrowseView implements View {
                         showFailure(failure);
                     }
                 });
+    }
+
+    /**
+     * Looks up each folder's artwork and drops it onto its tile as it arrives.
+     *
+     * <p>The scan deliberately skipped these: one directory listing per folder,
+     * and over a share that is the whole wait. The names are on screen already,
+     * so the posters can take as long as they take — and a load that has been
+     * replaced stops the moment it notices.
+     */
+    private void fillDirectoryArtwork(List<MediaTile> tiles, int generation) {
+        if (tiles.isEmpty()) {
+            return;
+        }
+        // The same ceiling the scanner used when it did this itself: enough to
+        // keep a share busy, few enough not to bury it.
+        Semaphore permits = new Semaphore(ARTWORK_LOOKUP_PARALLELISM);
+        for (MediaTile tile : tiles) {
+            context.backgroundExecutor().execute(() -> {
+                if (generation != loadGeneration || discarded) {
+                    return;
+                }
+                Optional<Path> artwork;
+                try {
+                    permits.acquire();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                try {
+                    artwork = context.scanner().directoryArtwork(tile.item().path());
+                } finally {
+                    permits.release();
+                }
+                artwork.ifPresent(path -> FxTasks.onFx(() -> {
+                    if (generation == loadGeneration && !discarded) {
+                        tile.showArtwork(path);
+                    }
+                }));
+            });
+        }
     }
 
     private void showItems(List<MediaItem> scanned) {
@@ -125,11 +171,17 @@ public final class BrowseView implements View {
             return;
         }
         List<Tile> tiles = new ArrayList<>(items.size());
+        List<MediaTile> awaitingArtwork = new ArrayList<>();
         for (MediaItem item : items) {
-            tiles.add(new MediaTile(item, shape, context.artworkCache(), context.settings().get().theme()));
+            MediaTile tile = new MediaTile(item, shape, context.artworkCache(), context.settings().get().theme());
+            tiles.add(tile);
+            if (item.isDirectory() && item.artworkPath().isEmpty()) {
+                awaitingArtwork.add(tile);
+            }
         }
         grid.setTiles(tiles);
         grid.focusSelection();
+        fillDirectoryArtwork(awaitingArtwork, generation);
         // A photograph in this very folder settles the question with no walk at
         // all, and this is the folder a viewer of photographs is usually in. The
         // walk below is the expensive case — a shelf of films whose posters are

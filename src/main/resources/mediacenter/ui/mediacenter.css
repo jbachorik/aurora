@@ -59,7 +59,9 @@
 /* ----------------------------------------------------------------- tiles */
 
 .tile-grid,
-.tile-grid > .viewport {
+.tile-grid > .viewport,
+.settings-scroll,
+.settings-scroll > .viewport {
     -fx-background-color: transparent;
 }
 

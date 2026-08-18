@@ -23,7 +23,8 @@ class VlcPlayerLauncherTest {
     void buildsTheDocumentedCommandLine() {
         List<String> command = VlcPlayerLauncher.commandFor(
                 Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"),
-                Path.of("\\\\synology\\video\\Movies\\Blade Runner 2049 (2017)\\movie.mkv"));
+                Path.of("\\\\synology\\video\\Movies\\Blade Runner 2049 (2017)\\movie.mkv"),
+                0, List.of());
 
         assertEquals(List.of(
                 "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
@@ -33,12 +34,66 @@ class VlcPlayerLauncherTest {
     }
 
     @Test
+    @DisplayName("platform options are passed to VLC ahead of the file")
+    void placesPlatformOptionsBeforeTheFile() {
+        // Windows VLC hands the file to an instance that is already running and
+        // enqueues it there, ignoring --play-and-exit and --fullscreen along with
+        // the rest of the command line. The option that switches that off exists
+        // only on the platforms that have the behaviour, so it arrives from there.
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"),
+                Path.of("C:\\video\\episode.mkv"),
+                0, List.of("--no-one-instance"));
+
+        assertEquals(List.of(
+                "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+                "--fullscreen",
+                "--play-and-exit",
+                "--no-one-instance",
+                "C:\\video\\episode.mkv"), command);
+    }
+
+    @Test
+    @DisplayName("a platform that asks for nothing extra gets the plain command line")
+    void addsNothingWhenThePlatformOffersNoOptions() {
+        assertEquals(
+                VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv")),
+                VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), 0, List.of()));
+    }
+
+    @Test
+    @DisplayName("the configured buffer becomes VLC's file caching, in milliseconds")
+    void asksVlcToBufferTheConfiguredAmount() {
+        // --file-caching, not --network-caching: a share mounted by the operating
+        // system is opened by VLC's "filesystem" access, and the network option
+        // reaches only the modules that fetch over a network themselves.
+        Path media = Path.of("/media/a.mkv");
+
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("/usr/bin/vlc"), media, 10, List.of());
+
+        assertTrue(command.contains("--file-caching=10000"), command.toString());
+        // Rendered by the platform, not spelled out: Windows prints this same
+        // path back with backslashes.
+        assertEquals(media.toString(), command.getLast());
+    }
+
+    @Test
+    @DisplayName("no buffer configured leaves VLC's own caching untouched")
+    void saysNothingAboutCachingWhenNoBufferIsSet() {
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), 0, List.of());
+
+        assertTrue(command.stream().noneMatch(argument -> argument.startsWith("--file-caching")), command.toString());
+    }
+
+    @Test
     @DisplayName("Unicode file names reach VLC unchanged")
     void passesUnicodeFileNamesThrough() {
         String unicodeName = "\\\\synology\\video\\Movies\\Amélie (2001)\\Amélie 岸辺.mkv";
         Path media = pathOrSkip(unicodeName);
 
-        List<String> command = VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), media);
+        List<String> command = VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), media, 0, List.of());
 
         assertEquals(unicodeName, command.getLast());
     }

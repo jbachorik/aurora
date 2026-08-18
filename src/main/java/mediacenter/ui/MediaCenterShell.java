@@ -13,6 +13,8 @@ import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
@@ -292,7 +294,7 @@ public final class MediaCenterShell implements Navigation {
 
     @Override
     public void openBrowserOrDesktop() {
-        stage.setIconified(true);
+        stepAsideForTheDesktop();
         backgroundExecutor.execute(() -> {
             try {
                 platform.openBrowser(settings().browserPath());
@@ -368,6 +370,42 @@ public final class MediaCenterShell implements Navigation {
     }
 
     // -- playback lifecycle -------------------------------------------------
+
+    /**
+     * Gets out of the way so the desktop is visible, and remembers to come back
+     * full screen.
+     *
+     * <p>Minimising is not enough on its own: a full-screen window on macOS owns
+     * a space of its own, and minimising it makes the window manager animate the
+     * way out of that space first — a second or so of the media center sliding
+     * about before any of the desktop appears. Dropping out of full screen first
+     * is the same order {@link #hideForPlayback()} uses, and for the same reason.
+     */
+    private void stepAsideForTheDesktop() {
+        boolean wasFullScreen = stage.isFullScreen();
+        if (wasFullScreen) {
+            stage.setFullScreen(false);
+        }
+        stage.setIconified(true);
+        if (wasFullScreen) {
+            restoreFullScreenWhenBack();
+        }
+    }
+
+    /** Puts full screen back the first time the window is restored, then stops listening. */
+    private void restoreFullScreenWhenBack() {
+        stage.iconifiedProperty().addListener(new ChangeListener<Boolean>() {
+            @Override
+            public void changed(ObservableValue<? extends Boolean> value,
+                                Boolean was,
+                                Boolean iconified) {
+                if (!iconified) {
+                    stage.iconifiedProperty().removeListener(this);
+                    stage.setFullScreen(settings().fullScreen());
+                }
+            }
+        });
+    }
 
     private void hideForPlayback() {
         // Leaving full screen first keeps the window manager from putting the
