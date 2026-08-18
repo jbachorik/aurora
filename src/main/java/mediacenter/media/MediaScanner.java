@@ -91,6 +91,28 @@ public final class MediaScanner {
         return artworkResolver.resolveForDirectory(directory);
     }
 
+    /**
+     * The folder's one and only medium — exactly one video or photograph and no
+     * sub-folders — or empty for any other folder.
+     *
+     * <p>This is the folder a browse list may collapse: activating it can go
+     * straight to the file, because drilling in would only present a single
+     * line to press Enter on again. Only what the scan would show counts —
+     * artwork, sidecars and junk never keep a folder from being "just the
+     * film", exactly as they never appear as lines of their own.
+     *
+     * <p>Blocking like every listing here: call it off the UI thread.
+     *
+     * @throws MediaAccessException when the directory cannot be read
+     */
+    public Optional<MediaItem> soleMedia(Path directory) throws MediaAccessException {
+        List<MediaItem> items = scanWithoutDirectoryArtwork(directory, false);
+        if (items.size() == 1 && !items.getFirst().isDirectory()) {
+            return Optional.of(items.getFirst());
+        }
+        return Optional.empty();
+    }
+
     private List<MediaItem> scan(Path directory, boolean directoryIsMediaRoot, boolean withDirectoryArtwork)
             throws MediaAccessException {
         verifyAccessible(directory);

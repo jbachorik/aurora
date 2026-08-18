@@ -23,6 +23,13 @@ public interface Navigation {
     /** Hides the UI, plays the file with the external player and comes back afterwards. */
     void play(MediaItem item);
 
+    /**
+     * Like {@link #play(MediaItem)}, with the given items queued to follow when
+     * the player runs off the end of each — a run of episodes. Closing the
+     * player abandons whatever is left of the queue.
+     */
+    void play(MediaItem item, List<MediaItem> playOnwards);
+
     /** Plays a file that is not part of the current listing (e.g. from history). */
     void play(Path mediaFile, String displayTitle);
 

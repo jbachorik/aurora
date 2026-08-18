@@ -145,6 +145,56 @@
     -fx-padding: 40;
 }
 
+/* ------------------------------------------------------------ media list */
+
+.media-list,
+.media-list > .viewport {
+    -fx-background-color: transparent;
+}
+
+.media-list-pane {
+    -fx-background-color: transparent;
+}
+
+/*
+ * Rows are deliberately plain lines — the file name is the content. Only the
+ * selected row draws itself as a card; the transparent resting border keeps
+ * the text from shifting when the highlight arrives.
+ */
+.media-row {
+    -fx-background-color: transparent;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-border-width: 3;
+    -fx-border-color: transparent;
+    -fx-padding: 8 16 8 16;
+    -fx-cursor: hand;
+}
+
+.media-row:focused {
+    -fx-background-color: -mc-accent-soft;
+    -fx-border-color: -mc-accent;
+}
+
+.media-row-symbol {
+    -fx-font-size: 24px;
+    -fx-text-fill: -mc-text-dim;
+}
+
+.media-row:focused .media-row-symbol {
+    -fx-text-fill: -mc-accent;
+}
+
+.media-row-name {
+    -fx-font-size: 26px;
+    -fx-text-fill: -mc-text;
+}
+
+/* The selected line's poster, sitting in its own column beside the list. */
+.poster-pane {
+    -fx-padding: 24;
+}
+
 /* ---------------------------------------------------------------- banner */
 
 .banner {

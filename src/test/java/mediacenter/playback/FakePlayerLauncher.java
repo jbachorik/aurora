@@ -10,6 +10,7 @@ import java.util.function.Function;
 final class FakePlayerLauncher implements PlayerLauncher {
 
     private final List<Path> played = new ArrayList<>();
+    private final List<List<Path>> queues = new ArrayList<>();
     private final Function<Path, PlaybackResult> behaviour;
 
     private FakePlayerLauncher(Function<Path, PlaybackResult> behaviour) {
@@ -32,9 +33,15 @@ final class FakePlayerLauncher implements PlayerLauncher {
         return List.copyOf(played);
     }
 
+    /** The queue handed over with each play, in call order. */
+    List<List<Path>> queues() {
+        return List.copyOf(queues);
+    }
+
     @Override
-    public PlaybackResult play(Path mediaFile) {
+    public PlaybackResult play(Path mediaFile, List<Path> playOnwards) {
         played.add(mediaFile);
+        queues.add(List.copyOf(playOnwards));
         return behaviour.apply(mediaFile);
     }
 }

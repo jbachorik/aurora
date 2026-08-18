@@ -307,11 +307,21 @@ public final class MediaCenterShell implements Navigation {
 
     @Override
     public void play(MediaItem item) {
-        play(item.path(), item.displayName());
+        play(item, List.of());
+    }
+
+    @Override
+    public void play(MediaItem item, List<MediaItem> playOnwards) {
+        startPlayback(item.path(), playOnwards.stream().map(MediaItem::path).toList(),
+                item.displayName());
     }
 
     @Override
     public void play(Path mediaFile, String displayTitle) {
+        startPlayback(mediaFile, List.of(), displayTitle);
+    }
+
+    private void startPlayback(Path mediaFile, List<Path> playOnwards, String displayTitle) {
         if (playbackService.isPlaying()) {
             return;
         }
@@ -319,9 +329,10 @@ public final class MediaCenterShell implements Navigation {
             LOG.fine("Ignoring a playback request that arrived while the UI was coming back");
             return;
         }
-        LOG.log(Level.INFO, () -> "Playback requested for " + mediaFile);
+        LOG.log(Level.INFO, () -> "Playback requested for " + mediaFile
+                + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
         hideForPlayback();
-        playbackService.play(mediaFile, displayTitle, this::onPlaybackFinished);
+        playbackService.play(mediaFile, playOnwards, displayTitle, this::onPlaybackFinished);
     }
 
     @Override

@@ -17,7 +17,9 @@ import java.util.logging.Logger;
  * Plays media by starting VLC and waiting for it to exit.
  *
  * <p>Arguments are always passed as a list — never as a composed shell command —
- * so spaces, Unicode characters and UNC paths need no quoting rules.
+ * so spaces, Unicode characters and UNC paths need no quoting rules. A queue of
+ * files becomes VLC's own playlist: it advances by itself, and closing VLC
+ * abandons the rest, which is what stopping means.
  */
 public final class VlcPlayerLauncher implements PlayerLauncher {
 
@@ -63,7 +65,7 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
 
     /** Command line VLC is started with, exposed for logging and tests. */
     public static List<String> commandFor(Path vlcExecutable, Path mediaFile) {
-        return commandFor(vlcExecutable, mediaFile, 0, List.of());
+        return commandFor(vlcExecutable, mediaFile, List.of(), 0, List.of());
     }
 
     /**
@@ -73,7 +75,22 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
      */
     public static List<String> commandFor(
             Path vlcExecutable, Path mediaFile, int bufferSeconds, List<String> platformOptions) {
-        List<String> command = new ArrayList<>(5 + platformOptions.size());
+        return commandFor(vlcExecutable, mediaFile, List.of(), bufferSeconds, platformOptions);
+    }
+
+    /**
+     * @param playOnwards files handed to VLC after the first, becoming its
+     *                    playlist: it rolls from one into the next on its own
+     *                    and {@code --play-and-exit} exits after the last
+     * @see #commandFor(Path, Path)
+     */
+    public static List<String> commandFor(
+            Path vlcExecutable,
+            Path mediaFile,
+            List<Path> playOnwards,
+            int bufferSeconds,
+            List<String> platformOptions) {
+        List<String> command = new ArrayList<>(5 + platformOptions.size() + playOnwards.size());
         command.add(vlcExecutable.toString());
         command.add("--fullscreen");
         command.add("--play-and-exit");
@@ -88,11 +105,14 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
         // Last, so that a file whose name begins with a dash is still read as the
         // file: everything after it is one.
         command.add(mediaFile.toString());
+        for (Path following : playOnwards) {
+            command.add(following.toString());
+        }
         return List.copyOf(command);
     }
 
     @Override
-    public PlaybackResult play(Path mediaFile) {
+    public PlaybackResult play(Path mediaFile, List<Path> playOnwards) {
         Optional<Path> configured = vlcExecutableSupplier.get();
         if (configured.isEmpty()) {
             LOG.warning("Playback requested but no VLC executable is configured");
@@ -115,9 +135,19 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
             LOG.log(Level.WARNING, () -> "Media file is not available: " + mediaFile);
             return PlaybackResult.Failed.of(MEDIA_MISSING);
         }
+        // The chosen file failing is an error the viewer sees; a follower that
+        // vanished since the folder was listed is quietly left out, so the run
+        // continues over the gap instead of VLC stumbling on it.
+        List<Path> queue = playOnwards.stream().filter(following -> {
+            if (isPlayable(following)) {
+                return true;
+            }
+            LOG.log(Level.INFO, () -> "Leaving unavailable file out of the queue: " + following);
+            return false;
+        }).toList();
 
         List<String> command =
-                commandFor(vlcExecutable, mediaFile, bufferSecondsSupplier.getAsInt(), platformOptions);
+                commandFor(vlcExecutable, mediaFile, queue, bufferSecondsSupplier.getAsInt(), platformOptions);
         LOG.log(Level.INFO, () -> "Starting playback: " + String.join(" ", command));
 
         Instant startedAt = Instant.now();
