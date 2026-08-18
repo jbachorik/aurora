@@ -66,6 +66,37 @@ MediaCenter.exe --windowed
 ```
 
 
+Website tiles
+-------------
+
+Websites can sit on the home screen as first-class tiles — for catalogues that
+live on the web rather than on a disk. The worked example is
+[Mosfilm](https://cinema.mosfilm.ru), whose entire back catalogue is streamed
+free and officially by the studio itself: add a tile named `Mosfilm` with the
+address `cinema.mosfilm.ru` (Settings → **Websites** → **Add**; `https://` is
+assumed) and it appears in a **Websites** row under the home actions.
+
+Activating a tile behaves like playback: the media center steps out of the
+way, the configured browser opens the site **full screen in app mode**, and
+when the browser is closed the media center returns. Three things make the
+page sofa-friendly:
+
+* **Browser scale** (Settings, default 150%) asks the browser to draw
+  everything larger — a device-scale hint, so a desktop page reads from
+  across the room.
+* The site opens in a **profile of the media center's own**, so the
+  television keeps its own logins and cookies, apart from anyone's desktop
+  browsing — and so the launch is never swallowed by a browser instance that
+  is already running, which would ignore the kiosk flags.
+* App mode drops the tabs and the address bar; the page is all there is.
+
+The full treatment needs a Chromium-family browser (Chrome, Chromium, Edge,
+Brave, Vivaldi, Opera) configured in Settings. Firefox is opened in its kiosk
+mode without the scale hint; any other browser just gets the address. Sites
+that require DRM (the big subscription services) work precisely *because*
+this is a real browser and not an embedded engine.
+
+
 Photographs
 -----------
 
@@ -190,7 +221,7 @@ Where it keeps things
 | Linux    | `$XDG_CONFIG_HOME/SimpleMediaCenter/`            |
 
 ```
-config.json      VLC path, browser, full screen, theme, media roots
+config.json      VLC path, browser, full screen, theme, media roots, website tiles
 history.json     recently played
 logs/            application.log (rotating, 3 x 1 MiB)
 ```
@@ -203,8 +234,12 @@ logs/            application.log (rotating, 3 x 1 MiB)
   "fullScreen": true,
   "theme": "DARK",
   "slideshowSeconds": 5,
+  "browserScalePercent": 150,
   "mediaRoots": [
     { "id": "…", "name": "Movies", "path": "\\\\synology\\video\\Movies", "type": "MOVIES" }
+  ],
+  "websites": [
+    { "id": "…", "name": "Mosfilm", "url": "https://cinema.mosfilm.ru" }
   ]
 }
 ```

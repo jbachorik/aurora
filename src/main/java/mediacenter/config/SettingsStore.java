@@ -86,6 +86,7 @@ public final class SettingsStore {
         members.put("slideshowSeconds", new JsonNumber(settings.slideshowSeconds()));
         members.put("playerBufferSeconds", new JsonNumber(settings.playerBufferSeconds()));
         members.put("embeddedPlayer", new JsonBoolean(settings.embeddedPlayer()));
+        members.put("browserScalePercent", new JsonNumber(settings.browserScalePercent()));
 
         List<JsonValue> roots = new ArrayList<>();
         for (MediaRoot root : settings.mediaRoots()) {
@@ -97,6 +98,16 @@ public final class SettingsStore {
             roots.add(new JsonObject(rootMembers));
         }
         members.put("mediaRoots", new JsonArray(roots));
+
+        List<JsonValue> websites = new ArrayList<>();
+        for (Website website : settings.websites()) {
+            Map<String, JsonValue> websiteMembers = new LinkedHashMap<>();
+            websiteMembers.put("id", new JsonString(website.id()));
+            websiteMembers.put("name", new JsonString(website.name()));
+            websiteMembers.put("url", new JsonString(website.url()));
+            websites.add(new JsonObject(websiteMembers));
+        }
+        members.put("websites", new JsonArray(websites));
         return new JsonObject(members);
     }
 
@@ -111,14 +122,21 @@ public final class SettingsStore {
         // Absent in every file written before the built-in player existed, and
         // off is the right reading of those files.
         boolean embeddedPlayer = document.booleanValue("embeddedPlayer", false);
+        // 150 for files that predate the setting: the whole point of a website
+        // tile is a desktop page readable from a sofa.
+        int browserScalePercent = document.longValue("browserScalePercent").orElse(150L).intValue();
 
         List<MediaRoot> roots = new ArrayList<>();
         for (JsonObject rootDocument : document.objectArray("mediaRoots")) {
             readRoot(rootDocument).ifPresent(roots::add);
         }
+        List<Website> websites = new ArrayList<>();
+        for (JsonObject websiteDocument : document.objectArray("websites")) {
+            readWebsite(websiteDocument).ifPresent(websites::add);
+        }
         return new ApplicationSettings(
                 vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds, playerBufferSeconds,
-                embeddedPlayer);
+                embeddedPlayer, websites, browserScalePercent);
     }
 
     private static Optional<MediaRoot> readRoot(JsonObject document) {
@@ -137,5 +155,16 @@ public final class SettingsStore {
                 .flatMap(MediaRootType::parse)
                 .orElse(MediaRootType.GENERAL);
         return Optional.of(new MediaRoot(id, name, Path.of(path.get()), type));
+    }
+
+    private static Optional<Website> readWebsite(JsonObject document) {
+        Optional<String> url = document.nonBlankString("url");
+        if (url.isEmpty()) {
+            LOG.warning("Ignoring a configured website without an address");
+            return Optional.empty();
+        }
+        String name = document.nonBlankString("name").orElse(url.get());
+        String id = document.nonBlankString("id").orElseGet(() -> UUID.randomUUID().toString());
+        return Optional.of(new Website(id, name, url.get()));
     }
 }

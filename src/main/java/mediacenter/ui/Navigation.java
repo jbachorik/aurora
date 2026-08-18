@@ -3,6 +3,7 @@ package mediacenter.ui;
 import java.nio.file.Path;
 import java.util.List;
 
+import mediacenter.config.Website;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
 
@@ -19,6 +20,12 @@ public interface Navigation {
 
     /** Minimizes the media center and launches the configured browser, if any. */
     void openBrowserOrDesktop();
+
+    /**
+     * Hides the UI, opens a website tile full screen in the configured browser
+     * and comes back when the browser exits — playback, with a page for a film.
+     */
+    void openWebsite(Website website);
 
     /** Hides the UI, plays the file with the external player and comes back afterwards. */
     void play(MediaItem item);

@@ -81,7 +81,9 @@ class SettingsStoreTest {
                 List.of(movies, tv),
                 5,
                 10,
-                true);
+                true,
+                List.of(new Website("mosfilm", "Mosfilm", "https://cinema.mosfilm.ru")),
+                200);
 
         assertTrue(store.save(original));
         ApplicationSettings reloaded = store.load();
@@ -94,6 +96,9 @@ class SettingsStoreTest {
         assertEquals(movies, reloaded.mediaRoots().getFirst());
         assertEquals("\\\\synology\\video\\Movies", reloaded.mediaRoots().getFirst().displayPath());
         assertEquals(10, reloaded.playerBufferSeconds());
+        assertTrue(reloaded.embeddedPlayer());
+        assertEquals(original.websites(), reloaded.websites());
+        assertEquals(200, reloaded.browserScalePercent());
     }
 
     @Test
