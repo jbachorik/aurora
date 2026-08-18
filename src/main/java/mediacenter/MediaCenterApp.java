@@ -13,9 +13,11 @@ import java.util.logging.Logger;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.input.KeyCombination;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 import mediacenter.config.ApplicationSettings;
@@ -47,8 +49,17 @@ public final class MediaCenterApp extends Application {
     /** Starts in a window even when the configuration says full screen. */
     static final String WINDOWED_ARGUMENT = "--windowed";
 
-    private static final double INITIAL_WIDTH = 1600;
-    private static final double INITIAL_HEIGHT = 900;
+    /** Window size on a display with room for it; a smaller screen gets what it has. */
+    private static final double PREFERRED_WIDTH = 1600;
+    private static final double PREFERRED_HEIGHT = 900;
+
+    /**
+     * Smallest window the layout is designed for, clamped to the screen before it
+     * is used: a minimum taller than the display cannot be honoured, and whatever
+     * does not fit is drawn past the edge where nothing can reach it.
+     */
+    private static final double MINIMUM_WIDTH = 960;
+    private static final double MINIMUM_HEIGHT = 600;
 
     /** Window-manager icon sizes, small first: a taskbar asks for 16 and 32. */
     private static final List<Integer> ICON_SIZES = List.of(16, 32, 48, 64, 128, 256);
@@ -97,14 +108,21 @@ public final class MediaCenterApp extends Application {
                 new ArtworkResolver(),
                 backgroundExecutor);
 
-        Scene scene = new Scene(shell.node(), INITIAL_WIDTH, INITIAL_HEIGHT);
+        // Taken from the display rather than from a constant: a 1600x900 window
+        // asked for on a smaller screen is granted one that hangs off the bottom,
+        // and every control below the fold goes with it.
+        Rectangle2D visible = Screen.getPrimary().getVisualBounds();
+        double width = Math.min(PREFERRED_WIDTH, visible.getWidth());
+        double height = Math.min(PREFERRED_HEIGHT, visible.getHeight());
+
+        Scene scene = new Scene(shell.node(), width, height);
         Stylesheets.apply(scene, settings.theme());
 
         stage.setTitle("Media Center");
         applicationIcons(stage);
         stage.setScene(scene);
-        stage.setMinWidth(960);
-        stage.setMinHeight(600);
+        stage.setMinWidth(Math.min(MINIMUM_WIDTH, visible.getWidth()));
+        stage.setMinHeight(Math.min(MINIMUM_HEIGHT, visible.getHeight()));
         // Escape is the Back key here, so it must not drop out of full screen.
         stage.setFullScreenExitKeyCombination(KeyCombination.NO_MATCH);
         stage.setFullScreenExitHint("");
