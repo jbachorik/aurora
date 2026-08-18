@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.concurrent.Semaphore;
 
 import javafx.scene.Node;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 
 import mediacenter.media.DisplayNames;
@@ -81,6 +83,8 @@ public final class BrowseView implements View {
     private final Map<Path, Optional<MediaItem>> soleMediaByFolder = new HashMap<>();
 
     private List<MediaItem> items = List.of();
+    /** The rows on screen, kept so the watched marks can be re-applied in place. */
+    private List<MediaListRow> itemRows = List.of();
     /**
      * Read by the walker thread through the cancellation supplier below, so it is
      * volatile: a plain int would let that thread go on reading the generation it
@@ -101,6 +105,9 @@ public final class BrowseView implements View {
 
         list.setOnActivate(this::activate);
         list.setOnSelectionChanged(this::showPosterFor);
+        // A filter on the page, not on the list: the rows own the focus, and the
+        // list's own filter only knows the keys every list has.
+        content.addEventFilter(KeyEvent.KEY_PRESSED, this::handleWatchedKey);
         load();
     }
 
@@ -127,6 +134,14 @@ public final class BrowseView implements View {
     @Override
     public void refresh() {
         load();
+    }
+
+    @Override
+    public void onShown() {
+        // Playback while this page was hidden may have marked videos watched —
+        // cheap to re-read, the marks live in memory.
+        refreshWatchedMarks();
+        View.super.onShown();
     }
 
     @Override
@@ -173,6 +188,7 @@ public final class BrowseView implements View {
         // scope here, and it is the same number until the next load begins.
         int generation = loadGeneration;
         if (items.isEmpty()) {
+            itemRows = List.of();
             list.clear();
             list.showMessage("This folder has nothing to show.");
             // Still worth asking: a folder whose own entries are all hidden may
@@ -189,7 +205,11 @@ public final class BrowseView implements View {
             if (item.isDirectory()) {
                 directoryRows.add(row);
             }
+            if (item.isVideo() && context.watched().isWatched(item.path())) {
+                row.showWatched(true);
+            }
         }
+        itemRows = rows;
         list.setRows(rows);
         list.focusSelection();
         resolveSoleMedia(directoryRows, generation);
@@ -246,7 +266,14 @@ public final class BrowseView implements View {
                         return;
                     }
                     soleMediaByFolder.put(folderItem.path(), answer);
-                    answer.ifPresent(media -> row.showMediaSymbol(media.type()));
+                    answer.ifPresent(media -> {
+                        row.showMediaSymbol(media.type());
+                        // The row now stands for that one video, so it carries
+                        // the video's watched mark too.
+                        if (media.isVideo() && context.watched().isWatched(media.path())) {
+                            row.showWatched(true);
+                        }
+                    });
                 });
             });
         }
@@ -311,6 +338,7 @@ public final class BrowseView implements View {
 
     private void showFailure(Exception failure) {
         items = List.of();
+        itemRows = List.of();
         list.clear();
         poster.clear();
         String message = failure instanceof MediaAccessException accessFailure
@@ -444,5 +472,67 @@ public final class BrowseView implements View {
     private static String fileNameOf(MediaItem item) {
         Path name = item.path().getFileName();
         return name == null ? item.displayName() : name.toString();
+    }
+
+    // -- watched marks ------------------------------------------------------
+
+    /**
+     * W on a video flips its watched mark; W on a folder clears the marks from
+     * everything inside it, subfolders and all. One key for both, because on
+     * the sofa there is no room for two: the row under the highlight says
+     * which of the two can be meant.
+     */
+    private void handleWatchedKey(KeyEvent event) {
+        if (event.getCode() != KeyCode.W) {
+            return;
+        }
+        event.consume();
+        MediaListRow row = list.selectedRow().orElse(null);
+        MediaItem item = row == null ? null : row.item().orElse(null);
+        if (item == null) {
+            return;
+        }
+        if (item.isVideo()) {
+            row.showWatched(context.watched().toggleWatched(item.path()));
+            return;
+        }
+        if (item.isDirectory()) {
+            resetWatchedBelow(item);
+        }
+    }
+
+    /** Clears every watched mark under a folder and re-badges the visible rows. */
+    private void resetWatchedBelow(MediaItem folderItem) {
+        if (context.watched().resetBelow(folderItem.path())) {
+            refreshWatchedMarks();
+            context.navigation().showInfo(
+                    "Watched marks cleared for \"" + folderItem.displayName() + "\" and its subfolders.");
+        } else {
+            context.navigation().showInfo(
+                    "Nothing inside \"" + folderItem.displayName() + "\" was marked as watched.");
+        }
+    }
+
+    /**
+     * Re-reads every row's watched mark from the shared state — after a reset,
+     * or when the page comes back from behind a playback that marked things.
+     * A folder row shows the mark of the one video it collapsed into, where
+     * the background sweep has answered.
+     */
+    private void refreshWatchedMarks() {
+        for (MediaListRow row : itemRows) {
+            MediaItem item = row.item().orElse(null);
+            if (item == null) {
+                continue;
+            }
+            if (item.isVideo()) {
+                row.showWatched(context.watched().isWatched(item.path()));
+                continue;
+            }
+            Optional<MediaItem> sole = item.isDirectory() ? soleMediaByFolder.get(item.path()) : null;
+            if (sole != null && sole.isPresent() && sole.get().isVideo()) {
+                row.showWatched(context.watched().isWatched(sole.get().path()));
+            }
+        }
     }
 }

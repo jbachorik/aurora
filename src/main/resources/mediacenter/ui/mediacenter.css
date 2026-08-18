@@ -190,6 +190,15 @@
     -fx-text-fill: -mc-text;
 }
 
+/*
+ * A watched video recedes: dimmed name under a check mark, so the titles still
+ * to be seen are the ones that read at full strength. The selected row keeps
+ * its accent — dim or not, it is the line being looked at.
+ */
+.media-row-watched .media-row-name {
+    -fx-text-fill: -mc-text-dim;
+}
+
 /* The selected line's poster, sitting in its own column beside the list. */
 .poster-pane {
     -fx-padding: 24;

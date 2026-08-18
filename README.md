@@ -49,6 +49,13 @@ Using it
 | `Esc`, `Backspace` | back             |
 | `Home`             | home screen      |
 | `F5`               | refresh          |
+| `W`                | toggle watched (on a folder: clear the marks below it) |
+
+A video that has been played carries a **watched mark**: a check instead of the
+play symbol and a dimmed title, so what is still unseen stands out. Playing a
+file marks it automatically; `W` on a video line flips the mark by hand, and
+`W` on a folder line clears every mark inside that folder and all of its
+subfolders — handy before a rewatch of a whole series.
 
 Single click selects, double click plays. Nothing important is mouse-only, so
 a cheap USB or Bluetooth remote that emulates a keyboard is enough. The pointer
