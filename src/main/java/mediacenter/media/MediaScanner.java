@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.DosFileAttributes;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -63,6 +64,35 @@ public final class MediaScanner {
      * @throws MediaAccessException when the directory cannot be read
      */
     public List<MediaItem> scan(Path directory, boolean directoryIsMediaRoot) throws MediaAccessException {
+        return scan(directory, directoryIsMediaRoot, true);
+    }
+
+    /**
+     * Lists a directory without looking up artwork for the sub-directories in it.
+     *
+     * <p>Each of those lookups is a directory listing of its own, and over a share
+     * they are what the viewer waits through: a folder of twenty series is twenty
+     * more round trips before the first tile can be drawn. Callers that can fill
+     * artwork in afterwards use this and then {@link #directoryArtwork(Path)} per
+     * folder, so the names appear at once and the posters follow.
+     */
+    public List<MediaItem> scanWithoutDirectoryArtwork(Path directory, boolean directoryIsMediaRoot)
+            throws MediaAccessException {
+        return scan(directory, directoryIsMediaRoot, false);
+    }
+
+    /**
+     * Artwork for one folder, looked up on its own.
+     *
+     * <p>Blocking, and on a share slow enough to be felt: call it off the UI
+     * thread, one folder at a time, and show each answer as it arrives.
+     */
+    public Optional<Path> directoryArtwork(Path directory) {
+        return artworkResolver.resolveForDirectory(directory);
+    }
+
+    private List<MediaItem> scan(Path directory, boolean directoryIsMediaRoot, boolean withDirectoryArtwork)
+            throws MediaAccessException {
         verifyAccessible(directory);
 
         List<Path> directories = new ArrayList<>();
@@ -120,7 +150,7 @@ public final class MediaScanner {
         }
 
         List<MediaItem> items = new ArrayList<>();
-        items.addAll(directoryItems(directories, directoryTimestamps));
+        items.addAll(directoryItems(directories, directoryTimestamps, withDirectoryArtwork));
 
         // videoItems sorts its own list, so the two are combined and sorted again.
         List<MediaItem> files = new ArrayList<>(videoItems(
@@ -168,8 +198,11 @@ public final class MediaScanner {
 
     // -- item construction --------------------------------------------------
 
-    private List<MediaItem> directoryItems(List<Path> directories, List<Long> timestamps) {
-        List<Optional<Path>> artwork = resolveDirectoryArtwork(directories);
+    private List<MediaItem> directoryItems(
+            List<Path> directories, List<Long> timestamps, boolean withArtwork) {
+        List<Optional<Path>> artwork = withArtwork
+                ? resolveDirectoryArtwork(directories)
+                : Collections.nCopies(directories.size(), Optional.<Path>empty());
         List<MediaItem> items = new ArrayList<>(directories.size());
         for (int i = 0; i < directories.size(); i++) {
             Path directory = directories.get(i);

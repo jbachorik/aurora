@@ -689,7 +689,11 @@ public final class SettingsView implements View {
                 context.backgroundExecutor(),
                 () -> {
                     context.scanner().verifyAccessible(selected.path());
-                    return context.scanner().scan(selected.path()).size();
+                    // Only the count is wanted, and artwork does not change it —
+                    // resolving it here would list every subfolder over the share
+                    // to answer a question nobody asked.
+                    return context.scanner()
+                            .scanWithoutDirectoryArtwork(selected.path(), true).size();
                 },
                 count -> showStatus(rootStatus,
                         selected.displayName() + " is reachable — " + count + " items."),

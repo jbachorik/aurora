@@ -110,6 +110,23 @@ class MediaScannerTest {
     }
 
     @Test
+    @DisplayName("the quick scan leaves folder artwork out, and names it separately on request")
+    void skipsDirectoryArtworkUntilItIsAskedFor(@TempDir Path temp) throws Exception {
+        // Each of these lookups is a directory listing, and over a share they are
+        // the whole wait before anything can be drawn. The quick scan skips them so
+        // the folder appears at once; the poster is fetched per folder afterwards.
+        Path movie = Files.createDirectory(temp.resolve("Alien (1979)"));
+        Files.createFile(movie.resolve("alien.mkv"));
+        Path poster = Files.createFile(movie.resolve("poster.jpg"));
+
+        List<MediaItem> items = scanner.scanWithoutDirectoryArtwork(temp, false);
+
+        assertEquals(1, items.size());
+        assertEquals(java.util.Optional.empty(), items.getFirst().artworkPath());
+        assertEquals(java.util.Optional.of(poster), scanner.directoryArtwork(movie));
+    }
+
+    @Test
     void emptyDirectoryScansToAnEmptyList(@TempDir Path temp) throws Exception {
         assertTrue(scanner.scan(temp).isEmpty());
     }
