@@ -68,7 +68,7 @@ public final class SettingsView implements View {
     private final Label bufferValue = new Label();
     private final List<ToggleButton> bufferToggles = new ArrayList<>();
     private final Label embeddedPlayerValue = new Label();
-    private final ToggleButton embeddedPlayerToggle = new ToggleButton();
+    private final ToggleGroup playerGroup = new ToggleGroup();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
 
@@ -319,17 +319,47 @@ public final class SettingsView implements View {
     }
 
     /**
-     * Whether video plays inside this window or in a VLC window of its own.
-     * The built-in player borrows libVLC from the same VLC install the row at
-     * the top points at; if that library cannot be loaded, playback simply
-     * falls back to the external window and says so.
+     * Which player opens a film: VLC in a window of its own, or the built-in
+     * player drawing into this one. Two named choices rather than an On/Off —
+     * "On" says nothing about what it turns on. The built-in player borrows
+     * libVLC from the same install the VLC row points at; if that library
+     * cannot be loaded, playback says so and the window takes over.
      */
     private Node embeddedPlayerRow() {
-        embeddedPlayerToggle.setOnAction(event ->
-                update(settings().withEmbeddedPlayer(embeddedPlayerToggle.isSelected())));
-        Node row = settingRow("Built-in player", embeddedPlayerValue, null, embeddedPlayerToggle);
-        navigationRows.add(List.of(embeddedPlayerToggle));
-        return row;
+        Label name = new Label("Player");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        embeddedPlayerValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(embeddedPlayerValue, Priority.ALWAYS);
+        embeddedPlayerValue.setMaxWidth(Double.MAX_VALUE);
+
+        record Choice(String label, boolean embedded) { }
+
+        List<Node> toggles = new ArrayList<>();
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        for (Choice choice : List.of(new Choice("VLC window", false), new Choice("Built-in", true))) {
+            ToggleButton button = new ToggleButton(choice.label());
+            button.setUserData(choice.embedded());
+            button.setToggleGroup(playerGroup);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            // As with the theme: a second click must not clear the selection.
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withEmbeddedPlayer(choice.embedded()));
+            });
+            choices.getChildren().add(button);
+            toggles.add(button);
+        }
+        navigationRows.add(List.copyOf(toggles));
+
+        HBox line = new HBox(16, name, embeddedPlayerValue, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
     }
 
     /**
@@ -613,8 +643,9 @@ public final class SettingsView implements View {
         browserValue.setText(settings.browserPath().map(platform::programLabel).orElse("Not configured"));
         fullScreenToggle.setSelected(settings.fullScreen());
         fullScreenToggle.setText(settings.fullScreen() ? "On" : "Off");
-        embeddedPlayerToggle.setSelected(settings.embeddedPlayer());
-        embeddedPlayerToggle.setText(settings.embeddedPlayer() ? "On" : "Off");
+        for (var toggle : playerGroup.getToggles()) {
+            toggle.setSelected(Boolean.valueOf(settings.embeddedPlayer()).equals(toggle.getUserData()));
+        }
         embeddedPlayerValue.setText(settings.embeddedPlayer()
                 ? "Video plays inside this window"
                 : "Video opens in a VLC window");

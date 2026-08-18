@@ -470,6 +470,11 @@
     -fx-text-fill: rgba(255, 255, 255, 0.85);
 }
 
+.player-hint-line {
+    -fx-font-size: 19px;
+    -fx-text-fill: rgba(255, 255, 255, 0.85);
+}
+
 .photo-overlay {
     -fx-font-size: 26px;
     -fx-text-fill: white;

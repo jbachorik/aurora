@@ -6,9 +6,11 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 
+import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
 import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -27,6 +29,7 @@ import mediacenter.playback.Timecodes;
 import mediacenter.playback.vlc.EmbeddedVlcPlayer;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.ui.components.ActivationGate;
+import mediacenter.ui.components.Motion;
 
 /**
  * The built-in player: libVLC decoding into this page, full screen.
@@ -51,6 +54,21 @@ public final class PlayerView implements View {
     private static final Duration OVERLAY_LINGER = Duration.seconds(3);
     private static final Duration CLOCK_TICK = Duration.millis(400);
 
+    /**
+     * How long the key hint stays when playback begins. Long enough to be read
+     * twice from a sofa; any key dismisses it early, because a key pressed is
+     * the hint understood.
+     */
+    private static final Duration KEYS_HINT_LINGER = Duration.seconds(8);
+
+    /** The card the viewer gets a few seconds to read; also the documentation. */
+    private static final List<String> KEY_HINTS = List.of(
+            "Space  pause / resume",
+            "← →  back 10 s / ahead 30 s",
+            "↑ ↓  a minute either way",
+            "N  P  next / previous episode",
+            "Esc  stop and go back");
+
     private static final long SMALL_BACK_MILLIS = -10_000;
     private static final long SMALL_FORWARD_MILLIS = 30_000;
     private static final long BIG_JUMP_MILLIS = 60_000;
@@ -66,6 +84,9 @@ public final class PlayerView implements View {
     private final Label clockLabel = new Label();
     private final VBox overlay = new VBox(2, titleLabel, clockLabel);
     private final PauseTransition overlayLinger = new PauseTransition(OVERLAY_LINGER);
+    private final VBox keysHint = new VBox(3);
+    private final PauseTransition keysHintLinger = new PauseTransition(KEYS_HINT_LINGER);
+    private boolean keysHintDismissed;
     private final Timeline clock = new Timeline();
     private final ActivationGate activationGate = new ActivationGate();
 
@@ -108,7 +129,22 @@ public final class PlayerView implements View {
         overlay.setVisible(false);
         StackPane.setAlignment(overlay, Pos.BOTTOM_LEFT);
 
-        root.getChildren().addAll(videoView, overlay);
+        keysHint.getStyleClass().add("player-osd");
+        for (String hint : KEY_HINTS) {
+            Label line = new Label(hint);
+            line.getStyleClass().add("player-hint-line");
+            keysHint.getChildren().add(line);
+        }
+        keysHint.setMaxWidth(Region.USE_PREF_SIZE);
+        keysHint.setMaxHeight(Region.USE_PREF_SIZE);
+        keysHint.setVisible(false);
+        // The opposite corner from the title overlay, so the start of an
+        // episode can show both without either covering the other.
+        StackPane.setAlignment(keysHint, Pos.TOP_RIGHT);
+        StackPane.setMargin(keysHint, new Insets(24));
+        keysHintLinger.setOnFinished(event -> dismissKeysHint());
+
+        root.getChildren().addAll(videoView, overlay, keysHint);
         root.addEventFilter(KeyEvent.KEY_PRESSED, this::handleKey);
         root.addEventFilter(KeyEvent.KEY_RELEASED, event -> {
             if (event.getCode() == KeyCode.ENTER || event.getCode() == KeyCode.SPACE) {
@@ -164,6 +200,7 @@ public final class PlayerView implements View {
             started = true;
             clock.play();
             startCurrent();
+            showKeysHint();
         }
     }
 
@@ -173,6 +210,7 @@ public final class PlayerView implements View {
         disposed = true;
         clock.stop();
         overlayLinger.stop();
+        keysHintLinger.stop();
         // The frame memory dies with the player, so the scene must let go of
         // it first — an ImageView still holding the buffer would be reading
         // freed pages.
@@ -206,6 +244,14 @@ public final class PlayerView implements View {
     // -- input --------------------------------------------------------------
 
     private void handleKey(KeyEvent event) {
+        dispatchKey(event);
+        if (event.isConsumed()) {
+            // A key pressed is the hint understood.
+            dismissKeysHint();
+        }
+    }
+
+    private void dispatchKey(KeyEvent event) {
         switch (event.getCode()) {
             case SPACE, ENTER -> {
                 if (activationGate.pressed(System.nanoTime())) {
@@ -238,6 +284,25 @@ public final class PlayerView implements View {
     }
 
     // -- overlay ------------------------------------------------------------
+
+    private void showKeysHint() {
+        keysHint.setVisible(true);
+        keysHintLinger.playFromStart();
+    }
+
+    private void dismissKeysHint() {
+        if (keysHintDismissed || !keysHint.isVisible()) {
+            return;
+        }
+        keysHintDismissed = true;
+        keysHintLinger.stop();
+        FadeTransition fade = new FadeTransition(Motion.GENTLE, keysHint);
+        fade.setFromValue(keysHint.getOpacity());
+        fade.setToValue(0);
+        fade.setInterpolator(Motion.EASE);
+        fade.setOnFinished(event -> keysHint.setVisible(false));
+        fade.play();
+    }
 
     private void showOverlay() {
         updateClock();
