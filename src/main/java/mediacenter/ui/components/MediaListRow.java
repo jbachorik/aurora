@@ -1,5 +1,6 @@
 package mediacenter.ui.components;
 
+import java.util.Collection;
 import java.util.Optional;
 
 import javafx.geometry.Pos;
@@ -8,6 +9,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 
 import mediacenter.media.MediaItem;
+import mediacenter.media.ParentPrefixes;
 
 /**
  * One line of a browsed folder: a type symbol and the actual file name.
@@ -16,7 +18,9 @@ import mediacenter.media.MediaItem;
  * disk is readable — the row shows it verbatim, extension and all, and a name
  * still wider than the line scrolls slowly under the selection rather than
  * being cut off. Only the selected row scrolls; the rest hold still, because a
- * page of sliding names cannot be read.
+ * page of sliding names cannot be read. The one edit made is dropping a parent
+ * folder's name echoed at the front — see {@link ParentPrefixes} — which is
+ * removing repetition, not information: the folder is the page being browsed.
  *
  * <p>Focus is the selection, exactly as with {@code Tile}: the {@code :focused}
  * pseudo-class drives the highlight, so "what is highlighted" and "what Enter
@@ -31,9 +35,16 @@ public final class MediaListRow extends HBox {
     private final String title;
     private final MarqueeLabel name;
 
-    /** A row for one scanned entry, showing its name exactly as it is on disk. */
-    public static MediaListRow forItem(MediaItem item) {
-        return new MediaListRow(item, symbolFor(item), fileNameOf(item));
+    /**
+     * A row for one scanned entry, showing its on-disk name — less any parent
+     * folder's name echoed at the front of it.
+     *
+     * @param parentFolderNames the on-disk names of the folders above the entry,
+     *                          within the root being browsed
+     */
+    public static MediaListRow forItem(MediaItem item, Collection<String> parentFolderNames) {
+        return new MediaListRow(item, symbolFor(item),
+                ParentPrefixes.withoutParentPrefix(fileNameOf(item), parentFolderNames));
     }
 
     /** A row for a page action such as the slideshow; {@link #item()} is empty. */

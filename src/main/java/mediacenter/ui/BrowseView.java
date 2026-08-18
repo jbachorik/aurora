@@ -25,7 +25,8 @@ import mediacenter.ui.components.PosterPane;
  *
  * <p>The lines are the point — a name too long for its line scrolls slowly
  * under the selection instead of being cut off, so the real file name is
- * always readable. Artwork is looked up only for the selected line, which
+ * always readable. The one thing a line does not repeat is a parent folder's
+ * name echoed at its front; {@link mediacenter.media.ParentPrefixes} drops it. Artwork is looked up only for the selected line, which
  * makes browsing a slow share cost one directory listing at a time instead of
  * one per visible folder.
  *
@@ -148,9 +149,10 @@ public final class BrowseView implements View {
             offerSlideshow(generation);
             return;
         }
+        List<String> parentFolderNames = parentFolderNames();
         List<MediaListRow> rows = new ArrayList<>(items.size());
         for (MediaItem item : items) {
-            rows.add(MediaListRow.forItem(item));
+            rows.add(MediaListRow.forItem(item, parentFolderNames));
         }
         list.setRows(rows);
         list.focusSelection();
@@ -164,6 +166,26 @@ public final class BrowseView implements View {
             return;
         }
         offerSlideshow(generation);
+    }
+
+    /**
+     * The on-disk names of this folder and everything above it, up to and
+     * including the root being browsed — the folders whose names an entry may
+     * pointlessly repeat. Nothing above the root counts: {@code /media} is not
+     * a name anyone chose for their films.
+     */
+    private List<String> parentFolderNames() {
+        List<String> names = new ArrayList<>();
+        for (Path current = folder;
+                current != null && current.startsWith(root.path());
+                current = current.getParent()) {
+            Path name = current.getFileName();
+            names.add(name == null ? current.toString() : name.toString());
+            if (current.equals(root.path())) {
+                break;
+            }
+        }
+        return names;
     }
 
     /**
