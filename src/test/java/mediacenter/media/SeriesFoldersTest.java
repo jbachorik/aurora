@@ -1,0 +1,69 @@
+package mediacenter.media;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+class SeriesFoldersTest {
+
+    @Test
+    @DisplayName("episode-tagged files read as a series, whatever the tag's case")
+    void recognisesEpisodeTags() {
+        assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
+                "Breaking.Bad.S01E01.Pilot.mkv",
+                "Breaking.Bad.s01e02.Cat's.in.the.Bag.mkv")));
+        assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
+                "show 1x01.mkv",
+                "show 1x02.mkv")));
+    }
+
+    @Test
+    @DisplayName("an ordering prefix on every file reads as one run")
+    void recognisesOrderingPrefixes() {
+        assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
+                "01 - Curse of the Black Pearl.mkv",
+                "02 - Dead Mans Chest.mkv",
+                "03 - At Worlds End.mkv")));
+    }
+
+    @Test
+    @DisplayName("one video is a film, not a series")
+    void aSingleVideoIsNotASeries() {
+        assertFalse(SeriesFolders.looksLikeEpisodes(List.of("Breaking.Bad.S01E01.mkv")));
+    }
+
+    @Test
+    @DisplayName("one unmarked file breaks the run — every episode must carry its mark")
+    void anUnmarkedFileBreaksTheRun() {
+        assertFalse(SeriesFolders.looksLikeEpisodes(List.of(
+                "Breaking.Bad.S01E01.mkv",
+                "Making.Of.mkv")));
+    }
+
+    @Test
+    @DisplayName("plain films never chain")
+    void plainFilmsDoNotChain() {
+        assertFalse(SeriesFolders.looksLikeEpisodes(List.of(
+                "Blade.Runner.2049.mkv",
+                "Heat.1995.mkv")));
+    }
+
+    @Test
+    @DisplayName("a leading year is a title, not an ordering prefix")
+    void aLeadingYearIsNotOrdering() {
+        assertFalse(SeriesFolders.looksLikeEpisodes(List.of(
+                "2001 - A Space Odyssey.mkv",
+                "2010 - The Year We Make Contact.mkv")));
+    }
+
+    @Test
+    @DisplayName("a resolution tag is not an episode tag")
+    void aResolutionIsNotAnEpisodeTag() {
+        assertFalse(SeriesFolders.carriesAnOrderingMark("movie.1280x720.mkv"));
+        assertTrue(SeriesFolders.carriesAnOrderingMark("show.1x01.mkv"));
+    }
+}

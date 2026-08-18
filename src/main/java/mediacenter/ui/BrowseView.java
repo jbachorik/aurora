@@ -15,7 +15,9 @@ import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaAccessException;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
+import mediacenter.media.MediaRootType;
 import mediacenter.media.PhotoWalker;
+import mediacenter.media.SeriesFolders;
 import mediacenter.ui.components.MediaListRow;
 import mediacenter.ui.components.MediaListView;
 import mediacenter.ui.components.PosterPane;
@@ -30,6 +32,11 @@ import mediacenter.ui.components.PosterPane;
  * name echoed at its front; {@link mediacenter.media.ParentPrefixes} drops it. Artwork is looked up only for the selected line, which
  * makes browsing a slow share cost one directory listing at a time instead of
  * one per visible folder.
+ *
+ * <p>A folder of episodes plays onwards: starting one video also queues the
+ * ones after it in the listing, so finishing an episode rolls into the next
+ * without a trip back to this page. Which folders count is
+ * {@link SeriesFolders}' call — or the root's, where it is configured as TV.
  *
  * <p>A folder that turns out to hold exactly one video or photograph collapses
  * into that medium: its line re-badges itself and Enter plays the file
@@ -387,23 +394,55 @@ public final class BrowseView implements View {
             if (sole != null && sole.isPresent()) {
                 // The folder holds exactly one medium, so the folder is the
                 // medium: straight to it, no page with a single line in it.
-                openMedia(sole.get(), item.path());
+                openMedia(sole.get(), item.path(), List.of());
                 return;
             }
             context.navigation().browse(root, item.path());
             return;
         }
-        openMedia(item, folder);
+        openMedia(item, folder, playOnwardsAfter(item));
     }
 
     /** Opens one medium: photographs to the viewer, everything else to playback. */
-    private void openMedia(MediaItem media, Path containingFolder) {
+    private void openMedia(MediaItem media, Path containingFolder, List<MediaItem> playOnwards) {
         if (media.isImage()) {
             // The path, not a position: this list and the walk that fills the
             // viewer are ordered by different code, and an index would drift.
             context.navigation().openPhoto(containingFolder, media.path());
             return;
         }
-        context.navigation().play(media);
+        context.navigation().play(media, playOnwards);
+    }
+
+    /**
+     * The videos queued to follow this one — the rest of the episodes, in
+     * listing order — or nothing where this folder does not read as a series.
+     */
+    private List<MediaItem> playOnwardsAfter(MediaItem video) {
+        List<MediaItem> videos = items.stream().filter(MediaItem::isVideo).toList();
+        int at = videos.indexOf(video);
+        if (at < 0 || at == videos.size() - 1 || !playsOnwards(videos)) {
+            return List.of();
+        }
+        return List.copyOf(videos.subList(at + 1, videos.size()));
+    }
+
+    /**
+     * A TV root has said out loud what its folders hold; everywhere else the
+     * names have to make the case themselves.
+     */
+    private boolean playsOnwards(List<MediaItem> videos) {
+        if (videos.size() < 2) {
+            return false;
+        }
+        return root.type() == MediaRootType.TV
+                || SeriesFolders.looksLikeEpisodes(videos.stream()
+                        .map(BrowseView::fileNameOf)
+                        .toList());
+    }
+
+    private static String fileNameOf(MediaItem item) {
+        Path name = item.path().getFileName();
+        return name == null ? item.displayName() : name.toString();
     }
 }

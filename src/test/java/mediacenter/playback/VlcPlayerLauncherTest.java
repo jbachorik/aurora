@@ -54,6 +54,24 @@ class VlcPlayerLauncherTest {
     }
 
     @Test
+    @DisplayName("a queue becomes VLC's playlist: the files follow the first, in order")
+    void appendsTheQueueAfterTheChosenFile() {
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("/usr/bin/vlc"),
+                Path.of("/tv/01 - Pilot.mkv"),
+                List.of(Path.of("/tv/02 - Second.mkv"), Path.of("/tv/03 - Third.mkv")),
+                0, List.of());
+
+        assertEquals(List.of(
+                "/usr/bin/vlc",
+                "--fullscreen",
+                "--play-and-exit",
+                "/tv/01 - Pilot.mkv",
+                "/tv/02 - Second.mkv",
+                "/tv/03 - Third.mkv"), command);
+    }
+
+    @Test
     @DisplayName("a platform that asks for nothing extra gets the plain command line")
     void addsNothingWhenThePlatformOffersNoOptions() {
         assertEquals(

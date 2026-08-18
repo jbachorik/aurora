@@ -64,6 +64,26 @@ class PlaybackServiceTest {
     }
 
     @Test
+    @DisplayName("the queue rides along to the player; only the chosen file is remembered")
+    void passesTheQueueThroughAndRecordsOnlyTheChosenFile(@TempDir Path temp) {
+        PlaybackHistory history = new PlaybackHistory();
+        FakePlayerLauncher launcher = FakePlayerLauncher.succeeding();
+        PlaybackService service =
+                new PlaybackService(launcher, history, new HistoryStore(temp), DIRECT, DIRECT);
+        Path episodeTwo = Path.of("\\\\synology\\video\\TV\\e2.mkv");
+        Path episodeThree = Path.of("\\\\synology\\video\\TV\\e3.mkv");
+
+        service.play(media, List.of(episodeTwo, episodeThree), "Dune", result -> { });
+
+        assertEquals(List.of(media), launcher.played());
+        assertEquals(List.of(List.of(episodeTwo, episodeThree)), launcher.queues());
+        // The player walks the queue on its own; nothing here knows how far it
+        // got, so only the chosen start belongs in the history.
+        assertEquals(1, history.entries().size());
+        assertEquals(media, history.entries().getFirst().mediaPath());
+    }
+
+    @Test
     @DisplayName("VLC being killed externally is still a normal end of playback")
     void nonZeroExitCodeIsStillACompletedPlayback(@TempDir Path temp) {
         PlaybackHistory history = new PlaybackHistory();
