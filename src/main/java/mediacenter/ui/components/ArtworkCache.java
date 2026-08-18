@@ -30,15 +30,15 @@ public final class ArtworkCache {
         this.images = new LinkedHashMap<>(16, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, Image> eldest) {
-                // Do not call eldest.getValue().cancel() here. BrowseView builds every
-                // MediaTile for a folder synchronously, and each tile's constructor
-                // starts loading its artwork immediately, so a large folder queues
-                // hundreds of decodes before any of them finish. With an access-order
-                // map at capacity, the eldest entries are the ones inserted first in
-                // that same loop, i.e. the tiles at the top of the visible grid, and
-                // their decodes are still in flight when eviction runs. Cancelling
-                // them makes Image report an error, and MediaTile hides its artwork
-                // on error, so the on-screen thumbnails would go blank permanently.
+                // Do not call eldest.getValue().cancel() here. A row of MediaTiles
+                // is built synchronously, and each tile's constructor starts loading
+                // its artwork immediately, so a full row queues its decodes before
+                // any of them finish. With an access-order map at capacity, the
+                // eldest entries are the ones inserted first in that same loop,
+                // i.e. tiles that are on screen, and their decodes are still in
+                // flight when eviction runs. Cancelling them makes Image report an
+                // error, and MediaTile hides its artwork on error, so the on-screen
+                // thumbnails would go blank permanently.
                 // Cancel-on-evict is only safe when the evicted value is known to be
                 // unreferenced elsewhere; here it is the opposite.
                 return size() > ArtworkCache.this.capacity;

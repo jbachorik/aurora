@@ -3,13 +3,13 @@ package mediacenter.media;
 import java.util.Locale;
 import java.util.Optional;
 
-/** How a media root should be presented. */
+/** What a media root holds, which decides which home action offers it. */
 public enum MediaRootType {
 
-    /** Poster-oriented content: rendered as a movie-style tile grid. */
+    /** Movie-style content. */
     MOVIES("Movies"),
 
-    /** Series content. Presented like {@link #MOVIES} until series parsing exists. */
+    /** Series content. Offered like {@link #MOVIES} until series parsing exists. */
     TV("TV"),
 
     /** Anything else: plain folder browsing. */
@@ -37,10 +37,5 @@ public enum MediaRootType {
             }
         }
         return Optional.empty();
-    }
-
-    /** True when this root should use the poster grid rather than plain folder tiles. */
-    public boolean usesPosterLayout() {
-        return this == MOVIES || this == TV;
     }
 }

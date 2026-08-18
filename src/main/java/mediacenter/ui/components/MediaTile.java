@@ -18,7 +18,7 @@ import mediacenter.config.Theme;
 import mediacenter.media.MediaItem;
 
 /**
- * A poster (or wide) tile for one directory or video file.
+ * A poster tile for one video file, as the home screen's recent row shows it.
  *
  * <p>The artwork sits on top of a generated placeholder, so a missing, still
  * loading or unreadable image simply leaves a readable coloured card showing.
@@ -26,11 +26,10 @@ import mediacenter.media.MediaItem;
  */
 public final class MediaTile extends Tile {
 
-    /** Tile proportions: posters for movie-style roots, wide cards elsewhere. */
+    /** Tile proportions. Folder browsing is a list now, so only posters remain. */
     public enum Shape {
 
-        POSTER(210, 315),
-        WIDE(300, 180);
+        POSTER(210, 315);
 
         private final double width;
         private final double artworkHeight;

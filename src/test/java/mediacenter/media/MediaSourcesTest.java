@@ -38,12 +38,11 @@ class MediaSourcesTest {
     }
 
     @Test
-    @DisplayName("a mounted volume browses as plain folders, never as posters")
+    @DisplayName("a mounted volume is a general root, not movies or series")
     void mountedVolumesAreGeneral() {
         MediaRoot volume = MediaSources.removable("KINGSTON", Path.of("/Volumes/KINGSTON"));
 
         assertEquals(MediaRootType.GENERAL, volume.type());
-        assertEquals(false, volume.type().usesPosterLayout());
     }
 
     @Test
