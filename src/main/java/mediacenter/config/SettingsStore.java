@@ -84,6 +84,7 @@ public final class SettingsStore {
         members.put("fullScreen", new JsonBoolean(settings.fullScreen()));
         members.put("theme", new JsonString(settings.theme().name()));
         members.put("slideshowSeconds", new JsonNumber(settings.slideshowSeconds()));
+        members.put("playerBufferSeconds", new JsonNumber(settings.playerBufferSeconds()));
 
         List<JsonValue> roots = new ArrayList<>();
         for (MediaRoot root : settings.mediaRoots()) {
@@ -105,12 +106,14 @@ public final class SettingsStore {
         Theme theme = document.nonBlankString("theme").flatMap(Theme::parse).orElse(Theme.DARK);
         // JsonValue reads numbers as longs; the interval is small enough to narrow.
         int slideshowSeconds = document.longValue("slideshowSeconds").orElse(5L).intValue();
+        int playerBufferSeconds = document.longValue("playerBufferSeconds").orElse(1L).intValue();
 
         List<MediaRoot> roots = new ArrayList<>();
         for (JsonObject rootDocument : document.objectArray("mediaRoots")) {
             readRoot(rootDocument).ifPresent(roots::add);
         }
-        return new ApplicationSettings(vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds);
+        return new ApplicationSettings(
+                vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds, playerBufferSeconds);
     }
 
     private static Optional<MediaRoot> readRoot(JsonObject document) {

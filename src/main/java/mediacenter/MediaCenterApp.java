@@ -93,7 +93,10 @@ public final class MediaCenterApp extends Application {
 
         backgroundExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-        PlayerLauncher playerLauncher = new VlcPlayerLauncher(() -> settingsRef.get().vlcPath(), platform.playerOptions());
+        PlayerLauncher playerLauncher = new VlcPlayerLauncher(
+                () -> settingsRef.get().vlcPath(),
+                () -> settingsRef.get().playerBufferSeconds(),
+                platform.playerOptions());
         PlaybackService playbackService = new PlaybackService(
                 playerLauncher, history, historyStore, backgroundExecutor, Platform::runLater);
 

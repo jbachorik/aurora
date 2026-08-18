@@ -65,6 +65,8 @@ public final class SettingsView implements View {
     private final ToggleGroup themeGroup = new ToggleGroup();
     private final Label slideshowValue = new Label();
     private final List<ToggleButton> slideshowToggles = new ArrayList<>();
+    private final Label bufferValue = new Label();
+    private final List<ToggleButton> bufferToggles = new ArrayList<>();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
 
@@ -140,9 +142,11 @@ public final class SettingsView implements View {
         // appends its own row to navigationRows as it goes.
         Node themeRow = themeRow();
         Node slideshowRow = slideshowRow();
+        Node bufferRow = bufferRow();
         Node rootsSection = mediaRootsSection();
 
-        root.getChildren().addAll(vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, rootsSection);
+        root.getChildren().addAll(
+                vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow, rootsSection);
 
         installArrowNavigation();
         readSettings();
@@ -269,6 +273,51 @@ public final class SettingsView implements View {
      * How long each photograph stays. Two toggles rather than a number field:
      * from the far side of a room there is nothing to type with.
      */
+    /**
+     * How long the player reads ahead before it starts.
+     *
+     * <p>Offered because a share reached over a slow or distant link delivers in
+     * fits: the average may be far above what the video needs while individual
+     * reads stall, and playback judders on the gaps rather than on any shortage.
+     * Reading further ahead covers them. It cannot help when the link is simply
+     * slower than the video's bitrate — that is a wait no buffer shortens.
+     */
+    private Node bufferRow() {
+        Label name = new Label("Playback buffer");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        bufferValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(bufferValue, Priority.ALWAYS);
+        bufferValue.setMaxWidth(Double.MAX_VALUE);
+
+        ToggleGroup group = new ToggleGroup();
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        // One second is what VLC does unasked, so the first choice is "leave it
+        // alone" under a name that means something from a sofa.
+        for (int seconds : List.of(1, 5, 10)) {
+            ToggleButton button = new ToggleButton(seconds + "s");
+            button.setUserData(seconds);
+            button.setToggleGroup(group);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withPlayerBufferSeconds(seconds));
+            });
+            choices.getChildren().add(button);
+            bufferToggles.add(button);
+        }
+        navigationRows.add(List.copyOf(bufferToggles));
+
+        HBox line = new HBox(16, name, bufferValue, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
+    }
+
     private Node slideshowRow() {
         Label name = new Label("Slideshow");
         name.getStyleClass().add("setting-name");
@@ -559,6 +608,12 @@ public final class SettingsView implements View {
         slideshowValue.setText(configuredInterval + "s");
         for (ToggleButton toggle : slideshowToggles) {
             toggle.setSelected(configuredInterval.equals(toggle.getUserData()));
+        }
+
+        Integer configuredBuffer = settings.playerBufferSeconds();
+        bufferValue.setText(configuredBuffer + "s");
+        for (ToggleButton toggle : bufferToggles) {
+            toggle.setSelected(configuredBuffer.equals(toggle.getUserData()));
         }
 
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();

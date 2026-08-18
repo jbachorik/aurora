@@ -33,6 +33,28 @@ class ApplicationSettingsTest {
     }
 
     @Test
+    @DisplayName("the playback buffer defaults to VLC's own and is clamped to what VLC accepts")
+    void clampsThePlaybackBuffer() {
+        // One second is what VLC uses when told nothing, so the default changes
+        // no behaviour; sixty is the most --file-caching will take.
+        assertEquals(1, ApplicationSettings.defaults().playerBufferSeconds());
+        assertEquals(0, ApplicationSettings.defaults().withPlayerBufferSeconds(-5).playerBufferSeconds());
+        assertEquals(60, ApplicationSettings.defaults().withPlayerBufferSeconds(600).playerBufferSeconds());
+        assertEquals(10, ApplicationSettings.defaults().withPlayerBufferSeconds(10).playerBufferSeconds());
+    }
+
+    @Test
+    @DisplayName("changing one setting leaves the playback buffer alone")
+    void keepsThePlaybackBufferAcrossOtherChanges() {
+        ApplicationSettings tuned = ApplicationSettings.defaults().withPlayerBufferSeconds(10);
+
+        assertEquals(10, tuned.withTheme(Theme.LIGHT).playerBufferSeconds());
+        assertEquals(10, tuned.withFullScreen(false).playerBufferSeconds());
+        assertEquals(10, tuned.withRoot(movies).playerBufferSeconds());
+        assertEquals(10, tuned.withSlideshowSeconds(10).playerBufferSeconds());
+    }
+
+    @Test
     void removesRootsById() {
         ApplicationSettings settings = ApplicationSettings.defaults().withRoot(movies).withRoot(tv);
 

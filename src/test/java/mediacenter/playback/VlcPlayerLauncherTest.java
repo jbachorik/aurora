@@ -23,7 +23,8 @@ class VlcPlayerLauncherTest {
     void buildsTheDocumentedCommandLine() {
         List<String> command = VlcPlayerLauncher.commandFor(
                 Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"),
-                Path.of("\\\\synology\\video\\Movies\\Blade Runner 2049 (2017)\\movie.mkv"));
+                Path.of("\\\\synology\\video\\Movies\\Blade Runner 2049 (2017)\\movie.mkv"),
+                0, List.of());
 
         assertEquals(List.of(
                 "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
@@ -42,7 +43,7 @@ class VlcPlayerLauncherTest {
         List<String> command = VlcPlayerLauncher.commandFor(
                 Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"),
                 Path.of("C:\\video\\episode.mkv"),
-                List.of("--no-one-instance"));
+                0, List.of("--no-one-instance"));
 
         assertEquals(List.of(
                 "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
@@ -57,7 +58,29 @@ class VlcPlayerLauncherTest {
     void addsNothingWhenThePlatformOffersNoOptions() {
         assertEquals(
                 VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv")),
-                VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), List.of()));
+                VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), 0, List.of()));
+    }
+
+    @Test
+    @DisplayName("the configured buffer becomes VLC's file caching, in milliseconds")
+    void asksVlcToBufferTheConfiguredAmount() {
+        // --file-caching, not --network-caching: a share mounted by the operating
+        // system is opened by VLC's "filesystem" access, and the network option
+        // reaches only the modules that fetch over a network themselves.
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), 10, List.of());
+
+        assertTrue(command.contains("--file-caching=10000"), command.toString());
+        assertEquals("/media/a.mkv", command.getLast());
+    }
+
+    @Test
+    @DisplayName("no buffer configured leaves VLC's own caching untouched")
+    void saysNothingAboutCachingWhenNoBufferIsSet() {
+        List<String> command = VlcPlayerLauncher.commandFor(
+                Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), 0, List.of());
+
+        assertTrue(command.stream().noneMatch(argument -> argument.startsWith("--file-caching")), command.toString());
     }
 
     @Test
@@ -66,7 +89,7 @@ class VlcPlayerLauncherTest {
         String unicodeName = "\\\\synology\\video\\Movies\\Amélie (2001)\\Amélie 岸辺.mkv";
         Path media = pathOrSkip(unicodeName);
 
-        List<String> command = VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), media);
+        List<String> command = VlcPlayerLauncher.commandFor(Path.of("/usr/bin/vlc"), media, 0, List.of());
 
         assertEquals(unicodeName, command.getLast());
     }
