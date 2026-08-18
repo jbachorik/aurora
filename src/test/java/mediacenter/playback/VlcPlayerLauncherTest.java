@@ -67,11 +67,15 @@ class VlcPlayerLauncherTest {
         // --file-caching, not --network-caching: a share mounted by the operating
         // system is opened by VLC's "filesystem" access, and the network option
         // reaches only the modules that fetch over a network themselves.
+        Path media = Path.of("/media/a.mkv");
+
         List<String> command = VlcPlayerLauncher.commandFor(
-                Path.of("/usr/bin/vlc"), Path.of("/media/a.mkv"), 10, List.of());
+                Path.of("/usr/bin/vlc"), media, 10, List.of());
 
         assertTrue(command.contains("--file-caching=10000"), command.toString());
-        assertEquals("/media/a.mkv", command.getLast());
+        // Rendered by the platform, not spelled out: Windows prints this same
+        // path back with backslashes.
+        assertEquals(media.toString(), command.getLast());
     }
 
     @Test
