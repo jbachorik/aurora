@@ -9,6 +9,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 
 import mediacenter.media.MediaItem;
+import mediacenter.media.MediaItemType;
 import mediacenter.media.ParentPrefixes;
 
 /**
@@ -33,6 +34,7 @@ public final class MediaListRow extends HBox {
 
     private final MediaItem item;
     private final String title;
+    private final Label symbol;
     private final MarqueeLabel name;
 
     /**
@@ -61,17 +63,17 @@ public final class MediaListRow extends HBox {
         setAlignment(Pos.CENTER_LEFT);
         setSpacing(12);
 
-        Label symbolLabel = new Label(symbol);
-        symbolLabel.getStyleClass().add("media-row-symbol");
-        symbolLabel.setMinWidth(SYMBOL_WIDTH);
-        symbolLabel.setPrefWidth(SYMBOL_WIDTH);
-        symbolLabel.setAlignment(Pos.CENTER);
+        this.symbol = new Label(symbol);
+        this.symbol.getStyleClass().add("media-row-symbol");
+        this.symbol.setMinWidth(SYMBOL_WIDTH);
+        this.symbol.setPrefWidth(SYMBOL_WIDTH);
+        this.symbol.setAlignment(Pos.CENTER);
 
         name = new MarqueeLabel(text);
         name.addTextStyleClass("media-row-name");
         HBox.setHgrow(name, Priority.ALWAYS);
 
-        getChildren().addAll(symbolLabel, name);
+        getChildren().addAll(this.symbol, name);
 
         // The marquee is for the line being looked at; everyone else holds still.
         focusedProperty().addListener((observable, wasFocused, isFocused) ->
@@ -88,8 +90,21 @@ public final class MediaListRow extends HBox {
         return title;
     }
 
+    /**
+     * Re-badges a folder row as the one medium it turned out to hold, so the
+     * line tells the truth about what Enter will do: play, not drill down. The
+     * name stays the folder's own — that is still what sits on the disk.
+     */
+    public void showMediaSymbol(MediaItemType type) {
+        symbol.setText(symbolFor(type));
+    }
+
     private static String symbolFor(MediaItem item) {
-        return switch (item.type()) {
+        return symbolFor(item.type());
+    }
+
+    private static String symbolFor(MediaItemType type) {
+        return switch (type) {
             case DIRECTORY -> "▤";
             case IMAGE -> "▣";
             case VIDEO -> "▶";

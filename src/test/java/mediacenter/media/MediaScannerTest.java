@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -238,5 +239,60 @@ class MediaScannerTest {
 
         assertEquals("Blade Runner 2049 (2017)",
                 items.stream().filter(MediaItem::isVideo).findFirst().orElseThrow().displayName());
+    }
+
+    // -- the single-medium collapse ------------------------------------------
+
+    @Test
+    @DisplayName("a folder holding one film — plus artwork and junk — is just the film")
+    void collapsesAFolderHoldingOneFilm(@TempDir Path temp) throws Exception {
+        Path folder = Files.createDirectory(temp.resolve("Blade Runner 2049 (2017)"));
+        Files.createFile(folder.resolve("Blade.Runner.2049.mkv"));
+        Files.createFile(folder.resolve("poster.jpg"));
+        Files.createFile(folder.resolve("Blade.Runner.2049.srt"));
+        Files.createFile(folder.resolve("Thumbs.db"));
+
+        MediaItem sole = scanner.soleMedia(folder).orElseThrow();
+
+        assertTrue(sole.isVideo());
+        assertEquals(folder.resolve("Blade.Runner.2049.mkv"), sole.path());
+        // The lone film borrows its folder's name, so the collapse plays under it.
+        assertEquals("Blade Runner 2049 (2017)", sole.displayName());
+    }
+
+    @Test
+    @DisplayName("a folder holding one photograph is just the photograph")
+    void collapsesAFolderHoldingOnePhotograph(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("holiday.jpg"));
+
+        MediaItem sole = scanner.soleMedia(temp).orElseThrow();
+
+        assertTrue(sole.isImage());
+    }
+
+    @Test
+    @DisplayName("a sub-folder means there is somewhere to go, so nothing collapses")
+    void aSubFolderPreventsTheCollapse(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("movie.mkv"));
+        Files.createDirectory(temp.resolve("Extras"));
+
+        assertEquals(Optional.empty(), scanner.soleMedia(temp));
+    }
+
+    @Test
+    @DisplayName("two films are a listing, not a medium")
+    void twoFilmsPreventTheCollapse(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("part one.mkv"));
+        Files.createFile(temp.resolve("part two.mkv"));
+
+        assertEquals(Optional.empty(), scanner.soleMedia(temp));
+    }
+
+    @Test
+    @DisplayName("artwork alone is an empty folder, not a medium")
+    void artworkAloneIsNotAMedium(@TempDir Path temp) throws Exception {
+        Files.createFile(temp.resolve("poster.jpg"));
+
+        assertEquals(Optional.empty(), scanner.soleMedia(temp));
     }
 }

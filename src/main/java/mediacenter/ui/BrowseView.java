@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
 
 import javafx.scene.Node;
 import javafx.scene.layout.BorderPane;
@@ -30,11 +31,25 @@ import mediacenter.ui.components.PosterPane;
  * makes browsing a slow share cost one directory listing at a time instead of
  * one per visible folder.
  *
+ * <p>A folder that turns out to hold exactly one video or photograph collapses
+ * into that medium: its line re-badges itself and Enter plays the file
+ * directly, because drilling in would only present a single line to press
+ * Enter on again. Finding that out costs a listing per folder, so it happens
+ * in the background after the names are up, and until the answer arrives
+ * Enter simply browses as it always did.
+ *
  * <p>Scanning always happens on a background thread; a folder that is slow or
  * unreachable leaves the UI fully responsive and ends in a readable message
  * rather than a frozen screen.
  */
 public final class BrowseView implements View {
+
+    /**
+     * Concurrent peeks into sub-folders — for the selected line's artwork and
+     * for the single-medium collapse alike. Enough to keep a share busy, few
+     * enough not to bury it.
+     */
+    private static final int FOLDER_PEEK_PARALLELISM = 16;
 
     private final UiContext context;
     private final MediaRoot root;
@@ -49,6 +64,14 @@ public final class BrowseView implements View {
      * JavaFX thread; emptied by every load, whose items it describes.
      */
     private final Map<Path, Optional<Path>> directoryArtwork = new HashMap<>();
+
+    /**
+     * Which folders collapse into the one medium they hold, as the background
+     * sweep answers. Only touched on the JavaFX thread; emptied by every load.
+     * A folder the sweep has not reached yet is simply absent, and activating
+     * it browses — the collapse is a shortcut, never something to wait for.
+     */
+    private final Map<Path, Optional<MediaItem>> soleMediaByFolder = new HashMap<>();
 
     private List<MediaItem> items = List.of();
     /**
@@ -119,6 +142,7 @@ public final class BrowseView implements View {
     private void load() {
         int generation = ++loadGeneration;
         directoryArtwork.clear();
+        soleMediaByFolder.clear();
         poster.clear();
         list.showMessage("Loading…");
         FxTasks.run(
@@ -151,11 +175,17 @@ public final class BrowseView implements View {
         }
         List<String> parentFolderNames = parentFolderNames();
         List<MediaListRow> rows = new ArrayList<>(items.size());
+        List<MediaListRow> directoryRows = new ArrayList<>();
         for (MediaItem item : items) {
-            rows.add(MediaListRow.forItem(item, parentFolderNames));
+            MediaListRow row = MediaListRow.forItem(item, parentFolderNames);
+            rows.add(row);
+            if (item.isDirectory()) {
+                directoryRows.add(row);
+            }
         }
         list.setRows(rows);
         list.focusSelection();
+        resolveSoleMedia(directoryRows, generation);
         // A photograph in this very folder settles the question with no walk at
         // all, and this is the folder a viewer of photographs is usually in. The
         // walk below is the expensive case — a shelf of films whose posters are
@@ -166,6 +196,53 @@ public final class BrowseView implements View {
             return;
         }
         offerSlideshow(generation);
+    }
+
+    /**
+     * Peeks into each sub-folder for the single medium it may collapse into.
+     *
+     * <p>Each peek is a directory listing, which over a share is the whole
+     * cost — so the list is on screen first and the answers re-badge rows as
+     * they arrive, exactly like the poster lookups. A load that has been
+     * replaced stops the moment it notices.
+     */
+    private void resolveSoleMedia(List<MediaListRow> directoryRows, int generation) {
+        if (directoryRows.isEmpty()) {
+            return;
+        }
+        Semaphore permits = new Semaphore(FOLDER_PEEK_PARALLELISM);
+        for (MediaListRow row : directoryRows) {
+            MediaItem folderItem = row.item().orElseThrow();
+            context.backgroundExecutor().execute(() -> {
+                if (generation != loadGeneration || discarded) {
+                    return;
+                }
+                Optional<MediaItem> sole;
+                try {
+                    permits.acquire();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                try {
+                    sole = context.scanner().soleMedia(folderItem.path());
+                } catch (MediaAccessException e) {
+                    // An unreadable folder does not collapse; opening it will
+                    // explain itself in the folder's own words.
+                    sole = Optional.empty();
+                } finally {
+                    permits.release();
+                }
+                Optional<MediaItem> answer = sole;
+                FxTasks.onFx(() -> {
+                    if (generation != loadGeneration || discarded) {
+                        return;
+                    }
+                    soleMediaByFolder.put(folderItem.path(), answer);
+                    answer.ifPresent(media -> row.showMediaSymbol(media.type()));
+                });
+            });
+        }
     }
 
     /**
@@ -306,15 +383,27 @@ public final class BrowseView implements View {
             return;
         }
         if (item.isDirectory()) {
+            Optional<MediaItem> sole = soleMediaByFolder.get(item.path());
+            if (sole != null && sole.isPresent()) {
+                // The folder holds exactly one medium, so the folder is the
+                // medium: straight to it, no page with a single line in it.
+                openMedia(sole.get(), item.path());
+                return;
+            }
             context.navigation().browse(root, item.path());
             return;
         }
-        if (item.isImage()) {
+        openMedia(item, folder);
+    }
+
+    /** Opens one medium: photographs to the viewer, everything else to playback. */
+    private void openMedia(MediaItem media, Path containingFolder) {
+        if (media.isImage()) {
             // The path, not a position: this list and the walk that fills the
             // viewer are ordered by different code, and an index would drift.
-            context.navigation().openPhoto(folder, item.path());
+            context.navigation().openPhoto(containingFolder, media.path());
             return;
         }
-        context.navigation().play(item);
+        context.navigation().play(media);
     }
 }
