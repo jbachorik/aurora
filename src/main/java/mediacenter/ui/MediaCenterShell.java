@@ -2,8 +2,10 @@ package mediacenter.ui;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -40,6 +42,7 @@ import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
 import mediacenter.playback.PlaybackResult;
 import mediacenter.playback.PlaybackService;
+import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.PlatformServices;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.ui.components.ArtworkCache;
@@ -312,16 +315,19 @@ public final class MediaCenterShell implements Navigation {
 
     @Override
     public void play(MediaItem item, List<MediaItem> playOnwards) {
-        startPlayback(item.path(), playOnwards.stream().map(MediaItem::path).toList(),
-                item.displayName());
+        startPlayback(
+                new PlayerView.Entry(item.path(), item.displayName()),
+                playOnwards.stream()
+                        .map(following -> new PlayerView.Entry(following.path(), following.displayName()))
+                        .toList());
     }
 
     @Override
     public void play(Path mediaFile, String displayTitle) {
-        startPlayback(mediaFile, List.of(), displayTitle);
+        startPlayback(new PlayerView.Entry(mediaFile, displayTitle), List.of());
     }
 
-    private void startPlayback(Path mediaFile, List<Path> playOnwards, String displayTitle) {
+    private void startPlayback(PlayerView.Entry first, List<PlayerView.Entry> playOnwards) {
         if (playbackService.isPlaying()) {
             return;
         }
@@ -329,10 +335,38 @@ public final class MediaCenterShell implements Navigation {
             LOG.fine("Ignoring a playback request that arrived while the UI was coming back");
             return;
         }
-        LOG.log(Level.INFO, () -> "Playback requested for " + mediaFile
+        if (settings().embeddedPlayer() && startEmbeddedPlayback(first, playOnwards)) {
+            return;
+        }
+        LOG.log(Level.INFO, () -> "Playback requested for " + first.path()
                 + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
         hideForPlayback();
-        playbackService.play(mediaFile, playOnwards, displayTitle, this::onPlaybackFinished);
+        playbackService.play(
+                first.path(),
+                playOnwards.stream().map(PlayerView.Entry::path).toList(),
+                first.title(),
+                this::onPlaybackFinished);
+    }
+
+    /**
+     * Plays inside the window when the built-in player is chosen and libVLC is
+     * loadable — and otherwise says so once and lets the external window take
+     * over, because a viewer with a film picked out wants the film, not a
+     * settings lecture.
+     */
+    private boolean startEmbeddedPlayback(PlayerView.Entry first, List<PlayerView.Entry> playOnwards) {
+        Optional<VlcEngine> engine = VlcEngine.load(settings().vlcPath());
+        if (engine.isEmpty()) {
+            showError("The built-in player could not load libVLC; using the VLC window instead.");
+            return false;
+        }
+        List<PlayerView.Entry> entries = new ArrayList<>(playOnwards.size() + 1);
+        entries.add(first);
+        entries.addAll(playOnwards);
+        LOG.log(Level.INFO, () -> "Embedded playback of " + first.path()
+                + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
+        push(new PlayerView(context, engine.get(), entries, playbackService::recordPlayed));
+        return true;
     }
 
     @Override

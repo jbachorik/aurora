@@ -2,8 +2,10 @@
  * Lightweight media-center frontend.
  *
  * <p>Only the modules that are genuinely used are required. In particular
- * {@code javafx.media} is deliberately absent: playback is delegated to an
- * external VLC process, this application never decodes media itself.
+ * {@code javafx.media} is deliberately absent: playback is either delegated to
+ * an external VLC process or — when the built-in player is switched on —
+ * decoded by libVLC itself, bound through {@code java.lang.foreign} in
+ * {@code java.base}. Either way, no Java media stack is involved.
  */
 module media.center {
     requires javafx.controls;

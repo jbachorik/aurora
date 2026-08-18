@@ -80,7 +80,8 @@ class SettingsStoreTest {
                 Theme.LIGHT,
                 List.of(movies, tv),
                 5,
-                10);
+                10,
+                true);
 
         assertTrue(store.save(original));
         ApplicationSettings reloaded = store.load();

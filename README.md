@@ -156,11 +156,15 @@ Design rules the code follows:
 * **The JavaFX thread never does I/O.** Scanning, artwork lookup, waiting for
   VLC and saving settings all run on virtual threads and marshal results back
   through `FxTasks`. A disconnected NAS cannot freeze or crash the UI.
-* **VLC does the playing.** No libVLC, no decoding, no rendering. VLC is started
-  with a `ProcessBuilder` argument list — never a composed shell string — so
-  spaces, Unicode names and UNC paths need no quoting. Photographs are the one
-  exception: a still image is not playback, VLC has nothing useful to offer,
-  and the application decodes and draws them itself.
+* **VLC does the playing.** By default VLC is started as its own process, with
+  a `ProcessBuilder` argument list — never a composed shell string — so spaces,
+  Unicode names and UNC paths need no quoting. Settings can instead switch on
+  the **built-in player**, which binds the same install's libVLC through
+  `java.lang.foreign` (no JNA, no extra modules) and draws each decoded frame
+  into the page itself — same codecs, same subtitles, but the queue, the
+  overlay and per-episode history belong to the application. Photographs are
+  the one thing played by neither: a still image is not playback, and the
+  application decodes and draws them itself.
 * **No dependencies at runtime.** The JDK and JavaFX cover everything; the
   handful of small JSON files are read and written by `mediacenter.json`.
 * **Errors are readable from the sofa.** Stack traces go to

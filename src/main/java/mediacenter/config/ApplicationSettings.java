@@ -19,7 +19,8 @@ public record ApplicationSettings(
         Theme theme,
         List<MediaRoot> mediaRoots,
         int slideshowSeconds,
-        int playerBufferSeconds) {
+        int playerBufferSeconds,
+        boolean embeddedPlayer) {
 
     public ApplicationSettings {
         vlcPath = vlcPath == null ? Optional.empty() : vlcPath;
@@ -37,42 +38,53 @@ public record ApplicationSettings(
 
     public static ApplicationSettings defaults() {
         return new ApplicationSettings(
-                Optional.empty(), Optional.empty(), true, Theme.DARK, List.of(), 5, 1);
+                Optional.empty(), Optional.empty(), true, Theme.DARK, List.of(), 5, 1, false);
     }
 
     public ApplicationSettings withVlcPath(Optional<Path> newVlcPath) {
         return new ApplicationSettings(
-                newVlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds);
+                newVlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer);
     }
 
     public ApplicationSettings withBrowserPath(Optional<Path> newBrowserPath) {
         return new ApplicationSettings(
-                vlcPath, newBrowserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds);
+                vlcPath, newBrowserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer);
     }
 
     public ApplicationSettings withFullScreen(boolean newFullScreen) {
         return new ApplicationSettings(
-                vlcPath, browserPath, newFullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds);
+                vlcPath, browserPath, newFullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer);
     }
 
     public ApplicationSettings withTheme(Theme newTheme) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, newTheme, mediaRoots, slideshowSeconds, playerBufferSeconds);
+                vlcPath, browserPath, fullScreen, newTheme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer);
     }
 
     public ApplicationSettings withMediaRoots(List<MediaRoot> newMediaRoots) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, newMediaRoots, slideshowSeconds, playerBufferSeconds);
+                vlcPath, browserPath, fullScreen, theme, newMediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer);
     }
 
     public ApplicationSettings withSlideshowSeconds(int newSlideshowSeconds) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, newSlideshowSeconds, playerBufferSeconds);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, newSlideshowSeconds, playerBufferSeconds, embeddedPlayer);
     }
 
     public ApplicationSettings withPlayerBufferSeconds(int newPlayerBufferSeconds) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, newPlayerBufferSeconds);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, newPlayerBufferSeconds, embeddedPlayer);
+    }
+
+    /**
+     * Whether films play inside this window (libVLC drawing into the page)
+     * rather than in a VLC window of their own. Off by default: the external
+     * player is the long-proven path, and the built-in one needs a loadable
+     * libVLC to exist at all.
+     */
+    public ApplicationSettings withEmbeddedPlayer(boolean newEmbeddedPlayer) {
+        return new ApplicationSettings(
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, newEmbeddedPlayer);
     }
 
     /** Adds a root, replacing any existing root with the same id. */

@@ -85,12 +85,15 @@ dependencies {
 application {
     mainModule = applicationModuleName
     mainClass = applicationMainClass
-    // Pinned rather than left to the default: a photograph decoded at screen
-    // size is about eight megabytes, three are held at once, and an unspecified
-    // heap turns a large picture into an unpredictable failure on a machine
-    // with little to spare. Matches the jpackage --java-options below so that
-    // a local `./gradlew run` exercises the same ceiling the shipped image has.
-    applicationDefaultJvmArgs = listOf("-Xmx512m")
+    // -Xmx pinned rather than left to the default: a photograph decoded at
+    // screen size is about eight megabytes, three are held at once, and an
+    // unspecified heap turns a large picture into an unpredictable failure on
+    // a machine with little to spare. Video frames do not count against it —
+    // the built-in player keeps them in native memory. Native access is for
+    // that player's libVLC binding (java.lang.foreign); without the grant the
+    // JVM refuses the calls. Both match the jpackage --java-options below so
+    // that a local `./gradlew run` behaves exactly like the shipped image.
+    applicationDefaultJvmArgs = listOf("-Xmx512m", "--enable-native-access=media.center")
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -272,7 +275,10 @@ val jpackage = tasks.register<Exec>("jpackage") {
                 // screen size is about eight megabytes, three are held at once, and
                 // an unspecified heap turns a large picture into an unpredictable
                 // failure on a machine with little to spare.
-                "--java-options", "-Xmx512m"
+                "--java-options", "-Xmx512m",
+                // The built-in player binds libVLC through java.lang.foreign,
+                // which the JVM only permits to modules named here.
+                "--java-options", "--enable-native-access=media.center"
             ) + platformOptions + iconOptions
         }
     )
