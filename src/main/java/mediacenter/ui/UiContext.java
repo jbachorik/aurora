@@ -5,6 +5,7 @@ import java.util.function.Supplier;
 
 import mediacenter.config.ApplicationSettings;
 import mediacenter.history.PlaybackHistory;
+import mediacenter.history.WatchedService;
 import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaScanner;
 import mediacenter.platform.PlatformServices;
@@ -19,5 +20,6 @@ public record UiContext(
         ArtworkResolver artworkResolver,
         ArtworkCache artworkCache,
         PlaybackHistory history,
+        WatchedService watched,
         PlatformServices platform) {
 }

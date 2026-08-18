@@ -11,6 +11,7 @@ import java.util.logging.Logger;
 
 import mediacenter.history.HistoryStore;
 import mediacenter.history.PlaybackHistory;
+import mediacenter.history.WatchedService;
 
 /**
  * Runs a playback off the UI thread and reports back on it.
@@ -25,6 +26,7 @@ public final class PlaybackService {
     private final PlayerLauncher playerLauncher;
     private final PlaybackHistory history;
     private final HistoryStore historyStore;
+    private final WatchedService watched;
     private final Executor backgroundExecutor;
     private final Executor uiExecutor;
     private final AtomicBoolean playing = new AtomicBoolean();
@@ -33,11 +35,13 @@ public final class PlaybackService {
             PlayerLauncher playerLauncher,
             PlaybackHistory history,
             HistoryStore historyStore,
+            WatchedService watched,
             Executor backgroundExecutor,
             Executor uiExecutor) {
         this.playerLauncher = playerLauncher;
         this.history = history;
         this.historyStore = historyStore;
+        this.watched = watched;
         this.backgroundExecutor = backgroundExecutor;
         this.uiExecutor = uiExecutor;
     }
@@ -102,6 +106,11 @@ public final class PlaybackService {
         try {
             history.record(mediaFile, displayTitle, Instant.now());
             historyStore.save(history);
+            // The same evidence that puts a file into the history marks it
+            // watched: the player took it. What follows in a queue is marked
+            // only when the embedded player reports each episode through
+            // recordPlayed.
+            watched.markWatched(mediaFile);
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Could not update playback history", e);
         }

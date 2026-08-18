@@ -45,6 +45,7 @@ import mediacenter.playback.PlaybackService;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.PlatformServices;
 import mediacenter.history.PlaybackHistory;
+import mediacenter.history.WatchedService;
 import mediacenter.ui.components.ArtworkCache;
 import mediacenter.ui.components.Motion;
 
@@ -95,6 +96,7 @@ public final class MediaCenterShell implements Navigation {
             AtomicReference<ApplicationSettings> settingsRef,
             SettingsStore settingsStore,
             PlaybackHistory history,
+            WatchedService watched,
             PlaybackService playbackService,
             PlatformServices platform,
             MediaScanner scanner,
@@ -116,6 +118,7 @@ public final class MediaCenterShell implements Navigation {
                 artworkResolver,
                 new ArtworkCache(),
                 history,
+                watched,
                 platform);
 
         buildFrame();
@@ -187,7 +190,7 @@ public final class MediaCenterShell implements Navigation {
         header.setAlignment(Pos.CENTER_LEFT);
 
         Label hints = new Label("Arrows  Move        Enter  Select        Esc / Backspace  Back        "
-                + "Home  Home screen        F5  Refresh");
+                + "Home  Home screen        F5  Refresh        W  Watched");
         hints.getStyleClass().add("hint-bar");
         HBox footer = new HBox(hints);
         footer.getStyleClass().add("footer");

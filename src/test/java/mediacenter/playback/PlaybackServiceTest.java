@@ -18,6 +18,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import mediacenter.history.HistoryStore;
 import mediacenter.history.PlaybackHistory;
+import mediacenter.history.WatchedService;
+import mediacenter.history.WatchedStore;
+import mediacenter.history.WatchedVideos;
 
 class PlaybackServiceTest {
 
@@ -25,6 +28,11 @@ class PlaybackServiceTest {
     private static final Executor DIRECT = Runnable::run;
 
     private final Path media = Path.of("\\\\synology\\video\\Movies\\Dune.mkv");
+    private final WatchedVideos watched = new WatchedVideos();
+
+    private WatchedService watchedService(Path temp) {
+        return new WatchedService(watched, new WatchedStore(temp), DIRECT);
+    }
 
     @Test
     @DisplayName("a completed playback lands in the history and is persisted")
@@ -32,7 +40,8 @@ class PlaybackServiceTest {
         PlaybackHistory history = new PlaybackHistory();
         HistoryStore store = new HistoryStore(temp);
         FakePlayerLauncher launcher = FakePlayerLauncher.succeeding();
-        PlaybackService service = new PlaybackService(launcher, history, store, DIRECT, DIRECT);
+        PlaybackService service =
+                new PlaybackService(launcher, history, store, watchedService(temp), DIRECT, DIRECT);
         List<PlaybackResult> results = new ArrayList<>();
 
         service.play(media, "Dune", results::add);
@@ -42,6 +51,9 @@ class PlaybackServiceTest {
         assertInstanceOf(PlaybackResult.Completed.class, results.getFirst());
         assertEquals("Dune", history.entries().getFirst().displayTitle());
         assertTrue(Files.isRegularFile(temp.resolve("history.json")));
+        // Being taken by the player is what "watched" means here.
+        assertTrue(watched.isWatched(media));
+        assertTrue(Files.isRegularFile(temp.resolve("watched.json")));
         assertFalse(service.isPlaying());
     }
 
@@ -51,7 +63,7 @@ class PlaybackServiceTest {
         PlaybackHistory history = new PlaybackHistory();
         PlaybackService service = new PlaybackService(
                 FakePlayerLauncher.failingWith("VLC could not be started."),
-                history, new HistoryStore(temp), DIRECT, DIRECT);
+                history, new HistoryStore(temp), watchedService(temp), DIRECT, DIRECT);
         List<PlaybackResult> results = new ArrayList<>();
 
         service.play(media, "Dune", results::add);
@@ -61,6 +73,7 @@ class PlaybackServiceTest {
         assertEquals("VLC could not be started.",
                 ((PlaybackResult.Failed) result).userMessage());
         assertTrue(history.isEmpty());
+        assertFalse(watched.isWatched(media));
     }
 
     @Test
@@ -68,8 +81,8 @@ class PlaybackServiceTest {
     void passesTheQueueThroughAndRecordsOnlyTheChosenFile(@TempDir Path temp) {
         PlaybackHistory history = new PlaybackHistory();
         FakePlayerLauncher launcher = FakePlayerLauncher.succeeding();
-        PlaybackService service =
-                new PlaybackService(launcher, history, new HistoryStore(temp), DIRECT, DIRECT);
+        PlaybackService service = new PlaybackService(
+                launcher, history, new HistoryStore(temp), watchedService(temp), DIRECT, DIRECT);
         Path episodeTwo = Path.of("\\\\synology\\video\\TV\\e2.mkv");
         Path episodeThree = Path.of("\\\\synology\\video\\TV\\e3.mkv");
 
@@ -90,7 +103,7 @@ class PlaybackServiceTest {
         PlaybackService service = new PlaybackService(
                 FakePlayerLauncher.behavingAs(file ->
                         new PlaybackResult.Completed(137, java.time.Duration.ofMinutes(3))),
-                history, new HistoryStore(temp), DIRECT, DIRECT);
+                history, new HistoryStore(temp), watchedService(temp), DIRECT, DIRECT);
         List<PlaybackResult> results = new ArrayList<>();
 
         service.play(media, "Dune", results::add);
@@ -105,7 +118,7 @@ class PlaybackServiceTest {
                 FakePlayerLauncher.behavingAs(file -> {
                     throw new IllegalStateException("boom");
                 }),
-                new PlaybackHistory(), new HistoryStore(temp), DIRECT, DIRECT);
+                new PlaybackHistory(), new HistoryStore(temp), watchedService(temp), DIRECT, DIRECT);
         List<PlaybackResult> results = new ArrayList<>();
 
         service.play(media, "Dune", results::add);
@@ -130,7 +143,7 @@ class PlaybackServiceTest {
                     holder[0].play(Path.of("/media/other.mkv"), "Other", results::add);
                     return new PlaybackResult.Completed(0, java.time.Duration.ofMinutes(1));
                 }),
-                history, store, DIRECT, DIRECT);
+                history, store, watchedService(temp), DIRECT, DIRECT);
 
         holder[0].play(media, "Dune", results::add);
 

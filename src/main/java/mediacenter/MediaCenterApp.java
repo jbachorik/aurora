@@ -24,6 +24,9 @@ import mediacenter.config.ApplicationSettings;
 import mediacenter.config.SettingsStore;
 import mediacenter.history.HistoryStore;
 import mediacenter.history.PlaybackHistory;
+import mediacenter.history.WatchedService;
+import mediacenter.history.WatchedStore;
+import mediacenter.history.WatchedVideos;
 import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
@@ -80,9 +83,11 @@ public final class MediaCenterApp extends Application {
 
         SettingsStore settingsStore = new SettingsStore(dataDirectory);
         HistoryStore historyStore = new HistoryStore(dataDirectory);
+        WatchedStore watchedStore = new WatchedStore(dataDirectory);
 
         ApplicationSettings settings = settingsStore.load();
         PlaybackHistory history = historyStore.load();
+        WatchedVideos watchedVideos = watchedStore.load();
         // Escape hatch for the target machine: the media center owns the whole
         // screen by default, and there is no console to read on a TV if that
         // ever misbehaves.
@@ -97,14 +102,16 @@ public final class MediaCenterApp extends Application {
                 () -> settingsRef.get().vlcPath(),
                 () -> settingsRef.get().playerBufferSeconds(),
                 platform.playerOptions());
+        WatchedService watched = new WatchedService(watchedVideos, watchedStore, backgroundExecutor);
         PlaybackService playbackService = new PlaybackService(
-                playerLauncher, history, historyStore, backgroundExecutor, Platform::runLater);
+                playerLauncher, history, historyStore, watched, backgroundExecutor, Platform::runLater);
 
         MediaCenterShell shell = new MediaCenterShell(
                 stage,
                 settingsRef,
                 settingsStore,
                 history,
+                watched,
                 playbackService,
                 platform,
                 new MediaScanner(),
