@@ -16,14 +16,21 @@ class KioskBrowserTest {
     private static final Path PROFILE = Path.of("/data/browser-profile");
     private static final Path EXTENSION = Path.of("/data/browser-extension");
 
+    // Programs are named as paths and asserted through Path.toString(): Windows
+    // prints these same paths back with backslashes, and a literal here would
+    // pass on a POSIX machine and fail on the runner that matters most.
+    private static final Path CHROME = Path.of("/usr/bin/google-chrome");
+    private static final Path FIREFOX = Path.of("/usr/bin/firefox");
+    private static final Path EPIPHANY = Path.of("/usr/bin/epiphany");
+
     @Test
     @DisplayName("a Chromium gets app mode, its own profile, fullscreen and the scale hint")
     void buildsTheChromiumCommand() {
         List<String> command = KioskBrowser.commandFor(
-                Path.of("/usr/bin/google-chrome"), "https://cinema.mosfilm.ru", 150, PROFILE, Optional.of(EXTENSION));
+                CHROME, "https://cinema.mosfilm.ru", 150, PROFILE, Optional.of(EXTENSION));
 
         assertEquals(List.of(
-                "/usr/bin/google-chrome",
+                CHROME.toString(),
                 "--user-data-dir=" + PROFILE,
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -56,16 +63,16 @@ class KioskBrowserTest {
     @DisplayName("Firefox knows kiosk mode and nothing else offered here")
     void firefoxGetsKioskMode() {
         assertEquals(
-                List.of("/usr/bin/firefox", "--kiosk", "https://example.org"),
-                KioskBrowser.commandFor(Path.of("/usr/bin/firefox"), "https://example.org", 150, PROFILE, Optional.of(EXTENSION)));
+                List.of(FIREFOX.toString(), "--kiosk", "https://example.org"),
+                KioskBrowser.commandFor(FIREFOX, "https://example.org", 150, PROFILE, Optional.of(EXTENSION)));
     }
 
     @Test
     @DisplayName("an unknown browser gets the address alone")
     void unknownBrowsersGetTheAddressAlone() {
         assertEquals(
-                List.of("/usr/bin/epiphany", "https://example.org"),
-                KioskBrowser.commandFor(Path.of("/usr/bin/epiphany"), "https://example.org", 150, PROFILE, Optional.of(EXTENSION)));
+                List.of(EPIPHANY.toString(), "https://example.org"),
+                KioskBrowser.commandFor(EPIPHANY, "https://example.org", 150, PROFILE, Optional.of(EXTENSION)));
     }
 
     @Test
