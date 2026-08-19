@@ -36,6 +36,7 @@ import javafx.util.Duration;
 
 import mediacenter.config.ApplicationSettings;
 import mediacenter.config.SettingsStore;
+import mediacenter.config.Website;
 import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
@@ -43,7 +44,9 @@ import mediacenter.media.MediaScanner;
 import mediacenter.playback.PlaybackResult;
 import mediacenter.playback.PlaybackService;
 import mediacenter.playback.vlc.VlcEngine;
+import mediacenter.platform.KioskBrowser;
 import mediacenter.platform.PlatformServices;
+import mediacenter.platform.QuitExtension;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
 import mediacenter.ui.components.ArtworkCache;
@@ -307,6 +310,47 @@ public final class MediaCenterShell implements Navigation {
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "Could not open the browser", e);
                 FxTasks.onFx(() -> showError("The configured browser could not be started."));
+            }
+        });
+    }
+
+    @Override
+    public void openWebsite(Website website) {
+        Optional<Path> browser = settings().browserPath();
+        if (browser.isEmpty()) {
+            // Without a program of our own there is no process to watch and no
+            // way back; better one plain sentence than a tile that half-works.
+            showError("Choose a browser in Settings first — website tiles open with it.");
+            return;
+        }
+        LOG.log(Level.INFO, () -> "Opening website " + website.url());
+        hideForPlayback();
+        backgroundExecutor.execute(() -> {
+            try {
+                Path dataDirectory = platform.applicationDataDirectory();
+                List<String> command = KioskBrowser.commandFor(
+                        browser.get(),
+                        website.url(),
+                        settings().browserScalePercent(),
+                        dataDirectory.resolve("browser-profile"),
+                        QuitExtension.ensureInstalled(dataDirectory));
+                LOG.log(Level.INFO, () -> "Starting browser: " + String.join(" ", command));
+                Process process = new ProcessBuilder(command)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start();
+                int exitCode = process.waitFor();
+                LOG.log(Level.INFO, () -> "Browser closed with exit code " + exitCode + ", returning");
+                FxTasks.onFx(this::restoreAfterPlayback);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                FxTasks.onFx(this::restoreAfterPlayback);
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "The browser could not be started", e);
+                FxTasks.onFx(() -> {
+                    restoreAfterPlayback();
+                    showError("The browser could not be started. Check its path in Settings.");
+                });
             }
         });
     }

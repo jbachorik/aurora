@@ -12,6 +12,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import mediacenter.config.ApplicationSettings;
+import mediacenter.config.Website;
 import mediacenter.history.PlaybackHistoryEntry;
 import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaItem;
@@ -34,8 +35,13 @@ public final class HomeView implements View {
     private final UiContext context;
     private final VBox root = new VBox();
     private final TileGrid actions = new TileGrid();
+    private final TileGrid websites = new TileGrid();
     private final TileGrid recent = new TileGrid();
+    private final Label websitesHeading = new Label("Websites");
     private final Label recentHeading = new Label("Recently Played");
+
+    /** What the website tiles stand for, in the order the grid shows them. */
+    private List<Website> websiteEntries = List.of();
 
     public HomeView(UiContext context) {
         this.context = context;
@@ -53,12 +59,29 @@ public final class HomeView implements View {
         // and the row has to sit in the middle of it rather than against one edge.
         actions.setTileAlignment(Pos.CENTER);
         // The row is a fixed one tile tall, so it must stay one tile tall: anything
-        // that wraps is both invisible and, worse, keeps Down from reaching Recents.
+        // that wraps is both invisible and, worse, keeps Down from reaching the row
+        // beneath.
         actions.setFitTilesToSingleRow(true);
         actions.setOnActivate(this::activate);
         actions.setOnNavigateBelow(() -> {
+            if (!websites.isEmpty()) {
+                websites.focusSelection();
+            } else if (!recent.isEmpty()) {
+                recent.focusSelection();
+            }
+        });
+
+        websitesHeading.getStyleClass().add("section-heading");
+        websitesHeading.setMaxWidth(Double.MAX_VALUE);
+        websites.setPrefHeight(ActionTile.HEIGHT + 56);
+        websites.setMinHeight(ActionTile.HEIGHT + 56);
+        websites.setTileAlignment(Pos.CENTER);
+        websites.setFitTilesToSingleRow(true);
+        websites.setOnActivate(this::activateWebsite);
+        websites.setOnNavigateAbove(actions::focusSelection);
+        websites.setOnNavigateBelow(() -> {
             if (!recent.isEmpty()) {
-                recent.select(recent.selectedIndex() < 0 ? 0 : recent.selectedIndex());
+                recent.focusSelection();
             }
         });
 
@@ -71,13 +94,21 @@ public final class HomeView implements View {
         // instead of pushing the hint bar off the screen.
         recent.setPrefHeight(MediaTile.Shape.POSTER.totalHeight() + 56);
         recent.setOnActivate(this::activate);
-        recent.setOnNavigateAbove(() -> actions.select(Math.max(actions.selectedIndex(), 0)));
+        recent.setOnNavigateAbove(() -> {
+            if (!websites.isEmpty()) {
+                websites.focusSelection();
+            } else {
+                actions.focusSelection();
+            }
+        });
 
         VBox.setVgrow(actions, Priority.NEVER);
+        VBox.setVgrow(websites, Priority.NEVER);
         VBox.setVgrow(recent, Priority.ALWAYS);
         root.getChildren().add(actions);
 
         rebuildActions();
+        rebuildWebsites();
         refreshRecent();
     }
 
@@ -99,6 +130,7 @@ public final class HomeView implements View {
     @Override
     public void onShown() {
         rebuildActions();
+        rebuildWebsites();
         refreshRecent();
         focusSelection();
     }
@@ -106,7 +138,45 @@ public final class HomeView implements View {
     @Override
     public void refresh() {
         rebuildActions();
+        rebuildWebsites();
         refreshRecent();
+    }
+
+    /**
+     * Keeps the sections in their one order — actions, websites, recents —
+     * showing whichever of them have anything to show right now.
+     */
+    private void relayout() {
+        List<Node> children = new ArrayList<>();
+        children.add(actions);
+        if (!websites.isEmpty()) {
+            children.add(websitesHeading);
+            children.add(websites);
+        }
+        if (!recent.isEmpty()) {
+            children.add(recentHeading);
+            children.add(recent);
+        }
+        root.getChildren().setAll(children);
+    }
+
+    // -- websites ------------------------------------------------------------
+
+    private void rebuildWebsites() {
+        websiteEntries = context.settings().get().websites();
+        List<Tile> tiles = new ArrayList<>(websiteEntries.size());
+        for (Website website : websiteEntries) {
+            tiles.add(new ActionTile("◉", website.name(), website.host()));
+        }
+        websites.setTiles(tiles);
+        relayout();
+    }
+
+    private void activateWebsite(Tile tile) {
+        int index = websites.selectedIndex();
+        if (index >= 0 && index < websiteEntries.size()) {
+            context.navigation().openWebsite(websiteEntries.get(index));
+        }
     }
 
     // -- actions ------------------------------------------------------------
@@ -193,12 +263,9 @@ public final class HomeView implements View {
     private void refreshRecent() {
         List<PlaybackHistoryEntry> entries = context.history().mostRecent(RECENT_LIMIT);
         if (entries.isEmpty()) {
-            root.getChildren().removeAll(recentHeading, recent);
             recent.clear();
+            relayout();
             return;
-        }
-        if (!root.getChildren().contains(recent)) {
-            root.getChildren().addAll(recentHeading, recent);
         }
         FxTasks.run(
                 context.backgroundExecutor(),
@@ -214,6 +281,7 @@ public final class HomeView implements View {
                     context.settings().get().theme()));
         }
         recent.setTiles(tiles);
+        relayout();
     }
 
     private List<MediaItem> toMediaItems(List<PlaybackHistoryEntry> entries) {

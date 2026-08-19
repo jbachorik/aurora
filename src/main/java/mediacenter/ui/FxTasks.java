@@ -35,7 +35,7 @@ public final class FxTasks {
             Consumer<T> onSuccess,
             Consumer<Exception> onFailure) {
 
-        executor.execute(() -> {
+        Runnable task = () -> {
             try {
                 T value = work.run();
                 onFx(() -> onSuccess.accept(value));
@@ -46,7 +46,14 @@ public final class FxTasks {
                 LOG.log(Level.FINE, "Background task failed", e);
                 onFx(() -> onFailure.accept(e));
             }
-        });
+        };
+        try {
+            executor.execute(task);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // The executor only refuses while the application is shutting down,
+            // and work refused at shutdown has nobody left to report to.
+            LOG.log(Level.FINE, "Background task refused during shutdown", e);
+        }
     }
 
     /** Runs an action on the JavaFX thread, immediately when already on it. */

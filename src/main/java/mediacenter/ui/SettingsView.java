@@ -36,6 +36,7 @@ import javafx.stage.Window;
 
 import mediacenter.config.ApplicationSettings;
 import mediacenter.config.Theme;
+import mediacenter.config.Website;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaRootType;
 import mediacenter.platform.PlatformServices;
@@ -69,6 +70,9 @@ public final class SettingsView implements View {
     private final List<ToggleButton> bufferToggles = new ArrayList<>();
     private final Label embeddedPlayerValue = new Label();
     private final ToggleGroup playerGroup = new ToggleGroup();
+    private final Label browserScaleValue = new Label();
+    private final List<ToggleButton> scaleToggles = new ArrayList<>();
+    private final ListView<Website> websitesList = new ListView<>();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
 
@@ -146,11 +150,13 @@ public final class SettingsView implements View {
         Node slideshowRow = slideshowRow();
         Node bufferRow = bufferRow();
         Node embeddedPlayerRow = embeddedPlayerRow();
+        Node browserScaleRow = browserScaleRow();
         Node rootsSection = mediaRootsSection();
+        Node websitesSection = websitesSection();
 
         root.getChildren().addAll(
                 vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow,
-                embeddedPlayerRow, rootsSection);
+                embeddedPlayerRow, browserScaleRow, rootsSection, websitesSection);
 
         installArrowNavigation();
         readSettings();
@@ -360,6 +366,88 @@ public final class SettingsView implements View {
         VBox card = new VBox(line);
         card.getStyleClass().add("setting-row");
         return card;
+    }
+
+    /**
+     * How much larger website tiles ask the browser to draw everything — a
+     * device-scale hint, so a desktop page reads from a sofa. 100% leaves the
+     * browser to its own judgement.
+     */
+    private Node browserScaleRow() {
+        Label name = new Label("Browser scale");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        browserScaleValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(browserScaleValue, Priority.ALWAYS);
+        browserScaleValue.setMaxWidth(Double.MAX_VALUE);
+
+        ToggleGroup group = new ToggleGroup();
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        for (int percent : List.of(100, 150, 200)) {
+            ToggleButton button = new ToggleButton(percent + "%");
+            button.setUserData(percent);
+            button.setToggleGroup(group);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withBrowserScalePercent(percent));
+            });
+            choices.getChildren().add(button);
+            scaleToggles.add(button);
+        }
+        navigationRows.add(List.copyOf(scaleToggles));
+
+        HBox line = new HBox(16, name, browserScaleValue, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
+    }
+
+    /**
+     * The website tiles shown on the home screen. Each opens full screen in
+     * the configured browser and the media center returns when it closes —
+     * playback, with a page instead of a film.
+     */
+    private Node websitesSection() {
+        Label heading = new Label("Websites");
+        heading.getStyleClass().add("section-heading");
+
+        websitesList.getStyleClass().add("roots-list");
+        websitesList.setCellFactory(list -> new ListCell<>() {
+            @Override
+            protected void updateItem(Website item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.name() + "\n" + item.url());
+            }
+        });
+        websitesList.setPrefHeight(190);
+        navigationRows.add(List.of(websitesList));
+
+        Button add = new Button("Add");
+        add.setOnAction(event -> addWebsite());
+        Button edit = new Button("Edit");
+        edit.setOnAction(event -> editSelectedWebsite());
+        Button remove = new Button("Remove");
+        remove.setOnAction(event -> removeSelectedWebsite());
+
+        HBox buttons = new HBox(12);
+        for (Button button : List.of(add, edit, remove)) {
+            button.setMinWidth(BUTTON_MIN_WIDTH);
+            buttons.getChildren().add(button);
+        }
+        navigationRows.add(List.copyOf(buttons.getChildren()));
+
+        Label hint = new Label("Tiles on the home screen that open a site full screen "
+                + "in the browser configured above — for example Mosfilm's free official "
+                + "catalogue at cinema.mosfilm.ru.");
+        hint.getStyleClass().add("dialog-hint");
+        hint.setWrapText(true);
+
+        return new VBox(12, heading, websitesList, buttons, hint);
     }
 
     /**
@@ -670,6 +758,23 @@ public final class SettingsView implements View {
             toggle.setSelected(configuredBuffer.equals(toggle.getUserData()));
         }
 
+        Integer configuredScale = settings.browserScalePercent();
+        browserScaleValue.setText(configuredScale + "%");
+        for (ToggleButton toggle : scaleToggles) {
+            toggle.setSelected(configuredScale.equals(toggle.getUserData()));
+        }
+
+        Website selectedWebsite = websitesList.getSelectionModel().getSelectedItem();
+        websitesList.setItems(FXCollections.observableArrayList(settings.websites()));
+        if (selectedWebsite != null) {
+            settings.websites().stream()
+                    .filter(site -> site.id().equals(selectedWebsite.id()))
+                    .findFirst()
+                    .ifPresent(site -> websitesList.getSelectionModel().select(site));
+        } else if (!settings.websites().isEmpty()) {
+            websitesList.getSelectionModel().selectFirst();
+        }
+
         MediaRoot selected = rootsList.getSelectionModel().getSelectedItem();
         rootsList.setItems(FXCollections.observableArrayList(settings.mediaRoots()));
         if (selected != null) {
@@ -940,6 +1045,78 @@ public final class SettingsView implements View {
 
         // The path is what the viewer came here to set.
         javafx.application.Platform.runLater(pathField::requestFocus);
+        return dialog.showAndWait();
+    }
+
+    // -- websites ------------------------------------------------------------
+
+    private void addWebsite() {
+        editWebsite(null).ifPresent(site -> update(settings().withWebsite(site)));
+    }
+
+    private void editSelectedWebsite() {
+        Website selected = websitesList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            editWebsite(selected).ifPresent(site -> update(settings().withWebsite(site)));
+        }
+    }
+
+    private void removeSelectedWebsite() {
+        Website selected = websitesList.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            update(settings().withoutWebsite(selected.id()));
+        }
+    }
+
+    /** Add/edit dialog for a single website tile. */
+    private Optional<Website> editWebsite(Website existing) {
+        Dialog<Website> dialog = new Dialog<>();
+        dialog.initOwner(window());
+        dialog.setTitle(existing == null ? "Add website" : "Edit website");
+        dialog.setHeaderText(existing == null ? "Add a website tile" : "Edit this website tile");
+        dialog.getDialogPane().getStyleClass().add("media-center-dialog");
+        dialog.getDialogPane().getStylesheets().addAll(root.getScene() == null
+                ? List.of()
+                : root.getScene().getStylesheets());
+
+        TextField nameField = new TextField(existing == null ? "" : existing.name());
+        nameField.setPromptText("Mosfilm");
+        TextField urlField = new TextField(existing == null ? "" : existing.url());
+        urlField.setPromptText("cinema.mosfilm.ru");
+        urlField.setPrefColumnCount(30);
+
+        Label hint = new Label("https:// is assumed when the address names no scheme.");
+        hint.getStyleClass().add("dialog-hint");
+        hint.setWrapText(true);
+
+        GridPane form = new GridPane();
+        form.setHgap(12);
+        form.setVgap(12);
+        form.setPadding(new Insets(16));
+        form.addRow(0, new Label("Name"), nameField);
+        form.addRow(1, new Label("Address"), urlField);
+        form.add(hint, 1, 2);
+
+        dialog.getDialogPane().setContent(form);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            String url = urlField.getText() == null ? "" : urlField.getText().trim();
+            if (url.isEmpty()) {
+                return null;
+            }
+            String name = nameField.getText() == null || nameField.getText().isBlank()
+                    ? url
+                    : nameField.getText().trim();
+            return existing == null
+                    ? Website.create(name, url)
+                    : existing.withName(name).withUrl(url);
+        });
+
+        // The address is what the viewer came here to set.
+        javafx.application.Platform.runLater(urlField::requestFocus);
         return dialog.showAndWait();
     }
 
