@@ -56,19 +56,23 @@ class VlcPlayerLauncherTest {
     @Test
     @DisplayName("a queue becomes VLC's playlist: the files follow the first, in order")
     void appendsTheQueueAfterTheChosenFile() {
+        // Rendered by the platform, not spelled out: Windows prints these same
+        // paths back with backslashes.
+        Path vlc = Path.of("/usr/bin/vlc");
+        Path first = Path.of("/tv/01 - Pilot.mkv");
+        Path second = Path.of("/tv/02 - Second.mkv");
+        Path third = Path.of("/tv/03 - Third.mkv");
+
         List<String> command = VlcPlayerLauncher.commandFor(
-                Path.of("/usr/bin/vlc"),
-                Path.of("/tv/01 - Pilot.mkv"),
-                List.of(Path.of("/tv/02 - Second.mkv"), Path.of("/tv/03 - Third.mkv")),
-                0, List.of());
+                vlc, first, List.of(second, third), 0, List.of());
 
         assertEquals(List.of(
-                "/usr/bin/vlc",
+                vlc.toString(),
                 "--fullscreen",
                 "--play-and-exit",
-                "/tv/01 - Pilot.mkv",
-                "/tv/02 - Second.mkv",
-                "/tv/03 - Third.mkv"), command);
+                first.toString(),
+                second.toString(),
+                third.toString()), command);
     }
 
     @Test
