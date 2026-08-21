@@ -22,6 +22,28 @@ class SeriesFoldersTest {
     }
 
     @Test
+    @DisplayName("season and episode may be parted by a dot, a dash or an underscore")
+    void recognisesSeparatedEpisodeTags() {
+        // What a DVD ripper writes, and what this folder is actually called on
+        // the machine that reported the run not carrying on by itself.
+        assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
+                "My Name Is Earl - S01.E01 - Pilot [DVDRip-XviD].avi",
+                "My Name Is Earl - S01.E02 - Quitter [DVDRip-XviD].avi")));
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Show.S01_E01.Pilot.mkv"));
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Show - s01-e01 - Pilot.mkv"));
+    }
+
+    @Test
+    @DisplayName("a parted tag still has to be a tag, not two unrelated numbers")
+    void doesNotInventEpisodeTags() {
+        // The separator is one character, and what follows it has to be an
+        // episode number — otherwise every "...s1. Episode two..." would count.
+        assertFalse(SeriesFolders.carriesAnOrderingMark("Best of the 90s. Extras.mkv"));
+        assertFalse(SeriesFolders.carriesAnOrderingMark("Series 1 - Episode 1.mkv"));
+        assertFalse(SeriesFolders.carriesAnOrderingMark("movie.1280x720.mkv"));
+    }
+
+    @Test
     @DisplayName("an ordering prefix on every file reads as one run")
     void recognisesOrderingPrefixes() {
         assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
