@@ -81,6 +81,25 @@ class DisplayNamesTest {
     }
 
     @Test
+    @DisplayName("a bracketed release tag is dropped, wherever it sits")
+    void dropsBracketedTags() {
+        assertEquals("My Name Is Earl - S01.E01 - Pilot",
+                DisplayNames.forFileName("My Name Is Earl - S01.E01 - Pilot [DVDRip-XviD].avi"));
+        assertEquals("Arrival 2016",
+                DisplayNames.forFileName("Arrival 2016 [1080p][x264][EN].mkv"));
+        assertEquals("Some Show 01",
+                DisplayNames.forFileName("[FakeSubs] Some Show 01 [1080p].mkv"));
+        assertEquals("Season One", DisplayNames.forDirectory(Path.of("/media/TV/Season One [PAL]")));
+    }
+
+    @Test
+    @DisplayName("brackets are left where dropping them would leave nothing behind")
+    void keepsANameThatIsEntirelyBracketed() {
+        // [REC] is a real film, and an empty caption says less than a bracket does.
+        assertEquals("[REC]", DisplayNames.forFileName("[REC].mkv"));
+    }
+
+    @Test
     void picksTheRuleFromTheExtension() {
         assertEquals("Alien 1979", DisplayNames.forPath(Path.of("/media/Alien.1979.mkv")));
         assertEquals("Alien (1979)", DisplayNames.forPath(Path.of("/media/Alien (1979)")));

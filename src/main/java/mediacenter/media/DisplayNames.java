@@ -7,9 +7,9 @@ import java.util.regex.Pattern;
  * Turning file and directory names into something readable from the sofa.
  *
  * <p>Deliberately conservative: extensions are removed, separators become
- * spaces, an "01 - " ordering prefix is dropped and whitespace is tidied.
- * Release tags, years and quality markers are left alone — guessing wrong is
- * worse than showing the original name.
+ * spaces, an "01 - " ordering prefix is dropped, anything in square brackets
+ * goes, and whitespace is tidied. Years and unbracketed quality markers are
+ * left alone — guessing wrong is worse than showing the original name.
  */
 public final class DisplayNames {
 
@@ -49,8 +49,24 @@ public final class DisplayNames {
      */
     private static final Pattern ORDERING_PREFIX = Pattern.compile("^\\d{1,2}\\s*[-.)\\]]\\s*");
 
+    /**
+     * Anything in square brackets: "[DVDRip-XviD]", "[1080p]", "[EN]", and the
+     * "[Group]" a fansub writes at the front. Square brackets in a file name are
+     * all but never part of what the thing is called — they are what the tool
+     * that produced the file wrote about itself — and on a tile they crowd out
+     * the half of the title that matters.
+     *
+     * <p>Round brackets are deliberately not touched: those carry the year, and
+     * "Blade Runner 2049 (2017)" wants it.
+     */
+    private static final Pattern BRACKETED_TAG = Pattern.compile("\\[[^\\[\\]]*\\]");
+
     private static String clean(String rawName) {
         String name = rawName.replace('_', ' ');
+        // Before the ordering prefix is looked for, so a tag in front of the
+        // number does not hide it, and before the dots are touched, so that a
+        // stripped name is judged on the separators it actually has left.
+        name = BRACKETED_TAG.matcher(name).replaceAll(" ").trim();
         // Before the dots are touched, so "01.Dead.Mans.Chest" still has its
         // separator to recognise.
         name = withoutOrderingPrefix(name);
