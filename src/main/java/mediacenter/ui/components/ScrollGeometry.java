@@ -17,7 +17,41 @@ package mediacenter.ui.components;
  */
 public final class ScrollGeometry {
 
+    /**
+     * Which end of an item too tall to fit is the end worth showing.
+     *
+     * <p>Something taller than the viewport cannot be shown whole, so one end
+     * has to be chosen, and the right end is wherever the words are. A settings
+     * row is labelled along its top; a tile wears its caption along its bottom,
+     * and parking such a tile at its top shows a coloured rectangle and hides
+     * the only thing that says what it is.
+     */
+    public enum TooTall {
+
+        /** The top, where a settings row carries the label naming the control. */
+        SHOW_TOP,
+
+        /** The bottom, where a tile carries the caption naming what it is. */
+        SHOW_BOTTOM
+    }
+
     private ScrollGeometry() {
+    }
+
+    /**
+     * The {@code vvalue} that brings {@code itemTop..itemBottom} into view,
+     * showing the top of anything too tall to fit.
+     *
+     * @see #vvalueFor(double, double, double, double, double, double, TooTall)
+     */
+    public static double vvalueFor(double currentVvalue,
+                                   double contentHeight,
+                                   double viewportHeight,
+                                   double itemTop,
+                                   double itemBottom,
+                                   double margin) {
+        return vvalueFor(currentVvalue, contentHeight, viewportHeight,
+                itemTop, itemBottom, margin, TooTall.SHOW_TOP);
     }
 
     /**
@@ -29,6 +63,7 @@ public final class ScrollGeometry {
      *
      * @param currentVvalue where the pane is parked now, so that a control which
      *                      is already visible does not cause a jump
+     * @param tooTall       which end to show when the item cannot fit at all
      * @return {@code 0} when the content fits in the viewport and there is nothing
      *         to scroll
      */
@@ -37,21 +72,25 @@ public final class ScrollGeometry {
                                    double viewportHeight,
                                    double itemTop,
                                    double itemBottom,
-                                   double margin) {
+                                   double margin,
+                                   TooTall tooTall) {
         double scrollable = contentHeight - viewportHeight;
         if (scrollable <= 0) {
             return 0;
         }
         double visibleTop = currentVvalue * scrollable;
+        double above = itemTop - margin;
+        double below = itemBottom + margin - viewportHeight;
         double target = visibleTop;
-        if (itemTop - margin < visibleTop) {
-            target = itemTop - margin;
-        } else if (itemBottom + margin > visibleTop + viewportHeight) {
-            target = itemBottom + margin - viewportHeight;
-            // A control taller than the viewport cannot be shown whole. Aligning its
-            // bottom would scroll its top away, and the top is where the label
-            // saying what the control is lives, so show the top instead.
-            target = Math.min(target, itemTop - margin);
+        if (below > above) {
+            // Taller than the viewport, margins and all: both ends cannot be
+            // had, so the caller's answer decides, and it decides the same way
+            // wherever the pane happens to be parked.
+            target = tooTall == TooTall.SHOW_TOP ? above : below;
+        } else if (above < visibleTop) {
+            target = above;
+        } else if (below > visibleTop) {
+            target = below;
         }
         return Math.clamp(target / scrollable, 0, 1);
     }

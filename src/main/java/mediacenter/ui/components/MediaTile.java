@@ -18,7 +18,7 @@ import mediacenter.config.Theme;
 import mediacenter.media.MediaItem;
 
 /**
- * A poster tile for one video file, as the home screen's recent row shows it.
+ * A tile for one video file, as the home screen's recent row shows it.
  *
  * <p>The artwork sits on top of a generated placeholder, so a missing, still
  * loading or unreadable image simply leaves a readable coloured card showing.
@@ -26,10 +26,24 @@ import mediacenter.media.MediaItem;
  */
 public final class MediaTile extends Tile {
 
-    /** Tile proportions. Folder browsing is a list now, so only posters remain. */
+    /**
+     * Tile proportions. Folder browsing is a list, so the recent row is the
+     * only grid of these left, and {@link #WIDE} is what it asks for —
+     * {@link #POSTER} is the shape a row with real posters in it would want,
+     * and is kept for the day one has them.
+     */
     public enum Shape {
 
-        POSTER(210, 315);
+        /** Cinema proportions, for a row whose items actually have posters. */
+        POSTER(210, 315),
+
+        /**
+         * A landscape card. Films have posters; loose video files mostly have
+         * nothing, and a tall poster of nothing is a tall coloured rectangle —
+         * so the recent row spends its pixels on width, where the caption can
+         * use them, instead of on height it has no picture to fill.
+         */
+        WIDE(300, 180);
 
         private final double width;
         private final double artworkHeight;
@@ -58,6 +72,13 @@ public final class MediaTile extends Tile {
 
     /** Matches the tile radius less its border, so the two curves sit concentric. */
     private static final double ARTWORK_CORNER = 11;
+
+    /**
+     * The least picture a shrunk tile keeps. Past this the card stops reading as
+     * a card at all, and a row with no room even for this is better scrolled
+     * than flattened.
+     */
+    private static final double MIN_ARTWORK_HEIGHT = 80;
 
     private final MediaItem item;
     private final Theme theme;
@@ -95,6 +116,29 @@ public final class MediaTile extends Tile {
     }
 
     /**
+     * Gives the picture up, a little or a lot, so that the caption survives.
+     *
+     * <p>The home screen has to seat a row of actions, a heading and this row
+     * inside whatever the screen is, and on a small one there is not enough for
+     * all three. What used to happen then was that the row overflowed and the
+     * captions fell off the bottom of the page — where, being taller than the
+     * row that held them, no amount of scrolling could reach them. So the tile
+     * takes the shortfall out of its picture instead, down to
+     * {@link #MIN_ARTWORK_HEIGHT}, and the name stays on screen.
+     */
+    @Override
+    public void resizeToHeight(double height) {
+        double artwork = Math.clamp(height - CAPTION_HEIGHT, MIN_ARTWORK_HEIGHT, shape.artworkHeight());
+        double total = artwork + CAPTION_HEIGHT;
+        setPrefSize(shape.width(), total);
+        setMinSize(shape.width(), total);
+        setMaxSize(shape.width(), total);
+        artworkArea.setPrefHeight(artwork);
+        artworkArea.setMinHeight(artwork);
+        artworkArea.setMaxHeight(artwork);
+    }
+
+    /**
      * The artwork area takes its width from the tile rather than naming it: the
      * tile's border insets the content box, so anything pinned to the full tile
      * width renders out over the rounded edge.
@@ -128,7 +172,9 @@ public final class MediaTile extends Tile {
         Image image = artworkCache.load(artworkPath, shape.width(), shape.artworkHeight());
         ImageView view = new ImageView(image);
         view.fitWidthProperty().bind(artworkArea.widthProperty());
-        view.setFitHeight(shape.artworkHeight());
+        // Bound rather than set: a short row shrinks the area after this, and
+        // artwork that kept its full height would hang out below the caption.
+        view.fitHeightProperty().bind(artworkArea.heightProperty());
         view.setPreserveRatio(true);
         view.setSmooth(true);
         artworkArea.getChildren().add(view);

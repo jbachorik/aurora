@@ -44,6 +44,7 @@ public final class TileGrid extends ScrollPane {
     private Runnable onNavigateBelow = () -> { };
     private int selectedIndex = -1;
     private boolean fitTilesToSingleRow;
+    private boolean fitTilesToRowHeight;
     private final ActivationGate activationGate = new ActivationGate();
 
     public TileGrid() {
@@ -102,8 +103,31 @@ public final class TileGrid extends ScrollPane {
         fitTiles();
     }
 
+    /**
+     * Lets a one-row grid shorten its tiles to the height it was actually given.
+     *
+     * <p>For a row whose tiles carry their caption along the bottom. Where the
+     * page cannot spare a tile's full height the caption is what falls off the
+     * end, and a tile taller than the row that holds it cannot be scrolled to
+     * either — so the tiles give up height instead, as far as they are willing
+     * to. Tiles that will not shrink stay as they are and the row scrolls, as
+     * it always did.
+     */
+    public void setFitTilesToRowHeight(boolean fit) {
+        this.fitTilesToRowHeight = fit;
+        fitTiles();
+    }
+
     private void fitTiles() {
-        if (!fitTilesToSingleRow || tiles.isEmpty()) {
+        if (tiles.isEmpty()) {
+            return;
+        }
+        fitTilesAcross();
+        fitTilesDown();
+    }
+
+    private void fitTilesAcross() {
+        if (!fitTilesToSingleRow) {
             return;
         }
         double available = availableWidth();
@@ -123,12 +147,42 @@ public final class TileGrid extends ScrollPane {
         tilePane.setPrefColumns(count);
     }
 
+    private void fitTilesDown() {
+        if (!fitTilesToRowHeight) {
+            return;
+        }
+        double available = availableHeight();
+        if (available <= 0) {
+            return;
+        }
+        for (Tile tile : tiles) {
+            tile.resizeToHeight(available);
+        }
+        // The cell has to come down with the tiles, or the row keeps the height
+        // the tallest of them used to want.
+        tilePane.setPrefTileHeight(tiles.stream().mapToDouble(Tile::getPrefHeight).max().orElse(0));
+    }
+
     /** The width inside the grid's own padding, which the tiles have to share. */
     private double availableWidth() {
         Bounds viewport = getViewportBounds();
         double width = viewport != null && viewport.getWidth() > 0 ? viewport.getWidth() : getWidth();
         Insets padding = tilePane.getPadding();
         return width - padding.getLeft() - padding.getRight();
+    }
+
+    /**
+     * The height inside the grid's own padding. Read from the viewport rather
+     * than from the pane: the pane is as tall as the tiles make it, so asking it
+     * would only ever hear back the height being questioned.
+     */
+    private double availableHeight() {
+        Bounds viewport = getViewportBounds();
+        if (viewport == null || viewport.getHeight() <= 0) {
+            return 0;
+        }
+        Insets padding = tilePane.getPadding();
+        return viewport.getHeight() - padding.getTop() - padding.getBottom();
     }
 
     // -- content ------------------------------------------------------------
@@ -399,6 +453,10 @@ public final class TileGrid extends ScrollPane {
                 getViewportBounds().getHeight(),
                 bounds.getMinY(),
                 bounds.getMaxY(),
-                SCROLL_MARGIN));
+                SCROLL_MARGIN,
+                // A tile too tall for the row it is in shows its bottom: the
+                // caption lives there, and a tile without its caption is a
+                // coloured rectangle. The top has nothing to say.
+                ScrollGeometry.TooTall.SHOW_BOTTOM));
     }
 }

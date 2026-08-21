@@ -37,8 +37,9 @@ import mediacenter.ui.components.Motion;
  * <p>Video lands in a {@link PixelBuffer} whose memory is the very buffer the
  * player writes — one copy per frame from decoder to screen, none added here.
  * The queue of episodes is this page's own: when one file ends the next
- * starts, and leaving the page (Esc or Backspace, like every page) stops
- * everything, which is what stopping means.
+ * starts, and leaving the page (Esc or Backspace, like every page, or Ctrl+Q,
+ * like VLC and the kiosk browser) stops everything, which is what stopping
+ * means.
  *
  * <p>Keys while playing: Space or Enter pauses, Left/Right jump ten seconds
  * back / thirty forward, Up/Down a minute either way, N skips to the next
@@ -67,7 +68,7 @@ public final class PlayerView implements View {
             "← →  back 10 s / ahead 30 s",
             "↑ ↓  a minute either way",
             "N  P  next / previous episode",
-            "Esc  stop and go back");
+            "Esc / Ctrl+Q  stop and go back");
 
     private static final long SMALL_BACK_MILLIS = -10_000;
     private static final long SMALL_FORWARD_MILLIS = 30_000;
@@ -252,6 +253,15 @@ public final class PlayerView implements View {
     }
 
     private void dispatchKey(KeyEvent event) {
+        if (event.getCode() == KeyCode.Q && event.isControlDown()) {
+            // Ctrl+Q closes VLC's own window and, through the bundled
+            // extension, the kiosk browser. Playing inside this page instead
+            // of in VLC must not cost the viewer that key: leaving whatever
+            // has taken the screen stays one gesture, whichever thing it is.
+            context.navigation().goBack();
+            event.consume();
+            return;
+        }
         switch (event.getCode()) {
             case SPACE, ENTER -> {
                 if (activationGate.pressed(System.nanoTime())) {

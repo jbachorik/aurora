@@ -36,6 +36,18 @@ public abstract class Tile extends VBox {
     }
 
     /**
+     * Offered the height its row can spare, which may be less than the tile
+     * would like. Tiles that cannot give any up ignore it; a media tile hands
+     * the shortfall to its picture, never to the caption that names it.
+     *
+     * <p>Only ever a shrink: a tile offered more room than it wants stays the
+     * size it wants to be.
+     */
+    public void resizeToHeight(double height) {
+        // Fixed-size tiles have nothing to do here.
+    }
+
+    /**
      * Lifts the focused tile slightly above its neighbours.
      *
      * <p>Scaling is a render-time transform, so the grid never reflows. It does

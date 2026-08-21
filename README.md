@@ -207,9 +207,11 @@ Design rules the code follows:
   the **built-in player**, which binds the same install's libVLC through
   `java.lang.foreign` (no JNA, no extra modules) and draws each decoded frame
   into the page itself — same codecs, same subtitles, but the queue, the
-  overlay and per-episode history belong to the application. Photographs are
-  the one thing played by neither: a still image is not playback, and the
-  application decodes and draws them itself.
+  overlay and per-episode history belong to the application. It answers to
+  `Ctrl+Q` as well as `Esc`, so leaving whatever has taken the screen — VLC's
+  own window, the kiosk browser, or this page — is one key everywhere.
+  Photographs are the one thing played by neither: a still image is not
+  playback, and the application decodes and draws them itself.
 * **No dependencies at runtime.** The JDK and JavaFX cover everything; the
   handful of small JSON files are read and written by `mediacenter.json`.
 * **Errors are readable from the sofa.** Stack traces go to
