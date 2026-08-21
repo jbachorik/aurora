@@ -64,4 +64,30 @@ class ScrollGeometryTest {
         // and the top is where the label that says what the control is lives.
         assertEquals(376 / SCROLLABLE, vvalue(0, 400, 1200));
     }
+
+    @Test
+    @DisplayName("a tile taller than the viewport shows its bottom, where its caption is")
+    void prefersTheBottomOfAnOversizedTile() {
+        // The same 400..1200 that cannot fit, asked for the other way round: a
+        // tile wears its name along the bottom, so the bottom is what to show.
+        assertEquals((1224 - VIEWPORT) / SCROLLABLE, ScrollGeometry.vvalueFor(
+                0, CONTENT, VIEWPORT, 400, 1200, MARGIN, ScrollGeometry.TooTall.SHOW_BOTTOM));
+    }
+
+    @Test
+    @DisplayName("a tile taller than the whole row still scrolls to its caption")
+    void reachesTheCaptionOfARowThatCannotFit() {
+        // The home screen at a low resolution: a 320px row of tiles inside a
+        // 268px viewport. The old rule parked this at 0 and the titles were
+        // never reachable at all, however far you scrolled.
+        double content = 320;
+        double viewport = 268;
+        double scrollable = content - viewport;
+
+        double parked = ScrollGeometry.vvalueFor(
+                0, content, viewport, 15, 299, MARGIN, ScrollGeometry.TooTall.SHOW_BOTTOM);
+
+        assertEquals(1, parked, "the caption end of the row has to be reachable");
+        assertEquals(scrollable, parked * scrollable);
+    }
 }

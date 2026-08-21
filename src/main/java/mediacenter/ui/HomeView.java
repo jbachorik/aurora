@@ -32,6 +32,15 @@ public final class HomeView implements View {
 
     private static final int RECENT_LIMIT = 12;
 
+    /**
+     * Landscape rather than poster-shaped. What lands here is whatever was
+     * played, and a loose video file almost never has artwork beside it — so
+     * the row was a line of tall coloured rectangles with a name too cramped
+     * to read. A wide card is shorter, which keeps the row inside the page on
+     * a small screen, and gives the caption half as much width again.
+     */
+    private static final MediaTile.Shape RECENT_SHAPE = MediaTile.Shape.WIDE;
+
     private final UiContext context;
     private final VBox root = new VBox();
     private final TileGrid actions = new TileGrid();
@@ -92,7 +101,11 @@ public final class HomeView implements View {
         recentHeading.setMaxWidth(Double.MAX_VALUE);
         // Preferred, not minimum: on a smaller window the row simply scrolls
         // instead of pushing the hint bar off the screen.
-        recent.setPrefHeight(MediaTile.Shape.POSTER.totalHeight() + 56);
+        recent.setPrefHeight(RECENT_SHAPE.totalHeight() + 56);
+        // ...and where even the preference cannot be met — a small screen, once
+        // the actions above have taken theirs — the cards shorten rather than
+        // hang off the bottom with their names on the part that fell off.
+        recent.setFitTilesToRowHeight(true);
         recent.setOnActivate(this::activate);
         recent.setOnNavigateAbove(() -> {
             if (!websites.isEmpty()) {
@@ -277,7 +290,7 @@ public final class HomeView implements View {
     private void showRecent(List<MediaItem> items) {
         List<Tile> tiles = new ArrayList<>(items.size());
         for (MediaItem item : items) {
-            tiles.add(new MediaTile(item, MediaTile.Shape.POSTER, context.artworkCache(),
+            tiles.add(new MediaTile(item, RECENT_SHAPE, context.artworkCache(),
                     context.settings().get().theme()));
         }
         recent.setTiles(tiles);
