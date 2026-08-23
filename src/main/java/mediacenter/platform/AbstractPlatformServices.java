@@ -21,10 +21,12 @@ abstract class AbstractPlatformServices implements PlatformServices {
     private static final Logger LOG = Logger.getLogger(AbstractPlatformServices.class.getName());
 
     /**
-     * Generous: the helper only has to ask the operating system, but the machine
-     * may already be on its way down when it answers.
+     * How long a sleep helper is given to fail in. Long enough for one that is
+     * going to refuse — a missing assembly, a policy that forbids suspending —
+     * to have said so, because past this point the next candidate is never
+     * tried and a refusal would go unnoticed.
      */
-    private static final long SLEEP_TIMEOUT_MS = 10_000;
+    private static final long SLEEP_SETTLE_MS = 5_000;
 
     @Override
     public void launchExternal(Path executable) throws IOException {
@@ -58,7 +60,7 @@ abstract class AbstractPlatformServices implements PlatformServices {
         for (List<String> command : candidates) {
             try {
                 LOG.log(Level.INFO, () -> "Sleeping with " + String.join(" ", command));
-                runToCompletion(command, SLEEP_TIMEOUT_MS);
+                startAndSettle(command, SLEEP_SETTLE_MS);
                 return;
             } catch (IOException failure) {
                 LOG.log(Level.FINE, failure, () -> command.getFirst() + " could not sleep the computer");
@@ -66,6 +68,48 @@ abstract class AbstractPlatformServices implements PlatformServices {
             }
         }
         throw lastFailure;
+    }
+
+    /**
+     * Starts a sleep helper and waits only long enough to see it fail.
+     *
+     * @throws IOException when it cannot be started, or exits non-zero early
+     */
+    private static void startAndSettle(List<String> command, long settleMillis) throws IOException {
+        // Nothing reads the streams — the helper may outlive this call by a whole
+        // night — so they are discarded rather than piped into a buffer that
+        // fills up while the machine is asleep.
+        Process process = new ProcessBuilder(command)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        settle(process, command.getFirst(), settleMillis);
+    }
+
+    /**
+     * A sleep helper fails fast or not at all.
+     *
+     * <p>Windows suspends inside the call and does not return until the machine
+     * wakes again, so waiting for the helper to finish would report a failure
+     * for a sleep that worked — and then, on the way back, send the machine
+     * straight down again through the next candidate. A helper still running
+     * when the settling time is up is one whose machine is going down under it.
+     *
+     * @throws IOException when it exits non-zero before the settling time is up
+     */
+    static void settle(Process process, String name, long settleMillis) throws IOException {
+        try {
+            if (!process.waitFor(settleMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for " + name, e);
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            throw new IOException(name + " failed with exit code " + exitCode);
+        }
     }
 
     /** First candidate that exists as a regular file. */

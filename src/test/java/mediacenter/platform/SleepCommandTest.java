@@ -2,6 +2,7 @@ package mediacenter.platform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,11 +28,20 @@ class SleepCommandTest {
     }
 
     @Test
-    @DisplayName("Windows suspends through powrprof, the mechanism every version has")
-    void buildsTheWindowsCommand() {
+    @DisplayName("Windows asks the suspend API properly first, and rundll32 only as a fallback")
+    void buildsTheWindowsCommands() {
+        List<List<String>> commands = new WindowsPlatformServices().sleepCommands();
+
+        assertEquals(2, commands.size(), commands.toString());
+        List<String> powershell = commands.getFirst();
+        assertEquals("powershell.exe", powershell.getFirst());
+        assertTrue(powershell.getLast().contains("SetSuspendState('Suspend'"), powershell.toString());
+        // rundll32 hands SetSuspendState a window handle where the hibernate flag
+        // belongs, so it hibernates whenever hibernation is enabled. Kept, because
+        // it is the only mechanism that needs nothing installed — but kept second.
         assertEquals(
-                List.of(List.of("rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0")),
-                new WindowsPlatformServices().sleepCommands());
+                List.of("rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"),
+                commands.getLast());
     }
 
     @Test
@@ -59,6 +69,85 @@ class SleepCommandTest {
         for (PlatformServices services : List.of(
                 new MacPlatformServices(), new WindowsPlatformServices(), new LinuxPlatformServices())) {
             assertFalse(services.sleepCommands().isEmpty(), services.name() + " should know how to sleep");
+        }
+    }
+
+    @Test
+    @DisplayName("a helper still running when the settling time is up has done its job")
+    void treatsAStillRunningHelperAsSuccess() throws IOException {
+        // What Windows does: the call does not return until the machine wakes
+        // again, which may be tomorrow.
+        AbstractPlatformServices.settle(new StubProcess(false, 0), "sleeper", 10);
+    }
+
+    @Test
+    @DisplayName("a helper that exits cleanly has also done its job")
+    void treatsACleanExitAsSuccess() throws IOException {
+        AbstractPlatformServices.settle(new StubProcess(true, 0), "sleeper", 10);
+    }
+
+    @Test
+    @DisplayName("only an early non-zero exit counts as a failure")
+    void reportsAnEarlyNonZeroExit() {
+        IOException failure = assertThrows(IOException.class,
+                () -> AbstractPlatformServices.settle(new StubProcess(true, 3), "sleeper", 10));
+
+        assertTrue(failure.getMessage().contains("sleeper"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("3"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("the second candidate is tried only when the first failed early")
+    void fallsThroughToTheNextCandidate() throws IOException {
+        // Both candidates cannot be real commands in a test, but the ordering
+        // that matters is the one the platform declares.
+        List<List<String>> windows = new WindowsPlatformServices().sleepCommands();
+
+        assertNotEquals(windows.getFirst(), windows.getLast());
+    }
+
+    /** A process that behaves the way a sleep helper does, without being one. */
+    private static final class StubProcess extends Process {
+        private final boolean finishes;
+        private final int exitCode;
+
+        StubProcess(boolean finishes, int exitCode) {
+            this.finishes = finishes;
+            this.exitCode = exitCode;
+        }
+
+        @Override
+        public boolean waitFor(long timeout, java.util.concurrent.TimeUnit unit) {
+            return finishes;
+        }
+
+        @Override
+        public int exitValue() {
+            return exitCode;
+        }
+
+        @Override
+        public java.io.OutputStream getOutputStream() {
+            return java.io.OutputStream.nullOutputStream();
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() {
+            return java.io.InputStream.nullInputStream();
+        }
+
+        @Override
+        public java.io.InputStream getErrorStream() {
+            return java.io.InputStream.nullInputStream();
+        }
+
+        @Override
+        public int waitFor() {
+            return exitCode;
+        }
+
+        @Override
+        public void destroy() {
         }
     }
 
