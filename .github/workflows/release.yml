@@ -37,21 +37,42 @@ env:
   JAVA_PACKAGE: jdk+fx
 
 jobs:
+  # One timestamp for the whole run, so the four artifacts of a run are named
+  # alike however many minutes apart their runners happen to start. It lands in
+  # the artifact name, which is the file name of the download — telling two
+  # builds of the same commit apart is otherwise a matter of remembering which
+  # tab they came from.
+  stamp:
+    name: Stamp the run
+    runs-on: ubuntu-22.04
+    outputs:
+      stamp: ${{ steps.now.outputs.stamp }}
+    steps:
+      - id: now
+        shell: bash
+        run: echo "stamp=$(date -u +%Y%m%d-%H%M)" >> "$GITHUB_OUTPUT"
+
   # Full validation: the whole test suite and a real application image on every
   # platform. A jlink image only runs on the platform it was linked for, so
   # there is no cross-building — each is built on its own runner with its own
   # JDK.
   build:
     name: ${{ matrix.platform }} application image
+    needs: stamp
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Windows uploads the image itself rather than the zip of it: the
+          # uploader wraps whatever it is given in a zip of its own, so handing
+          # it an archive makes the download a zip inside a zip. The other two
+          # cannot do the same — see the upload step.
           - os: windows-2022
             platform: windows-x64
             runtime: build/app-image/MediaCenter/runtime/bin/java.exe
             fxNative: glass.dll
+            upload: build/app-image
           # Both macOS architectures: an arm64 image cannot run on an Intel Mac
           # at all, and Rosetta does not help — it translates x86_64 to arm64,
           # not the other way round.
@@ -59,14 +80,17 @@ jobs:
             platform: macos-aarch64
             runtime: build/app-image/MediaCenter.app/Contents/runtime/Contents/Home/bin/java
             fxNative: libglass.dylib
+            upload: build/distributions/Aurora-MediaCenter-macos-aarch64.zip
           - os: macos-15-intel
             platform: macos-x64
             runtime: build/app-image/MediaCenter.app/Contents/runtime/Contents/Home/bin/java
             fxNative: libglass.dylib
+            upload: build/distributions/Aurora-MediaCenter-macos-x64.zip
           - os: ubuntu-22.04
             platform: linux-x64
             runtime: build/app-image/MediaCenter/lib/runtime/bin/java
             fxNative: libglass.so
+            upload: build/distributions/Aurora-MediaCenter-linux-x64.zip
     steps:
       - uses: actions/checkout@v4
 
@@ -103,11 +127,16 @@ jobs:
             || { echo "::error::JavaFX natives (${{ matrix.fxNative }}) missing from the image"; exit 1; }
           ls -l "$archive"
 
+      # macOS and Linux are uploaded as the zip built above, not as the image:
+      # the uploader does not preserve the executable bit and resolves the
+      # symbolic links inside a .app bundle, either of which lands a broken
+      # image on the far end. The extra wrapper is the price of an image that
+      # still runs.
       - name: Upload Aurora-MediaCenter-${{ matrix.platform }}
         uses: actions/upload-artifact@v4
         with:
-          name: Aurora-MediaCenter-${{ matrix.platform }}
-          path: build/distributions/Aurora-MediaCenter-${{ matrix.platform }}.zip
+          name: Aurora-MediaCenter-${{ matrix.platform }}-${{ needs.stamp.outputs.stamp }}
+          path: ${{ matrix.upload }}
           if-no-files-found: error
           retention-days: 30
 
@@ -191,6 +220,22 @@ jobs:
           pattern: Aurora-MediaCenter-*
           path: images
           merge-multiple: true
+
+      - name: Put the Windows image back into an archive
+        shell: bash
+        run: |
+          set -e
+          # It arrives as a folder, because that is what makes its own download a
+          # single zip. A release asset has to be an archive, so it is made here
+          # from exactly the bytes that were validated — a re-wrap, not a rebuild.
+          if [ -d images/MediaCenter ]; then
+            (cd images && zip -qr Aurora-MediaCenter-windows-x64.zip MediaCenter && rm -rf MediaCenter)
+          fi
+          found=$(find images -maxdepth 1 -name '*.zip' | wc -l)
+          if [ "$found" -ne 4 ]; then
+            echo "::error::expected an archive for each of the four platforms, found $found"
+            exit 1
+          fi
 
       - name: Publish ${{ steps.tag.outputs.release }} with generated notes
         env:
