@@ -15,8 +15,6 @@ import javafx.animation.FadeTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
@@ -46,7 +44,7 @@ import mediacenter.playback.PlaybackService;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.KioskBrowser;
 import mediacenter.platform.PlatformServices;
-import mediacenter.platform.QuitExtension;
+import mediacenter.platform.KioskExtension;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
 import mediacenter.ui.components.ArtworkCache;
@@ -301,15 +299,20 @@ public final class MediaCenterShell implements Navigation {
         push(new SettingsView(context, platform, this::applySettings));
     }
 
+    /**
+     * Sleeping happens off the JavaFX thread: the helper is a process, and on a
+     * machine that takes its time going down the wait would otherwise freeze the
+     * screen that is still showing. Nothing is torn down first — the media center
+     * is simply there again when the computer wakes.
+     */
     @Override
-    public void openBrowserOrDesktop() {
-        stepAsideForTheDesktop();
+    public void sleepComputer() {
         backgroundExecutor.execute(() -> {
             try {
-                platform.openBrowser(settings().browserPath());
+                platform.sleepComputer();
             } catch (Exception e) {
-                LOG.log(Level.WARNING, "Could not open the browser", e);
-                FxTasks.onFx(() -> showError("The configured browser could not be started."));
+                LOG.log(Level.WARNING, "Could not put the computer to sleep", e);
+                FxTasks.onFx(() -> showError("This computer could not be put to sleep."));
             }
         });
     }
@@ -333,7 +336,7 @@ public final class MediaCenterShell implements Navigation {
                         website.url(),
                         settings().browserScalePercent(),
                         dataDirectory.resolve("browser-profile"),
-                        QuitExtension.ensureInstalled(dataDirectory));
+                        KioskExtension.ensureInstalled(dataDirectory));
                 LOG.log(Level.INFO, () -> "Starting browser: " + String.join(" ", command));
                 Process process = new ProcessBuilder(command)
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -462,42 +465,6 @@ public final class MediaCenterShell implements Navigation {
     }
 
     // -- playback lifecycle -------------------------------------------------
-
-    /**
-     * Gets out of the way so the desktop is visible, and remembers to come back
-     * full screen.
-     *
-     * <p>Minimising is not enough on its own: a full-screen window on macOS owns
-     * a space of its own, and minimising it makes the window manager animate the
-     * way out of that space first — a second or so of the media center sliding
-     * about before any of the desktop appears. Dropping out of full screen first
-     * is the same order {@link #hideForPlayback()} uses, and for the same reason.
-     */
-    private void stepAsideForTheDesktop() {
-        boolean wasFullScreen = stage.isFullScreen();
-        if (wasFullScreen) {
-            stage.setFullScreen(false);
-        }
-        stage.setIconified(true);
-        if (wasFullScreen) {
-            restoreFullScreenWhenBack();
-        }
-    }
-
-    /** Puts full screen back the first time the window is restored, then stops listening. */
-    private void restoreFullScreenWhenBack() {
-        stage.iconifiedProperty().addListener(new ChangeListener<Boolean>() {
-            @Override
-            public void changed(ObservableValue<? extends Boolean> value,
-                                Boolean was,
-                                Boolean iconified) {
-                if (!iconified) {
-                    stage.iconifiedProperty().removeListener(this);
-                    stage.setFullScreen(settings().fullScreen());
-                }
-            }
-        });
-    }
 
     private void hideForPlayback() {
         // Leaving full screen first keeps the window manager from putting the

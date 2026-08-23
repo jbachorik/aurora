@@ -15,6 +15,18 @@ public final class LinuxPlatformServices extends AbstractPlatformServices {
         return "Linux";
     }
 
+    /**
+     * systemd first, since that is what a current desktop answers to, and the
+     * session manager after it for the machines that have no systemd — or whose
+     * policy lets a session suspend when the system service will not.
+     */
+    @Override
+    public List<List<String>> sleepCommands() {
+        return List.of(
+                List.of("systemctl", "suspend"),
+                List.of("loginctl", "suspend"));
+    }
+
     @Override
     public Path applicationDataDirectory() {
         Path base = environmentPath("XDG_CONFIG_HOME")

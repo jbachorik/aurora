@@ -18,9 +18,6 @@ public interface Navigation {
 
     void openSettings();
 
-    /** Minimizes the media center and launches the configured browser, if any. */
-    void openBrowserOrDesktop();
-
     /**
      * Hides the UI, opens a website tile full screen in the configured browser
      * and comes back when the browser exits — playback, with a page for a film.
@@ -45,6 +42,9 @@ public interface Navigation {
 
     /** Opens one photograph, with the arrows moving through its own folder. */
     void openPhoto(Path folder, Path photo);
+
+    /** Puts the computer to sleep, leaving the media center running for the waking. */
+    void sleepComputer();
 
     void goBack();
 

@@ -20,6 +20,12 @@ abstract class AbstractPlatformServices implements PlatformServices {
 
     private static final Logger LOG = Logger.getLogger(AbstractPlatformServices.class.getName());
 
+    /**
+     * Generous: the helper only has to ask the operating system, but the machine
+     * may already be on its way down when it answers.
+     */
+    private static final long SLEEP_TIMEOUT_MS = 10_000;
+
     @Override
     public void launchExternal(Path executable) throws IOException {
         if (executable == null) {
@@ -35,9 +41,31 @@ abstract class AbstractPlatformServices implements PlatformServices {
                 .start();
     }
 
+    /**
+     * Tries each known mechanism until one reports success.
+     *
+     * <p>The last failure is the one raised: on a machine where the first
+     * candidate is simply absent, the message that matters is the one from the
+     * mechanism that was actually expected to work.
+     */
     @Override
-    public void showDesktop() {
-        // Nothing reliable to do by default; the caller minimizes its own window.
+    public void sleepComputer() throws IOException {
+        List<List<String>> candidates = sleepCommands();
+        if (candidates.isEmpty()) {
+            throw new IOException("This platform has no known way to sleep");
+        }
+        IOException lastFailure = null;
+        for (List<String> command : candidates) {
+            try {
+                LOG.log(Level.INFO, () -> "Sleeping with " + String.join(" ", command));
+                runToCompletion(command, SLEEP_TIMEOUT_MS);
+                return;
+            } catch (IOException failure) {
+                LOG.log(Level.FINE, failure, () -> command.getFirst() + " could not sleep the computer");
+                lastFailure = failure;
+            }
+        }
+        throw lastFailure;
     }
 
     /** First candidate that exists as a regular file. */

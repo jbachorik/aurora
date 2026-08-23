@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Media Center Quit Key",
+  "name": "Media Center Keys",
   "version": "1.0",
-  "description": "Ctrl+Q closes the kiosk browser, the way it closes VLC.",
+  "description": "Ctrl+Q closes the kiosk browser the way it closes VLC; F puts the player full screen.",
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["quit.js"],
+      "js": ["quit.js", "fullscreen.js"],
       "run_at": "document_start",
       "all_frames": true
     }

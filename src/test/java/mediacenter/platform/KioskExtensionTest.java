@@ -10,15 +10,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class QuitExtensionTest {
+class KioskExtensionTest {
 
     @Test
     @DisplayName("the bundled extension is written out whole, beside the profile")
     void writesEveryFile(@TempDir Path temp) throws Exception {
-        Path directory = QuitExtension.ensureInstalled(temp).orElseThrow();
+        Path directory = KioskExtension.ensureInstalled(temp).orElseThrow();
 
         assertEquals(temp.resolve("browser-extension"), directory);
-        for (String file : QuitExtension.FILES) {
+        for (String file : KioskExtension.FILES) {
             assertTrue(Files.size(directory.resolve(file)) > 0, file + " is missing or empty");
         }
         // The manifest is the extension's front door; a malformed copy would
@@ -35,7 +35,7 @@ class QuitExtensionTest {
         Files.createDirectories(stale.getParent());
         Files.writeString(stale, "stale");
 
-        QuitExtension.ensureInstalled(temp).orElseThrow();
+        KioskExtension.ensureInstalled(temp).orElseThrow();
 
         assertTrue(Files.readString(stale).contains("keydown"));
     }
