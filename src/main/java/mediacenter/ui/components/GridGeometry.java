@@ -2,7 +2,9 @@ package mediacenter.ui.components;
 
 import java.util.List;
 
+import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
+import javafx.scene.Node;
 
 /**
  * Where the arrow keys go, worked out from rectangles alone.
@@ -18,6 +20,29 @@ final class GridGeometry {
     private static final double ROW_EPSILON = 2;
 
     private GridGeometry() {
+    }
+
+    /**
+     * Where a tile sits, taken from the layout rather than from the box it draws.
+     *
+     * <p>{@code getBoundsInParent()} includes the effect, and the focus glow is a
+     * drop shadow that hangs further below the tile than the resting one does. The
+     * focused tile's drawn box therefore reaches lower than its row-mates' and its
+     * centre with it — by five pixels, where two already read as a different row.
+     * Up then found "the row above", which was the rest of its own row; moving
+     * there took the glow along, and the focus ping-ponged between two neighbours
+     * without ever leaving the row it was trapped in.
+     *
+     * <p>The layout position is what the eye reads as the row, and it is the one
+     * measurement neither the glow nor the lift touches.
+     */
+    static Bounds positionOf(Node node) {
+        Bounds local = node.getLayoutBounds();
+        return new BoundingBox(
+                node.getLayoutX() + local.getMinX(),
+                node.getLayoutY() + local.getMinY(),
+                local.getWidth(),
+                local.getHeight());
     }
 
     /**
