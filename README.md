@@ -72,6 +72,14 @@ does not need Settings:
 MediaCenter.exe --windowed
 ```
 
+The **Sleep** tile suspends the computer and takes effect at once — there is
+no confirmation, because waking it again is one keypress. The media center is
+still running, and still on the home screen, when the machine comes back.
+macOS sleeps through `pmset`, Linux through `systemctl suspend` (falling back
+to `loginctl suspend` where there is no systemd), and Windows through
+`powrprof`. One Windows caveat is outside the media center's control: where
+hibernation is enabled, Windows hibernates instead of sleeping.
+
 
 Website tiles
 -------------
@@ -102,6 +110,15 @@ Brave, Vivaldi, Opera) configured in Settings. Firefox is opened in its kiosk
 mode without the scale hint; any other browser just gets the address. Sites
 that require DRM (the big subscription services) work precisely *because*
 this is a real browser and not an embedded engine.
+
+**Full screen on a site:** `F` puts the player on the whole screen. The
+site's own fullscreen button often cannot: the kiosk hands the page a window
+that already fills the screen, which fools any player that reads its
+fullscreen state off the window instead of off `document.fullscreenElement` —
+the VK player Mosfilm embeds is one of them, and its button then does nothing
+at all. `F` asks for fullscreen directly, going around the site's own idea of
+the matter. Press it again to come back. It comes from the same bundled
+extension as `Ctrl+Q`, so it shares that extension's limits below.
 
 **Leaving a site:** `Ctrl+Q` closes the browser and the media center returns
 — the same key that quits VLC, provided by a tiny bundled extension the
@@ -167,7 +184,7 @@ JavaFX Media Center
         +-- ArtworkResolver ........ local poster/folder/cover images
         +-- PlaybackHistory ........ recently played
         +-- PlayerLauncher ......... external VLC process
-        +-- PlatformServices ....... VLC discovery, desktop, data directory
+        +-- PlatformServices ....... VLC discovery, sleep, data directory
 ```
 
 ```
