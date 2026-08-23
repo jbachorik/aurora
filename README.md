@@ -361,7 +361,16 @@ one go.
 
 Running the workflow by hand builds the images and leaves them as workflow
 artifacts **without creating a release** — that is the way to get a build onto
-the laptop without cutting one. GitHub lets a manual run pick a tag rather than
+the laptop without cutting one. Each artifact is named for its platform and the
+time the run started, `Aurora-MediaCenter-windows-x64-20260823-1530`, so two
+downloads of the same commit can be told apart in a downloads folder.
+
+GitHub wraps every artifact in a zip of its own. Windows therefore uploads the
+image unwrapped, and its download is a single zip holding `MediaCenter/`. macOS
+and Linux cannot do the same: the uploader drops the executable bit and follows
+the symbolic links inside a `.app` bundle, so those two upload the zip the build
+made and their download is a zip inside a zip. Release assets are always the
+plain per-platform zip. GitHub lets a manual run pick a tag rather than
 a branch, so publishing from one is possible, but it has to be asked for by
 ticking `publish`; fetching a build for testing cannot create a release by
 accident.

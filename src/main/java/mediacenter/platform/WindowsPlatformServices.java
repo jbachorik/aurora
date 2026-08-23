@@ -45,7 +45,19 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
      */
     @Override
     public List<List<String>> sleepCommands() {
-        return List.of(List.of("rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"));
+        return List.of(
+                // The suspend API asked properly: hibernate false means sleep, and
+                // a refusal comes back as false rather than as silence.
+                List.of("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                        "Add-Type -AssemblyName System.Windows.Forms;"
+                                + " if (-not [System.Windows.Forms.Application]"
+                                + ".SetSuspendState('Suspend', $false, $false)) { exit 1 }"),
+                // rundll32 calls the entry point with its own signature, so
+                // SetSuspendState reads a window handle where the hibernate flag
+                // should be and hibernates whenever hibernation is enabled — from
+                // which a USB remote cannot wake the machine at all. Second, then,
+                // and only for a Windows without PowerShell.
+                List.of("rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"));
     }
 
     @Override

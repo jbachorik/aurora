@@ -7,7 +7,6 @@ import java.util.function.Consumer;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.input.KeyCode;
@@ -427,9 +426,9 @@ public final class TileGrid extends ScrollPane {
         }
     }
 
-    /** Bounds of every tile, in the order the grid holds them. */
+    /** Where every tile sits, in the order the grid holds them. */
     private List<Bounds> tileBounds() {
-        return tiles.stream().map(Node::getBoundsInParent).toList();
+        return tiles.stream().map(GridGeometry::positionOf).toList();
     }
 
     private int stepRows(int from, int rows) {

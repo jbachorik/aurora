@@ -317,6 +317,15 @@ public final class MediaCenterShell implements Navigation {
         });
     }
 
+    /**
+     * Unlike playback, the window stays up — full screen, behind the browser.
+     *
+     * <p>The browser is closed by the viewer, not by us, so we hear about it only
+     * once it has already gone. Hiding the window would leave the desktop showing
+     * from that moment until the window is back, with a fresh full-screen
+     * transition on top of it; staying behind means there is nothing to come back
+     * from and the media center is simply there again.
+     */
     @Override
     public void openWebsite(Website website) {
         Optional<Path> browser = settings().browserPath();
@@ -327,7 +336,6 @@ public final class MediaCenterShell implements Navigation {
             return;
         }
         LOG.log(Level.INFO, () -> "Opening website " + website.url());
-        hideForPlayback();
         backgroundExecutor.execute(() -> {
             try {
                 Path dataDirectory = platform.applicationDataDirectory();
@@ -342,6 +350,7 @@ public final class MediaCenterShell implements Navigation {
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                         .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
+                FxTasks.onFx(stage::toBack);
                 int exitCode = process.waitFor();
                 LOG.log(Level.INFO, () -> "Browser closed with exit code " + exitCode + ", returning");
                 FxTasks.onFx(this::restoreAfterPlayback);
