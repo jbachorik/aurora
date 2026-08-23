@@ -4,11 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
-import javafx.scene.layout.Priority;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
 
 import mediacenter.config.ApplicationSettings;
@@ -21,6 +22,7 @@ import mediacenter.media.MediaRootType;
 import mediacenter.media.MediaSources;
 import mediacenter.ui.components.ActionTile;
 import mediacenter.ui.components.MediaTile;
+import mediacenter.ui.components.ScrollGeometry;
 import mediacenter.ui.components.Tile;
 import mediacenter.ui.components.TileGrid;
 
@@ -41,8 +43,12 @@ public final class HomeView implements View {
      */
     private static final MediaTile.Shape RECENT_SHAPE = MediaTile.Shape.WIDE;
 
+    /** Room left around a row that is scrolled to, so it does not sit on the edge. */
+    private static final double SCROLL_MARGIN = 24;
+
     private final UiContext context;
     private final VBox root = new VBox();
+    private final ScrollPane scroller = new ScrollPane(root);
     private final TileGrid actions = new TileGrid();
     private final TileGrid websites = new TileGrid();
     private final TileGrid recent = new TileGrid();
@@ -62,8 +68,12 @@ public final class HomeView implements View {
         // otherwise cling to the top of an empty page.
         root.setAlignment(Pos.CENTER);
 
-        actions.setPrefHeight(ActionTile.HEIGHT + 56);
-        actions.setMinHeight(ActionTile.HEIGHT + 56);
+        // Every section stands at its own full height and the page scrolls past
+        // them, rather than each section scrolling inside a band of its own: three
+        // bands sharing one screen leave none of them tall enough to show a whole
+        // tile, and a row scrolled to inside a band that is itself below the fold
+        // is a row nobody can see.
+        actions.setFitHeightToContent(true);
         // Once the tiles reach their maximum width a wide screen has room to spare,
         // and the row has to sit in the middle of it rather than against one edge.
         actions.setTileAlignment(Pos.CENTER);
@@ -82,8 +92,7 @@ public final class HomeView implements View {
 
         websitesHeading.getStyleClass().add("section-heading");
         websitesHeading.setMaxWidth(Double.MAX_VALUE);
-        websites.setPrefHeight(ActionTile.HEIGHT + 56);
-        websites.setMinHeight(ActionTile.HEIGHT + 56);
+        websites.setFitHeightToContent(true);
         websites.setTileAlignment(Pos.CENTER);
         websites.setFitTilesToSingleRow(true);
         websites.setOnActivate(this::activateWebsite);
@@ -99,13 +108,10 @@ public final class HomeView implements View {
         // centre this heading too and detach it from the left-aligned row it
         // labels. Filling the width lets its own left padding do the aligning.
         recentHeading.setMaxWidth(Double.MAX_VALUE);
-        // Preferred, not minimum: on a smaller window the row simply scrolls
-        // instead of pushing the hint bar off the screen.
-        recent.setPrefHeight(RECENT_SHAPE.totalHeight() + 56);
-        // ...and where even the preference cannot be met — a small screen, once
-        // the actions above have taken theirs — the cards shorten rather than
-        // hang off the bottom with their names on the part that fell off.
-        recent.setFitTilesToRowHeight(true);
+        // However many rows the cards wrap into, all of them: the page carries
+        // what does not fit rather than the row shortening its cards to a strip
+        // of caption with the picture scrolled off the top.
+        recent.setFitHeightToContent(true);
         recent.setOnActivate(this::activate);
         recent.setOnNavigateAbove(() -> {
             if (!websites.isEmpty()) {
@@ -115,9 +121,29 @@ public final class HomeView implements View {
             }
         });
 
-        VBox.setVgrow(actions, Priority.NEVER);
-        VBox.setVgrow(websites, Priority.NEVER);
-        VBox.setVgrow(recent, Priority.ALWAYS);
+        // Following the focus is this view's job now: the arrow keys are taken by
+        // the grids' own filters, so the scroll pane's skin never sees them and
+        // would leave the focus on a row painted past the bottom of the window.
+        actions.setOnSelectionChanged(this::ensureVisible);
+        websites.setOnSelectionChanged(this::ensureVisible);
+        recent.setOnSelectionChanged(this::ensureVisible);
+
+        scroller.getStyleClass().add("home-scroll");
+        // The grids own the focus and refuse any they did not ask for; a scroll
+        // pane that can hold it too would take the ring off the tile the viewer
+        // is looking at the first time the page is traversed.
+        scroller.setFocusTraversable(false);
+        scroller.setFitToWidth(true);
+        // A page with only the actions on it is stretched to the window so that
+        // the alignment above still has somewhere to centre them; a taller one
+        // keeps its own height and scrolls.
+        scroller.setFitToHeight(true);
+        scroller.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroller.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        // Without this the viewport inherits the content's minimum height and the
+        // pane grows past the window instead of scrolling inside it.
+        scroller.setMinHeight(0);
+
         root.getChildren().add(actions);
 
         rebuildActions();
@@ -127,7 +153,32 @@ public final class HomeView implements View {
 
     @Override
     public Node node() {
-        return root;
+        return scroller;
+    }
+
+    /**
+     * Brings a freshly selected tile into the page, section heading and all.
+     *
+     * <p>Measured against the whole page rather than against the grid the tile
+     * belongs to, which is the point of the one scroll pane: moving from the last
+     * website to the first recent card scrolls the heading above it into view too.
+     */
+    private void ensureVisible(Tile tile) {
+        Bounds viewport = scroller.getViewportBounds();
+        if (viewport == null || tile.getScene() == null) {
+            return;
+        }
+        Bounds inPage = root.sceneToLocal(tile.localToScene(tile.getBoundsInLocal()));
+        if (inPage == null) {
+            return;
+        }
+        scroller.setVvalue(ScrollGeometry.vvalueFor(
+                scroller.getVvalue(),
+                root.getLayoutBounds().getHeight(),
+                viewport.getHeight(),
+                inPage.getMinY(),
+                inPage.getMaxY(),
+                SCROLL_MARGIN));
     }
 
     @Override

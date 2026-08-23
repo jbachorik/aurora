@@ -44,6 +44,7 @@ public final class TileGrid extends ScrollPane {
     private int selectedIndex = -1;
     private boolean fitTilesToSingleRow;
     private boolean fitTilesToRowHeight;
+    private boolean fitHeightToContent;
     private final ActivationGate activationGate = new ActivationGate();
 
     public TileGrid() {
@@ -75,6 +76,10 @@ public final class TileGrid extends ScrollPane {
         // The share each tile gets depends on how much room the grid was given, so
         // a resized window has to be recomputed.
         viewportBoundsProperty().addListener((observable, was, is) -> fitTiles());
+
+        // A grid that has given up scrolling has to be as tall as its rows, and
+        // how many rows there are is only known once they have been laid out.
+        tilePane.heightProperty().addListener((observable, was, is) -> adoptContentHeight());
 
         // A filter, not a handler: ScrollPane's own skin would otherwise turn the
         // arrow keys into scrolling instead of selection movement.
@@ -115,6 +120,41 @@ public final class TileGrid extends ScrollPane {
     public void setFitTilesToRowHeight(boolean fit) {
         this.fitTilesToRowHeight = fit;
         fitTiles();
+    }
+
+    /**
+     * Gives up scrolling and stands as tall as its tiles instead.
+     *
+     * <p>For a grid inside a page that scrolls as a whole: two scrolling panes,
+     * one inside the other, argue over the same wheel and the same rows, and the
+     * inner one wins by being nearer — leaving a row that is scrolled to inside a
+     * viewport that is itself off the bottom of the page. Standing at full height
+     * leaves the one pane that can see the whole page to do the scrolling.
+     */
+    public void setFitHeightToContent(boolean fit) {
+        this.fitHeightToContent = fit;
+        // The pane is otherwise stretched to the viewport, which is the very
+        // height being asked about here.
+        setFitToHeight(!fit);
+        // Standing at its content's height, this grid has nothing left to scroll
+        // — and a pane whose content is exactly as tall as its viewport counts
+        // that as needing a bar, which would then be drawn down the side of every
+        // row on the page.
+        setVbarPolicy(fit ? ScrollBarPolicy.NEVER : ScrollBarPolicy.AS_NEEDED);
+        adoptContentHeight();
+    }
+
+    private void adoptContentHeight() {
+        if (!fitHeightToContent) {
+            return;
+        }
+        double wanted = tilePane.getHeight();
+        // A listener that sets a property the listener reacts to needs a floor
+        // under it, and sub-pixel differences are not worth a second layout pass.
+        if (wanted > 0 && Math.abs(wanted - getPrefHeight()) > 0.5) {
+            setPrefHeight(wanted);
+            setMinHeight(wanted);
+        }
     }
 
     private void fitTiles() {
@@ -310,6 +350,17 @@ public final class TileGrid extends ScrollPane {
 
     public void setOnActivate(Consumer<Tile> onActivate) {
         this.onActivate = onActivate == null ? tile -> { } : onActivate;
+    }
+
+    /**
+     * Called whenever the selection moves, with the tile it moved to.
+     *
+     * <p>For a page that has to scroll to what was selected: a grid standing at
+     * its full height inside a page that scrolls cannot bring anything into view
+     * by itself.
+     */
+    public void setOnSelectionChanged(Consumer<Tile> onSelectionChanged) {
+        this.onSelectionChanged = onSelectionChanged == null ? tile -> { } : onSelectionChanged;
     }
 
     /** Called when Up is pressed on the top row — lets a view chain several grids. */

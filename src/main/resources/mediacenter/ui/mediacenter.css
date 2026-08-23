@@ -60,6 +60,8 @@
 
 .tile-grid,
 .tile-grid > .viewport,
+.home-scroll,
+.home-scroll > .viewport,
 .settings-scroll,
 .settings-scroll > .viewport {
     -fx-background-color: transparent;
