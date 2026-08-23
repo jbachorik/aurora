@@ -30,9 +30,9 @@ import java.util.logging.Logger;
  * Google Chrome stopped honouring it in 2025, which is why Ctrl+W remains
  * documented as the fallback that works everywhere.
  */
-public final class QuitExtension {
+public final class KioskExtension {
 
-    private static final Logger LOG = Logger.getLogger(QuitExtension.class.getName());
+    private static final Logger LOG = Logger.getLogger(KioskExtension.class.getName());
 
     /** Resources are not listable, so the extension's files are named here. */
     static final List<String> FILES =
@@ -40,20 +40,21 @@ public final class QuitExtension {
 
     private static final String RESOURCE_DIRECTORY = "/mediacenter/browser-extension/";
 
-    private QuitExtension() {
+    private KioskExtension() {
     }
 
     /**
      * Writes the extension beside the browser profile and answers where, or
      * empty when it could not be written — the kiosk then simply launches
-     * without it, and Ctrl+W still works.
+     * without it. Ctrl+W still closes the browser; the fullscreen key is
+     * simply not there, and the site's own button is all that is left.
      */
     public static Optional<Path> ensureInstalled(Path applicationDataDirectory) {
         Path directory = applicationDataDirectory.resolve("browser-extension");
         try {
             Files.createDirectories(directory);
             for (String file : FILES) {
-                try (InputStream resource = QuitExtension.class
+                try (InputStream resource = KioskExtension.class
                         .getResourceAsStream(RESOURCE_DIRECTORY + file)) {
                     if (resource == null) {
                         throw new IOException("Missing bundled resource " + file);
@@ -63,7 +64,7 @@ public final class QuitExtension {
             }
             return Optional.of(directory);
         } catch (IOException | RuntimeException failure) {
-            LOG.log(Level.WARNING, "The quit-key extension could not be written", failure);
+            LOG.log(Level.WARNING, "The kiosk browser extension could not be written", failure);
             return Optional.empty();
         }
     }

@@ -44,7 +44,7 @@ import mediacenter.playback.PlaybackService;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.KioskBrowser;
 import mediacenter.platform.PlatformServices;
-import mediacenter.platform.QuitExtension;
+import mediacenter.platform.KioskExtension;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
 import mediacenter.ui.components.ArtworkCache;
@@ -336,7 +336,7 @@ public final class MediaCenterShell implements Navigation {
                         website.url(),
                         settings().browserScalePercent(),
                         dataDirectory.resolve("browser-profile"),
-                        QuitExtension.ensureInstalled(dataDirectory));
+                        KioskExtension.ensureInstalled(dataDirectory));
                 LOG.log(Level.INFO, () -> "Starting browser: " + String.join(" ", command));
                 Process process = new ProcessBuilder(command)
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD)
