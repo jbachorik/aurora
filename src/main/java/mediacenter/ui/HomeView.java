@@ -203,8 +203,8 @@ public final class HomeView implements View {
             tiles.add(new ActionTile("▦", "TV", describeRoots(settings, MediaRootType.TV)));
         }
         tiles.add(new ActionTile("▤", "Browse", describeAllRoots(settings)));
-        tiles.add(new ActionTile("⌂", "Browser / Desktop", browserSubtitle(settings)));
         tiles.add(new ActionTile("⚙", "Settings", null));
+        tiles.add(new ActionTile("☾", "Sleep", null));
         tiles.add(new ActionTile("✕", "Exit", null));
 
         actions.setTiles(tiles);
@@ -224,16 +224,6 @@ public final class HomeView implements View {
         return count == 0 ? "No folders configured" : count + (count == 1 ? " folder" : " folders");
     }
 
-    private String browserSubtitle(ApplicationSettings settings) {
-        // Asked of the platform: what is stored is the runnable file, which on macOS
-        // is a binary buried inside the application and nothing anyone would
-        // recognise on a television.
-        return settings.browserPath()
-                .map(context.platform()::programLabel)
-                .filter(label -> !label.isBlank())
-                .orElse("Show the desktop");
-    }
-
     private void activate(Tile tile) {
         if (tile instanceof MediaTile mediaTile) {
             context.navigation().play(mediaTile.item());
@@ -246,8 +236,8 @@ public final class HomeView implements View {
             case "TV" -> context.navigation()
                     .openRoots("TV", settings.rootsOfType(MediaRootType.TV));
             case "Browse" -> openBrowse(settings);
-            case "Browser / Desktop" -> context.navigation().openBrowserOrDesktop();
             case "Settings" -> context.navigation().openSettings();
+            case "Sleep" -> context.navigation().sleepComputer();
             case "Exit" -> context.navigation().exitApplication();
             default -> { }
         }

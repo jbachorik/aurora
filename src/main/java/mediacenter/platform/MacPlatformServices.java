@@ -28,6 +28,15 @@ public final class MacPlatformServices extends AbstractPlatformServices {
         return "macOS";
     }
 
+    /**
+     * {@code pmset sleepnow} is the documented way to sleep immediately, and it
+     * is present on every macOS the media center runs on.
+     */
+    @Override
+    public List<List<String>> sleepCommands() {
+        return List.of(List.of("/usr/bin/pmset", "sleepnow"));
+    }
+
     @Override
     public Path applicationDataDirectory() {
         Path base = path(System.getProperty("user.home"), "Library", "Application Support");

@@ -266,11 +266,4 @@ class PlatformServicesTest {
         assertEquals(stored, new WindowsPlatformServices().presentableProgram(stored));
     }
 
-    @Test
-    @DisplayName("without a configured browser the tile just exposes the desktop")
-    void openBrowserWithoutAnExecutableDoesNotThrow() {
-        PlatformServices services = new LinuxPlatformServices();
-
-        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> services.openBrowser(Optional.empty()));
-    }
 }

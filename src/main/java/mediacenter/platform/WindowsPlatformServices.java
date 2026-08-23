@@ -1,6 +1,5 @@
 package mediacenter.platform;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +33,19 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
     @Override
     public String name() {
         return "Windows";
+    }
+
+    /**
+     * The power-profile helper every Windows has.
+     *
+     * <p>Its first argument reads as "do not hibernate", and Windows ignores it
+     * whenever hibernation is enabled — the machine then hibernates instead of
+     * sleeping. There is no switch that settles it from here; the alternatives
+     * are third-party tools the media center will not ship.
+     */
+    @Override
+    public List<List<String>> sleepCommands() {
+        return List.of(List.of("rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"));
     }
 
     @Override
@@ -158,22 +170,5 @@ public final class WindowsPlatformServices extends AbstractPlatformServices {
             }
         }
         return Optional.empty();
-    }
-
-    @Override
-    public void showDesktop() {
-        // The Shell COM object is the documented way to minimize every window and
-        // is available on Windows 7. Failure is not worth bothering the user with:
-        // the media center window is minimized by the caller regardless.
-        try {
-            new ProcessBuilder(
-                    "powershell", "-NoProfile", "-NonInteractive", "-Command",
-                    "(New-Object -ComObject Shell.Application).MinimizeAll()")
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
-        } catch (IOException | RuntimeException e) {
-            LOG.log(Level.FINE, "Could not minimize all windows", e);
-        }
     }
 }

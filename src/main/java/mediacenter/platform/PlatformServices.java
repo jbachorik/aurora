@@ -26,14 +26,32 @@ public interface PlatformServices {
     /** Directory for {@code config.json}, {@code history.json}, {@code logs/} and {@code cache/}. */
     Path applicationDataDirectory();
 
-    /**
-     * Best-effort "show the desktop". Callers minimize their own window as well,
-     * so a platform without a reliable mechanism can simply do nothing.
-     */
-    void showDesktop();
-
     /** Starts an external program detached from this process. */
     void launchExternal(Path executable) throws IOException;
+
+    /**
+     * The command lines that put this computer to sleep, best first.
+     *
+     * <p>A list of lists because a platform can have more than one mechanism and
+     * no way to know from here which of them this particular machine answers to:
+     * a desktop Linux without systemd still has a session manager. They are tried
+     * in order until one succeeds. Pure data, like the VLC and kiosk-browser
+     * command lines, so the wording can be tested without sleeping the machine
+     * running the tests.
+     *
+     * <p>Empty where no mechanism is known, which {@link #sleepComputer()} reports
+     * rather than passing off as success.
+     */
+    default List<List<String>> sleepCommands() {
+        return List.of();
+    }
+
+    /**
+     * Puts the computer to sleep, trying {@link #sleepCommands()} in turn.
+     *
+     * @throws IOException when no mechanism is known, or every one of them failed
+     */
+    void sleepComputer() throws IOException;
 
     /**
      * What a runnable program is called to the viewer here — "program" on Windows
@@ -109,19 +127,6 @@ public interface PlatformServices {
      */
     default List<String> playerOptions() {
         return List.of();
-    }
-
-    /**
-     * Exposes the desktop, launching the configured browser when one is set.
-     *
-     * @param browserExecutable optional browser chosen in Settings
-     */
-    default void openBrowser(Optional<Path> browserExecutable) throws IOException {
-        if (browserExecutable.isPresent()) {
-            launchExternal(browserExecutable.get());
-        } else {
-            showDesktop();
-        }
     }
 
     /** Picks the implementation for the running operating system. */
