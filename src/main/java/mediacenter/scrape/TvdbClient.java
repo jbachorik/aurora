@@ -114,7 +114,27 @@ public final class TvdbClient {
         return Optional.of(counts);
     }
 
+    /**
+     * A film's official running time in minutes, from its extended record.
+     * Empty when TheTVDB does not know or could not be asked — which the
+     * matcher treats as "no opinion", never as a mismatch.
+     */
+    public Optional<Integer> movieRuntimeMinutes(long movieId) {
+        return get("/movies/" + movieId + "/extended")
+                .flatMap(TvdbClient::parseMovieRuntime);
+    }
+
     // -- response shapes -----------------------------------------------------
+
+    /** Reads the runtime out of a movie's extended record. Static and pure. */
+    public static Optional<Integer> parseMovieRuntime(JsonObject document) {
+        return document.get("data")
+                .flatMap(value -> value instanceof JsonObject data
+                        ? data.longValue("runtime")
+                        : Optional.empty())
+                .map(Long::intValue)
+                .filter(minutes -> minutes > 0);
+    }
 
     /** Reads a search response. Static and pure so the shape stays testable offline. */
     public static List<TvdbCandidate> parseSearch(JsonObject document) {

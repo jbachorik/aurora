@@ -38,6 +38,12 @@ public final class MovieEvidenceCollector {
     /** A year standing alone between separators — the dotted-name convention. */
     private static final Pattern BARE_YEAR = Pattern.compile("(?:^|[\\s._-])((?:19|20)\\d{2})(?=[\\s._-]|$)");
 
+    private final MediaDurationProbe durationProbe;
+
+    public MovieEvidenceCollector(MediaDurationProbe durationProbe) {
+        this.durationProbe = durationProbe;
+    }
+
     /**
      * The folder's evidence, or empty when it does not read as one film —
      * or simply cannot be listed, which over a share is an ordinary day.
@@ -82,7 +88,13 @@ public final class MovieEvidenceCollector {
         }
         Optional<Integer> year = yearHintOf(folderName.toString())
                 .or(() -> yearHintOf(videoName));
-        return Optional.of(new MovieEvidence(folderName.toString(), videoName, year));
+        // Asked last, once the folder has qualified as one film: the probe
+        // opens the file, and grouping folders and collections deserve no I/O.
+        return Optional.of(new MovieEvidence(
+                folderName.toString(),
+                videoName,
+                year,
+                durationProbe.durationOf(movieFolder.resolve(videoName))));
     }
 
     /**

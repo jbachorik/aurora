@@ -64,6 +64,21 @@ class TvdbClientTest {
     }
 
     @Test
+    @DisplayName("a film's official runtime comes from its extended record")
+    void parsesMovieRuntimes() throws JsonException {
+        assertEquals(Optional.of(163),
+                TvdbClient.parseMovieRuntime(Json.parseObject(
+                        "{\"data\": {\"id\": 121, \"name\": \"Blade Runner 2049\", \"runtime\": 163}}")));
+        // Unknown, zero, or missing runtimes are all "no opinion".
+        assertEquals(Optional.empty(),
+                TvdbClient.parseMovieRuntime(Json.parseObject("{\"data\": {\"runtime\": 0}}")));
+        assertEquals(Optional.empty(),
+                TvdbClient.parseMovieRuntime(Json.parseObject("{\"data\": {\"name\": \"No runtime\"}}")));
+        assertEquals(Optional.empty(),
+                TvdbClient.parseMovieRuntime(Json.parseObject("{}")));
+    }
+
+    @Test
     @DisplayName("a second page is announced by the links, and only by the links")
     void readsThePagePointer() throws JsonException {
         assertTrue(TvdbClient.hasNextPage(Json.parseObject(

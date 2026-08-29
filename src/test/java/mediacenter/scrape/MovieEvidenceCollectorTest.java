@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -14,7 +17,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class MovieEvidenceCollectorTest {
 
-    private final MovieEvidenceCollector collector = new MovieEvidenceCollector();
+    private final MovieEvidenceCollector collector =
+            new MovieEvidenceCollector(MediaDurationProbe.none());
 
     @Test
     @DisplayName("one film in its own folder is exactly what a movie folder is")
@@ -29,6 +33,26 @@ class MovieEvidenceCollectorTest {
         assertEquals("Blade Runner 2049 (2017)", evidence.folderName());
         assertEquals("Blade.Runner.2049.2017.mkv", evidence.videoFileName());
         assertEquals(Optional.of(2017), evidence.yearHint());
+        assertEquals(Optional.empty(), evidence.duration());
+    }
+
+    @Test
+    @DisplayName("a probe that can answer gives the evidence its running time")
+    void asksTheProbeForTheFilmItFound(@TempDir Path temp) throws IOException {
+        Path movie = Files.createDirectory(temp.resolve("Heat (1995)"));
+        Files.createFile(movie.resolve("Heat.1995.mkv"));
+        Files.createFile(movie.resolve("sample.mkv"));
+        List<Path> asked = new ArrayList<>();
+        MovieEvidenceCollector probing = new MovieEvidenceCollector(video -> {
+            asked.add(video);
+            return Optional.of(Duration.ofMinutes(170));
+        });
+
+        MovieEvidence evidence = probing.collect(movie).orElseThrow();
+
+        assertEquals(Optional.of(Duration.ofMinutes(170)), evidence.duration());
+        // The film itself, once — never the sample beside it.
+        assertEquals(List.of(movie.resolve("Heat.1995.mkv")), asked);
     }
 
     @Test

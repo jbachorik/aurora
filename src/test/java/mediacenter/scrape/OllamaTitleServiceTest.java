@@ -38,7 +38,8 @@ class OllamaTitleServiceTest {
     @DisplayName("the movie prompt quotes both names and asks for a release year")
     void theMoviePromptCarriesTheEvidence() {
         String prompt = OllamaTitleService.buildMoviePrompt(new MovieEvidence(
-                "Blade Runner 2049 (2017)", "Blade.Runner.2049.2017.mkv", Optional.of(2017)));
+                "Blade Runner 2049 (2017)", "Blade.Runner.2049.2017.mkv",
+                Optional.of(2017), Optional.empty()));
 
         assertTrue(prompt.contains("one film"));
         assertTrue(prompt.contains("Blade Runner 2049 (2017)"));

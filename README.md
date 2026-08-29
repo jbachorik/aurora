@@ -235,8 +235,16 @@ Three steps, each falling back gracefully to the next:
    is how the American *The Office* is told from the British one. A film has
    no shape, so it is checked by **year**, which is what tells *Dune* (2021)
    from *Dune* (1984) — and a much-remade title with no year anywhere is
-   left unidentified on purpose. Either way, a match that is not clearly
-   ahead of the runner-up is discarded — a wrong poster is worse than none.
+   left unidentified on purpose. Where VLC is configured, a film gets one
+   more witness: libVLC — the same library the built-in player binds — reads
+   the file's **running time** without playing a frame, and it is weighed
+   against each candidate's official runtime. Leniently, because cuts and
+   credits move runtimes honestly: close enough counts for a candidate,
+   twice the length counts against it, and the extended-edition middle
+   ground says nothing — it separates two candidates the names cannot,
+   never overrules an exact title. No VLC, no opinion, everything else
+   still works. Either way, a match that is not clearly ahead of the
+   runner-up is discarded — a wrong poster is worse than none.
 
 What was learned is written into the title's folder itself: a hand-editable
 `aurora-series.json` or `aurora-movie.json` (title, year, overview, status,

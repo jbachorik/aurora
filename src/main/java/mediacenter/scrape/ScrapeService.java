@@ -39,6 +39,7 @@ public final class ScrapeService {
     private final Supplier<ScraperSettings> settings;
     private final Executor backgroundExecutor;
     private final Executor notificationExecutor;
+    private final MediaDurationProbe durationProbe;
     private final ScrapedMetadataStore seriesStore = ScrapedMetadataStore.series();
     private final ScrapedMetadataStore movieStore = ScrapedMetadataStore.movies();
     private final PosterDownloader posters = new PosterDownloader();
@@ -57,14 +58,20 @@ public final class ScrapeService {
      * @param backgroundExecutor   where the blocking work runs
      * @param notificationExecutor where {@link #setOnScraped} callbacks run —
      *                             the JavaFX thread, in the application
+     * @param durationProbe        how a film's running time is read, when it
+     *                             can be — libVLC in the application,
+     *                             {@link MediaDurationProbe#none()} anywhere
+     *                             a duration has no way of being known
      */
     public ScrapeService(
             Supplier<ScraperSettings> settings,
             Executor backgroundExecutor,
-            Executor notificationExecutor) {
+            Executor notificationExecutor,
+            MediaDurationProbe durationProbe) {
         this.settings = settings;
         this.backgroundExecutor = backgroundExecutor;
         this.notificationExecutor = notificationExecutor;
+        this.durationProbe = durationProbe;
     }
 
     /** Registers the one interested party, replacing the previous one. */
@@ -145,7 +152,7 @@ public final class ScrapeService {
             case SERIES -> new SeriesScraper(
                     new SeriesEvidenceCollector(), ollama, tvdb, seriesStore, posters).scrape(folder);
             case MOVIE -> new MovieScraper(
-                    new MovieEvidenceCollector(), ollama, tvdb, movieStore, posters).scrape(folder);
+                    new MovieEvidenceCollector(durationProbe), ollama, tvdb, movieStore, posters).scrape(folder);
         };
     }
 

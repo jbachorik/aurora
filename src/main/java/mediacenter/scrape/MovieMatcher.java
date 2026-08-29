@@ -10,11 +10,14 @@ import mediacenter.media.VideoFiles;
  * Decides which of TheTVDB's movie candidates — if any — is the film on disk.
  *
  * <p>A film offers less to check than a series: there is no season shape, so
- * the whole case rests on the title and the year. That makes the year weigh
- * more here than in {@link SeriesMatcher} — it is the only thing that tells
- * <em>Dune</em> (2021) from <em>Dune</em> (1984) — and it makes the ambiguity
- * rule bite harder: a folder named after a much-remade film, carrying no year
- * anywhere, is left unidentified on purpose.
+ * the case rests on the title, the year, and — where libVLC could read the
+ * file — the running time. The year weighs more here than in
+ * {@link SeriesMatcher}: it is the only thing that tells <em>Dune</em> (2021)
+ * from <em>Dune</em> (1984). The running time is the quieter witness — no
+ * ripper's naming can garble it — and it is judged leniently, because cuts
+ * and credits legitimately move it. The ambiguity rule bites hardest of all:
+ * a folder named after a much-remade film, carrying no year anywhere, is left
+ * unidentified on purpose.
  *
  * <p>Pure and static like its sibling, and it borrows the sibling's
  * normalisation and similarity so the two judges read titles the same way.
@@ -33,7 +36,14 @@ public final class MovieMatcher {
     /** What agreeing — or disagreeing — on the year is worth. */
     static final double YEAR_WEIGHT = 0.15;
 
+    /** What the running time is worth: a witness, not the verdict. */
+    static final double RUNTIME_WEIGHT = 0.1;
+
     private MovieMatcher() {
+    }
+
+    /** One candidate together with the official runtime TheTVDB has for it. */
+    public record Candidate(TvdbCandidate movie, Optional<Integer> runtimeMinutes) {
     }
 
     /**
@@ -41,17 +51,17 @@ public final class MovieMatcher {
      * two are too close to call.
      */
     public static Optional<TvdbCandidate> pick(
-            MovieEvidence evidence, Optional<TitleGuess> guess, List<TvdbCandidate> candidates) {
+            MovieEvidence evidence, Optional<TitleGuess> guess, List<Candidate> candidates) {
 
         TvdbCandidate best = null;
         double bestScore = 0;
         double secondScore = 0;
-        for (TvdbCandidate candidate : candidates) {
+        for (Candidate candidate : candidates) {
             double candidateScore = score(evidence, guess, candidate);
             if (candidateScore > bestScore) {
                 secondScore = bestScore;
                 bestScore = candidateScore;
-                best = candidate;
+                best = candidate.movie();
             } else if (candidateScore > secondScore) {
                 secondScore = candidateScore;
             }
@@ -64,25 +74,49 @@ public final class MovieMatcher {
 
     /**
      * The candidate's score: the best the title manages against name and
-     * aliases, moved by the year where both sides name one. Not clamped —
-     * the number only ranks candidates and clears thresholds, and clamping
-     * would flatten the very lead that tells a remake's two years apart.
+     * aliases, moved by the year and the running time where both sides know
+     * one. Not clamped — the number only ranks candidates and clears
+     * thresholds, and clamping would flatten the very lead that tells a
+     * remake's two years apart.
      */
-    static double score(MovieEvidence evidence, Optional<TitleGuess> guess, TvdbCandidate candidate) {
-        double title = titleScore(evidence, guess, candidate);
+    static double score(MovieEvidence evidence, Optional<TitleGuess> guess, Candidate candidate) {
+        double title = titleScore(evidence, guess, candidate.movie());
         if (title < MINIMUM_TITLE_SCORE) {
             return 0;
         }
         double score = title;
         Optional<Integer> known = evidence.yearHint().or(() -> guess.flatMap(TitleGuess::year));
-        if (known.isPresent() && candidate.year().isPresent()) {
+        if (known.isPresent() && candidate.movie().year().isPresent()) {
             // Off by one is forgiven: festival premiere and wide release
             // straddle new year often enough that the sources disagree.
-            score += Math.abs(known.get() - candidate.year().get()) <= 1
+            score += Math.abs(known.get() - candidate.movie().year().get()) <= 1
                     ? YEAR_WEIGHT
                     : -YEAR_WEIGHT;
         }
+        if (evidence.duration().isPresent() && candidate.runtimeMinutes().isPresent()) {
+            score += RUNTIME_WEIGHT * runtimeVerdict(
+                    evidence.duration().get().toMinutes(), candidate.runtimeMinutes().get());
+        }
         return score;
+    }
+
+    /**
+     * What the running time says: {@code +1} when the file fits the official
+     * runtime, {@code -1} when it cannot be the same film, {@code 0} in the
+     * middle ground where a director's cut or an extended edition lives.
+     * Lenient on purpose — runtimes honestly disagree by cuts, credits and
+     * PAL speed-up, and this witness must never overrule an exact title, only
+     * separate two candidates the title cannot.
+     */
+    static int runtimeVerdict(long fileMinutes, int officialMinutes) {
+        long difference = Math.abs(fileMinutes - officialMinutes);
+        if (difference <= Math.max(10, Math.round(officialMinutes * 0.15))) {
+            return 1;
+        }
+        if (difference > Math.round(officialMinutes * 0.4)) {
+            return -1;
+        }
+        return 0;
     }
 
     /** The best similarity any of the candidate's names manages against any of ours. */

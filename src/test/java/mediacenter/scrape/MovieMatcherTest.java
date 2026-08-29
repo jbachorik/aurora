@@ -2,6 +2,8 @@ package mediacenter.scrape;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -11,7 +13,14 @@ import org.junit.jupiter.api.Test;
 class MovieMatcherTest {
 
     private static MovieEvidence evidence(String folderName, String fileName, Integer year) {
-        return new MovieEvidence(folderName, fileName, Optional.ofNullable(year));
+        return new MovieEvidence(folderName, fileName, Optional.ofNullable(year), Optional.empty());
+    }
+
+    /** Wraps plain candidates the way the scraper does when no runtime was fetched. */
+    private static List<MovieMatcher.Candidate> plain(TvdbCandidate... candidates) {
+        return Arrays.stream(candidates)
+                .map(candidate -> new MovieMatcher.Candidate(candidate, Optional.empty()))
+                .toList();
     }
 
     private static TvdbCandidate candidate(long id, String name, Integer year) {
@@ -27,7 +36,7 @@ class MovieMatcherTest {
         TvdbCandidate original = candidate(228, "Blade Runner", 1982);
 
         assertEquals(Optional.of(bladeRunner), MovieMatcher.pick(
-                evidence, Optional.empty(), List.of(bladeRunner, original)));
+                evidence, Optional.empty(), plain(bladeRunner, original)));
     }
 
     @Test
@@ -39,11 +48,11 @@ class MovieMatcherTest {
         assertEquals(Optional.of(newDune), MovieMatcher.pick(
                 evidence("Dune (2021)", "Dune.2021.2160p.mkv", 2021),
                 Optional.empty(),
-                List.of(newDune, oldDune)));
+                plain(newDune, oldDune)));
         assertEquals(Optional.of(oldDune), MovieMatcher.pick(
                 evidence("Dune (1984)", "Dune.1984.mkv", 1984),
                 Optional.empty(),
-                List.of(newDune, oldDune)));
+                plain(newDune, oldDune)));
     }
 
     @Test
@@ -55,7 +64,7 @@ class MovieMatcherTest {
         assertEquals(Optional.empty(), MovieMatcher.pick(
                 evidence("Dune", "Dune.mkv", null),
                 Optional.empty(),
-                List.of(newDune, oldDune)));
+                plain(newDune, oldDune)));
     }
 
     @Test
@@ -68,11 +77,11 @@ class MovieMatcherTest {
         assertEquals(Optional.of(bladeRunner), MovieMatcher.pick(
                 evidence,
                 Optional.of(new TitleGuess("Blade Runner 2049", Optional.of(2017))),
-                List.of(bladeRunner, original)));
+                plain(bladeRunner, original)));
 
         // Without the guess, the folder name alone earns nothing.
         assertEquals(Optional.empty(), MovieMatcher.pick(
-                evidence, Optional.empty(), List.of(bladeRunner, original)));
+                evidence, Optional.empty(), plain(bladeRunner, original)));
     }
 
     @Test
@@ -81,7 +90,44 @@ class MovieMatcherTest {
         assertEquals(Optional.empty(), MovieMatcher.pick(
                 evidence("Heat (1995)", "Heat.1995.mkv", 1995),
                 Optional.empty(),
-                List.of(candidate(99, "Heartbeat", 1995))));
+                plain(candidate(99, "Heartbeat", 1995))));
+    }
+
+    @Test
+    @DisplayName("the file's running time can separate what the names cannot")
+    void theRuntimeBreaksTheTie() {
+        // Two same-named films, neither side knowing a year — but the file
+        // runs two and a half hours, and only one of the candidates does.
+        MovieEvidence evidence = new MovieEvidence(
+                "The Gambler", "The.Gambler.mkv", Optional.empty(),
+                Optional.of(Duration.ofMinutes(150)));
+        TvdbCandidate longFilm = candidate(1, "The Gambler", null);
+        TvdbCandidate shortFilm = candidate(2, "The Gambler", null);
+
+        assertEquals(Optional.of(longFilm), MovieMatcher.pick(
+                evidence,
+                Optional.empty(),
+                List.of(
+                        new MovieMatcher.Candidate(longFilm, Optional.of(150)),
+                        new MovieMatcher.Candidate(shortFilm, Optional.of(90)))));
+
+        // With no runtimes fetched the same pair is honestly too close to call.
+        assertEquals(Optional.empty(), MovieMatcher.pick(
+                evidence, Optional.empty(), plain(longFilm, shortFilm)));
+    }
+
+    @Test
+    @DisplayName("the runtime witness is lenient: cuts and credits are not another film")
+    void runtimeVerdictsAreLenient() {
+        // Within ten minutes, or fifteen percent, is the same film.
+        assertEquals(1, MovieMatcher.runtimeVerdict(150, 150));
+        assertEquals(1, MovieMatcher.runtimeVerdict(142, 150));
+        assertEquals(1, MovieMatcher.runtimeVerdict(95, 90));
+        // An extended edition lives in the middle ground: no verdict either way.
+        assertEquals(0, MovieMatcher.runtimeVerdict(228, 179));
+        // Twice the length is simply not the same film.
+        assertEquals(-1, MovieMatcher.runtimeVerdict(180, 90));
+        assertEquals(-1, MovieMatcher.runtimeVerdict(90, 180));
     }
 
     @Test
@@ -94,6 +140,6 @@ class MovieMatcherTest {
         assertEquals(Optional.of(the2012Film), MovieMatcher.pick(
                 evidence("2012", "2012.1080p.mkv", null),
                 Optional.of(new TitleGuess("2012", Optional.of(2009))),
-                List.of(the2012Film)));
+                plain(the2012Film)));
     }
 }

@@ -53,6 +53,7 @@ import mediacenter.remote.RemoteKiosk;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
 import mediacenter.scrape.ScrapeService;
+import mediacenter.scrape.VlcDurationProbe;
 import mediacenter.ui.components.ArtworkCache;
 import mediacenter.ui.components.Motion;
 
@@ -145,7 +146,10 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
                 watched,
                 platform,
                 new ScrapeService(
-                        () -> settings().scraper(), backgroundExecutor, Platform::runLater));
+                        () -> settings().scraper(), backgroundExecutor, Platform::runLater,
+                        // The same libVLC install the player uses, borrowed to
+                        // read film durations for the scraper's cross-check.
+                        new VlcDurationProbe(() -> settings().vlcPath())));
 
         buildFrame();
         this.homeView = new HomeView(context);
