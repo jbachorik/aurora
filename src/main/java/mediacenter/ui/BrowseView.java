@@ -141,6 +141,12 @@ public final class BrowseView implements View {
         // Playback while this page was hidden may have marked videos watched —
         // cheap to re-read, the marks live in memory.
         refreshWatchedMarks();
+        // Scrapes started from a page deeper in the stack may still be running;
+        // now that this page is the one on screen, their answers belong here.
+        if (scrapableRoot()) {
+            context.scrapeService().setOnScraped(this::onFolderScraped);
+            context.scrapeService().setOnReorganized(this::onFolderReorganized);
+        }
         View.super.onShown();
     }
 
@@ -213,6 +219,7 @@ public final class BrowseView implements View {
         list.setRows(rows);
         list.focusSelection();
         resolveSoleMedia(directoryRows, generation);
+        offerFoldersForScraping();
         // A photograph in this very folder settles the question with no walk at
         // all, and this is the folder a viewer of photographs is usually in. The
         // walk below is the expensive case — a shelf of films whose posters are
@@ -406,6 +413,73 @@ public final class BrowseView implements View {
                 .flatMap(MediaListRow::item)
                 .map(selected -> selected.path().equals(item.path()))
                 .orElse(false);
+    }
+
+    // -- series scraping ------------------------------------------------------
+
+    /**
+     * Under a TV or Movies root, every folder on screen is offered to the
+     * scraper — as a series or as a film, because the root has said out loud
+     * what its folders hold, exactly the declaration {@link #playsOnwards}
+     * already trusts. A Movies folder is offered whole as well, in case loose
+     * files on it want folders of their own. Offering is all this does: the
+     * service is the one that knows whether scraping is even switched on, and
+     * a folder already carrying its metadata file costs nothing.
+     */
+    private void offerFoldersForScraping() {
+        if (!scrapableRoot()) {
+            return;
+        }
+        context.scrapeService().setOnScraped(this::onFolderScraped);
+        context.scrapeService().setOnReorganized(this::onFolderReorganized);
+        if (root.type() == MediaRootType.MOVIES) {
+            context.scrapeService().organizeLooseMovies(folder, folder.equals(root.path()));
+        }
+        for (MediaItem item : items) {
+            if (!item.isDirectory()) {
+                continue;
+            }
+            if (root.type() == MediaRootType.TV) {
+                context.scrapeService().scrapeSeriesIfNeeded(item.path());
+            } else {
+                context.scrapeService().scrapeMovieIfNeeded(item.path());
+            }
+        }
+    }
+
+    /** The roots whose folders have declared what they are; General has not. */
+    private boolean scrapableRoot() {
+        return root.type() == MediaRootType.TV || root.type() == MediaRootType.MOVIES;
+    }
+
+    /**
+     * The shelf on screen was tidied under the page's feet — loose files
+     * became folders — so what the rows show is no longer what is there.
+     * A full reload, exactly as if F5 had been pressed; it happens at most
+     * once per folder per run, and only when something actually moved.
+     */
+    private void onFolderReorganized(Path reorganizedFolder) {
+        if (!discarded && folder.equals(reorganizedFolder)) {
+            load();
+        }
+    }
+
+    /**
+     * A scrape may have just put a poster where this page remembered "none":
+     * the remembered answer goes, and the line — if it is the selected one —
+     * asks again and fills the column.
+     */
+    private void onFolderScraped(Path scrapedFolder) {
+        if (discarded) {
+            return;
+        }
+        directoryArtwork.remove(scrapedFolder);
+        list.selectedRow().ifPresent(row -> {
+            MediaItem item = row.item().orElse(null);
+            if (item != null && item.path().equals(scrapedFolder)) {
+                showPosterFor(row);
+            }
+        });
     }
 
     // -- activation ---------------------------------------------------------

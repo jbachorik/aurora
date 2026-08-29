@@ -83,7 +83,10 @@ class SettingsStoreTest {
                 10,
                 true,
                 List.of(new Website("mosfilm", "Mosfilm", "https://cinema.mosfilm.ru")),
-                200);
+                200,
+                new ScraperSettings(
+                        true, Optional.of("tvdb-key"), "http://localhost:11434",
+                        Optional.empty(), "llama3.2"));
 
         assertTrue(store.save(original));
         ApplicationSettings reloaded = store.load();
@@ -99,6 +102,57 @@ class SettingsStoreTest {
         assertTrue(reloaded.embeddedPlayer());
         assertEquals(original.websites(), reloaded.websites());
         assertEquals(200, reloaded.browserScalePercent());
+        assertEquals(original.scraper(), reloaded.scraper());
+    }
+
+    @Test
+    @DisplayName("a configuration written before the scraper existed loads with it off")
+    void defaultsTheScraperWhenTheKeyIsAbsent(@TempDir Path temp) throws IOException {
+        Files.writeString(temp.resolve("config.json"), "{\"fullScreen\": true, \"theme\": \"DARK\"}");
+
+        ScraperSettings scraper = new SettingsStore(temp).load().scraper();
+
+        assertEquals(ScraperSettings.defaults(), scraper);
+        assertFalse(scraper.enabled());
+        assertFalse(scraper.readyToScrape());
+    }
+
+    @Test
+    @DisplayName("switched on with a TheTVDB key is what makes the scraper ready")
+    void theScraperNeedsItsSwitchAndTheTvdbKey(@TempDir Path temp) {
+        ScraperSettings offButKeyed = ScraperSettings.defaults()
+                .withTvdbApiKey(Optional.of("tvdb-key"));
+        assertFalse(offButKeyed.readyToScrape());
+        assertTrue(offButKeyed.withEnabled(true).readyToScrape());
+        assertFalse(ScraperSettings.defaults().withEnabled(true).readyToScrape());
+
+        SettingsStore store = new SettingsStore(temp);
+        assertTrue(store.save(ApplicationSettings.defaults()
+                .withScraper(offButKeyed.withEnabled(true))));
+        assertTrue(store.load().scraper().readyToScrape());
+    }
+
+    @Test
+    @DisplayName("the hosted Ollama endpoint counts as configured only with its key")
+    void ollamaConfigurationDependsOnTheEndpoint() {
+        assertFalse(ScraperSettings.defaults().ollamaConfigured());
+        assertTrue(ScraperSettings.defaults()
+                .withOllamaApiKey(Optional.of("ollama-key")).ollamaConfigured());
+        // An Ollama in the house answers without any key at all.
+        assertTrue(ScraperSettings.defaults()
+                .withOllamaEndpoint("http://localhost:11434").ollamaConfigured());
+    }
+
+    @Test
+    @DisplayName("blanked-out scraper fields fall back rather than sticking as empty")
+    void scraperFieldsNormalise() {
+        ScraperSettings scraper = new ScraperSettings(
+                true, Optional.of("  spaced-key  "), " ", Optional.of("   "), "");
+
+        assertEquals(Optional.of("spaced-key"), scraper.tvdbApiKey());
+        assertEquals(ScraperSettings.DEFAULT_OLLAMA_ENDPOINT, scraper.ollamaEndpoint());
+        assertEquals(Optional.empty(), scraper.ollamaApiKey());
+        assertEquals(ScraperSettings.DEFAULT_OLLAMA_MODEL, scraper.ollamaModel());
     }
 
     @Test

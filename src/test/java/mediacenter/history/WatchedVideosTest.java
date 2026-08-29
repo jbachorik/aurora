@@ -34,6 +34,22 @@ class WatchedVideosTest {
     }
 
     @Test
+    @DisplayName("a mark travels with a file the library moved")
+    void aMarkFollowsAMovedFile() {
+        WatchedVideos watched = new WatchedVideos();
+        Path from = Path.of("/media/Movies/Heat.1995.mkv");
+        Path to = Path.of("/media/Movies/Heat.1995/Heat.1995.mkv");
+        watched.mark(from);
+
+        assertTrue(watched.move(from, to));
+
+        assertFalse(watched.isWatched(from));
+        assertTrue(watched.isWatched(to));
+        // An unmarked file carries nothing to its new home.
+        assertFalse(watched.move(Path.of("/media/Movies/Other.mkv"), to));
+    }
+
+    @Test
     @DisplayName("resetting a folder clears the marks from every subfolder below it")
     void resetsAFolderRecursively() {
         WatchedVideos watched = new WatchedVideos();

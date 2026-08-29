@@ -102,6 +102,25 @@ public final class PlaybackService {
         backgroundExecutor.execute(() -> recordHistory(mediaFile, displayTitle));
     }
 
+    /**
+     * Follows a file the library has reorganised: its history entry and its
+     * watched mark move with it, so tidying a shelf never un-watches a film or
+     * strands a "recently played" tile on a path that no longer exists.
+     * Runs on the background executor; safe to call from any thread.
+     */
+    public void recordFileMoved(Path from, Path to) {
+        backgroundExecutor.execute(() -> {
+            try {
+                if (history.move(from, to)) {
+                    historyStore.save(history);
+                }
+                watched.recordMove(from, to);
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Could not follow a moved file in the history", e);
+            }
+        });
+    }
+
     private void recordHistory(Path mediaFile, String displayTitle) {
         try {
             history.record(mediaFile, displayTitle, Instant.now());

@@ -72,11 +72,22 @@ public final class LibVlc {
     public static final int EVENT_MEDIA_PLAYER_END_REACHED = 265;
     public static final int EVENT_MEDIA_PLAYER_ENCOUNTERED_ERROR = 266;
 
+    // -- media parsing (libvlc_media.h) ---------------------------------------
+
+    /** {@code libvlc_media_parse_local}: read the file itself, fetch nothing online. */
+    public static final int MEDIA_PARSE_LOCAL = 0;
+
+    /** {@code libvlc_media_parsed_status_done}; lower values are skipped/failed/timeout. */
+    public static final int MEDIA_PARSED_STATUS_DONE = 4;
+
     private final MethodHandle libvlcNew;
     private final MethodHandle libvlcRelease;
     private final MethodHandle errmsg;
     private final MethodHandle mediaNewPath;
     private final MethodHandle mediaRelease;
+    private final MethodHandle mediaParseWithOptions;
+    private final MethodHandle mediaGetParsedStatus;
+    private final MethodHandle mediaGetDuration;
     private final MethodHandle playerNew;
     private final MethodHandle playerRelease;
     private final MethodHandle playerSetMedia;
@@ -103,6 +114,13 @@ public final class LibVlc {
                 FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         mediaRelease = downcall(lookup, "libvlc_media_release",
                 FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+        mediaParseWithOptions = downcall(lookup, "libvlc_media_parse_with_options",
+                FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                        ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+        mediaGetParsedStatus = downcall(lookup, "libvlc_media_get_parsed_status",
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
+        mediaGetDuration = downcall(lookup, "libvlc_media_get_duration",
+                FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
         playerNew = downcall(lookup, "libvlc_media_player_new",
                 FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
         playerRelease = downcall(lookup, "libvlc_media_player_release",
@@ -211,6 +229,25 @@ public final class LibVlc {
 
     public void mediaRelease(MemorySegment media) {
         invoke(mediaRelease, media);
+    }
+
+    /**
+     * Starts a local-only parse of the media — the file's own header, nothing
+     * fetched online. Asynchronous: poll {@link #mediaParsedStatus} for the
+     * outcome. Returns false when the parse could not even be started.
+     */
+    public boolean mediaParseLocal(MemorySegment media, int timeoutMillis) {
+        return (int) invoke(mediaParseWithOptions, media, MEDIA_PARSE_LOCAL, timeoutMillis) == 0;
+    }
+
+    /** Where an asynchronous parse stands; 0 until it finishes one way or another. */
+    public int mediaParsedStatus(MemorySegment media) {
+        return (int) invoke(mediaGetParsedStatus, media);
+    }
+
+    /** The parsed media's duration in milliseconds; -1 or 0 when it has none to give. */
+    public long mediaDurationMillis(MemorySegment media) {
+        return (long) invoke(mediaGetDuration, media);
     }
 
     public MemorySegment playerNew(MemorySegment instance) {

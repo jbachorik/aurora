@@ -41,6 +41,23 @@ public final class PlaybackHistory {
         trim();
     }
 
+    /**
+     * Follows a file the library has moved, keeping its place in the list and
+     * its timestamp — a reorganised shelf is not a fresh viewing.
+     *
+     * @return whether an entry actually changed
+     */
+    public synchronized boolean move(Path from, Path to) {
+        for (int i = 0; i < entries.size(); i++) {
+            PlaybackHistoryEntry entry = entries.get(i);
+            if (entry.mediaPath().equals(from)) {
+                entries.set(i, new PlaybackHistoryEntry(to, entry.displayTitle(), entry.lastPlayed()));
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Newest first. */
     public synchronized List<PlaybackHistoryEntry> entries() {
         return List.copyOf(entries);

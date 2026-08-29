@@ -199,6 +199,122 @@ A film's artwork — poster, folder and cover images, and any per-film sidecar �
 is never listed as a photograph, wherever it sits in the folder tree.
 
 
+Series and movie identification (optional)
+------------------------------------------
+
+Folders on a **TV** or **Movies** root can be identified online as they are
+browsed, so a shelf of ripper-named folders gains real posters and synopses
+without anyone renaming anything. It is **off by default** — scraping sends
+folder names to services on the internet — and lives behind a **Series
+scraper** row in Settings. Which pipeline a folder goes down is decided by
+the root it sits under: the root's type has already said out loud what its
+folders hold, which is the same declaration episode chaining trusts.
+
+Three steps, each falling back gracefully to the next:
+
+1. **What is on disk.** A TV folder is read into evidence: episodes per
+   season (from `Season 1`-style folders or from `S01E01` tags) and a few
+   episode file names; a folder with no episode structure is not a series. A
+   Movies folder must be the one-folder-per-film shape — exactly one video
+   (a ripper's `sample.mkv` is ignored), no season folders, no episode tag —
+   and yields the folder name, the file name, and the release year when
+   either carries one ("(2017)", or the trailing year of a dotted name;
+   never a leading one, so "2001 - A Space Odyssey" keeps its title).
+   Anything that qualifies as neither is never sent anywhere.
+2. **What it is called.** An Ollama model reads those names into a clean
+   title — `Breaking.Bad.S01-S05.COMPLETE.1080p.x265` becomes "Breaking
+   Bad", `BR2049.2160p.HDR.x265-GRP` becomes "Blade Runner 2049". The
+   endpoint is Ollama's hosted service by default (its free tier needs the
+   API key), or point it at an Ollama in the house (`http://localhost:11434`,
+   no key). With neither, the cleaned folder name is the search term.
+3. **What TheTVDB knows.** The title is searched on TheTVDB (v4 API key
+   required — the one thing there is no scraping without; the same key
+   covers series and films) and every leading candidate is cross-checked
+   against what the disk showed. A series is checked by **shape**: a season
+   holding more episodes than the candidate ever aired rules it out, which
+   is how the American *The Office* is told from the British one. A film has
+   no shape, so it is checked by **year**, which is what tells *Dune* (2021)
+   from *Dune* (1984) — and a much-remade title with no year anywhere is
+   left unidentified on purpose. Where VLC is configured, a film gets one
+   more witness: libVLC — the same library the built-in player binds — reads
+   the file's **running time** without playing a frame, and it is weighed
+   against each candidate's official runtime. Leniently, because cuts and
+   credits move runtimes honestly: close enough counts for a candidate,
+   twice the length counts against it, and the extended-edition middle
+   ground says nothing — it separates two candidates the names cannot,
+   never overrules an exact title. No VLC, no opinion, everything else
+   still works. Either way, a match that is not clearly ahead of the
+   runner-up is discarded — a wrong poster is worse than none.
+
+What was learned is written into the title's folder itself: a hand-editable
+`aurora-series.json` or `aurora-movie.json` (title, year, overview, status,
+TheTVDB id) and a `poster.jpg` — but never over artwork that is already
+there. That file is the whole database: the metadata travels with the folder,
+every machine that can see the share sees it, and deleting the file is how
+you ask for a re-scrape. Scrapes run one at a time in the background; a
+folder that found no confident match is retried on the next start, when the
+missing season — or the year a rename adds — may have arrived.
+
+Films that sit as **loose video files** directly on a Movies shelf get
+folders of their own first: `Movies/Heat.1995.mkv` becomes
+`Movies/Heat.1995/Heat.1995.mkv` — the folder named exactly after the file,
+no cleverness — with its subtitles and sidecar artwork moved in alongside,
+and the new folder queued for identification right away. Watched marks and
+the recently-played list follow the moved file, so tidying never un-watches
+anything. It is a pure rename on the same volume, and the caution is broader
+still than the scraper's: a file with an ordering prefix or episode tag is
+part of a run and never folded away, a folder *named for* one of its videos
+is already that film's home — extras beside it and all — and is left whole,
+and samples, collisions and any doubt leave a file exactly where it was.
+
+### Setting up Ollama
+
+Ollama is optional — without it, folder names are searched on TheTVDB as they
+are, which is fine for tidy libraries and hopeless for
+`BrBa.COMPLETE.720p.x264-GRP`. There are two ways to have it, and the settings
+dialog (**Settings → Series scraper → Configure…**) takes either:
+
+**The hosted service (the default endpoint).** Nothing to install; a title
+guess is one tiny request, so the free tier's limits are far more than this
+feature ever uses.
+
+1. Create an account at [ollama.com](https://ollama.com).
+2. Create an API key at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+3. Paste it into **Ollama API key**. Leave the endpoint
+   (`https://ollama.com`) and the model (`gpt-oss:20b`) as they are — any
+   other model the hosted service offers works too.
+
+Without a key the hosted endpoint turns requests away, and the media center
+knows it: it skips the call entirely rather than waiting out a timeout per
+folder, and scrapes with the folder name alone.
+
+**An Ollama in the house (no account, no key).** The
+[open-source Ollama](https://ollama.com/download) running on any machine that
+is on when the media center is — a desktop, the NAS if it has the memory. A
+small model is entirely enough for reading folder names:
+
+```bash
+ollama pull llama3.2     # ~2 GB; qwen3:4b works too
+```
+
+Then set **Ollama endpoint** to where it listens — `http://localhost:11434`
+on the same machine, `http://desktop:11434` or `http://192.168.1.20:11434`
+across the LAN — put that model's name into **Ollama model**, and leave the
+API key empty. One caveat for the across-the-LAN case: Ollama binds to
+localhost unless told otherwise, so on the machine running it set
+`OLLAMA_HOST=0.0.0.0` (an environment variable) before starting it.
+
+Either way, a quick check that the endpoint answers, from any machine that
+can reach it:
+
+```bash
+curl http://desktop:11434/api/tags        # local: lists the pulled models
+```
+
+Nothing else is needed — the media center speaks Ollama's standard chat API,
+which is the same for both.
+
+
 How it is put together
 ----------------------
 
@@ -207,6 +323,7 @@ JavaFX Media Center
         |
         +-- MediaScanner ........... local disks, UNC/SMB paths
         +-- ArtworkResolver ........ local poster/folder/cover images
+        +-- ScrapeService .......... Ollama title guess, TheTVDB metadata
         +-- PlaybackHistory ........ recently played
         +-- PlayerLauncher ......... external VLC process
         +-- PlatformServices ....... VLC discovery, sleep, data directory
@@ -219,6 +336,7 @@ src/main/java/
     mediacenter/ui/                views, shell, tile grid, artwork cache
     mediacenter/ui/components/     tiles, grid, motion, activation gate
     mediacenter/media/             MediaRoot, MediaItem, MediaScanner, artwork
+    mediacenter/scrape/            series+movie evidence, Ollama, TheTVDB, matchers
     mediacenter/playback/          PlayerLauncher, VlcPlayerLauncher, service
     mediacenter/platform/          Windows / macOS / Linux services
     mediacenter/remote/            remote-control HTTP server, QR encoder
@@ -267,7 +385,8 @@ Design rules the code follows:
   under a quarter of a second and nothing delays input.
 * **Only the modules actually used.** In particular `javafx.media` is *not*
   required — this application never decodes media. The linked runtime image
-  contains 11 modules.
+  contains 12 modules (`java.net.http`, the series scraper's client side,
+  being the latest addition).
 
 
 Where it keeps things
