@@ -182,7 +182,12 @@ fullscreen state off the window instead of off `document.fullscreenElement` —
 the VK player Mosfilm embeds is one of them, and its button then does nothing
 at all. `F` asks for fullscreen directly, going around the site's own idea of
 the matter. Press it again to come back. It comes from the same bundled
-extension as `Ctrl+Q`, so it shares that extension's limits below.
+extension as `Ctrl+Q`, so it shares that extension's limits below. On branded
+Google Chrome, where the extension cannot load, the kiosk opens **maximized
+instead of fullscreen**: a maximized app window does not fool the players, so
+their own fullscreen buttons keep working — at the price of a title bar
+whenever no film is playing. Prefer Chromium, Edge or Brave for the borderless
+version.
 
 **Leaving a site:** `Ctrl+Q` closes the browser and the media center returns
 — the same key that quits VLC, provided by a tiny bundled extension the

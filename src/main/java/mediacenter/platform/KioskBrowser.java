@@ -15,7 +15,12 @@ import java.util.Optional;
  *
  * <p>Chromium-family browsers get the full treatment: app mode (no tabs, no
  * address bar), fullscreen, a device-scale hint so a desktop page reads from
- * across the room, and a profile directory of the media center's own. The
+ * across the room, and a profile directory of the media center's own. Branded
+ * Google Chrome alone is maximized rather than fullscreened: it stopped
+ * loading the bundled extension in 2025, so the {@code F} key that rescues
+ * embedded players fooled by an already-fullscreen window is not there — a
+ * maximized app window keeps those players' own fullscreen buttons working,
+ * at the price of a title bar between films. The
  * profile is not a nicety — a Chromium already running would otherwise swallow
  * the launch into the existing instance and ignore every flag with it, which
  * is the same single-instance trap VLC has on Windows. The dedicated profile
@@ -50,7 +55,8 @@ public final class KioskBrowser {
             Optional<Path> extensionDirectory) {
         String program = fileNameOf(browserExecutable);
         if (isChromiumFamily(program)) {
-            return chromiumCommand(browserExecutable, url, scalePercent, profileDirectory, extensionDirectory);
+            return chromiumCommand(
+                    browserExecutable, program, url, scalePercent, profileDirectory, extensionDirectory);
         }
         if (program.contains("firefox")) {
             return List.of(browserExecutable.toString(), "--kiosk", url);
@@ -63,8 +69,14 @@ public final class KioskBrowser {
         return CHROMIUM_FAMILY.stream().anyMatch(name::contains);
     }
 
+    /** Branded Google Chrome, as opposed to Chromium — "chromium" never contains "chrome". */
+    static boolean isBrandedChrome(String executableName) {
+        String name = executableName.toLowerCase(Locale.ROOT);
+        return name.contains("chrome") && !name.contains("chromium");
+    }
+
     private static List<String> chromiumCommand(
-            Path browserExecutable, String url, int scalePercent, Path profileDirectory,
+            Path browserExecutable, String program, String url, int scalePercent, Path profileDirectory,
             Optional<Path> extensionDirectory) {
         List<String> command = new ArrayList<>(8);
         command.add(browserExecutable.toString());
@@ -80,7 +92,12 @@ public final class KioskBrowser {
             command.add("--force-device-scale-factor="
                     + String.format(Locale.ROOT, "%.2f", scalePercent / 100.0));
         }
-        command.add("--start-fullscreen");
+        // A window that already fills the screen fools embedded players into
+        // thinking they are fullscreen, and the extension's F key is the way
+        // back around that — but branded Chrome refuses --load-extension, so
+        // there the window stays a maximized one and the players' own buttons
+        // keep working, title bar and all.
+        command.add(isBrandedChrome(program) ? "--start-maximized" : "--start-fullscreen");
         // Last, as with VLC: everything after the = is the address, dashes and all.
         command.add("--app=" + url);
         return List.copyOf(command);
