@@ -20,6 +20,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.image.ImageView;
 import javafx.scene.image.PixelWriter;
@@ -42,8 +43,10 @@ import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
+import mediacenter.playback.PlayablePaths;
 import mediacenter.playback.PlaybackResult;
 import mediacenter.playback.PlaybackService;
+import mediacenter.playback.cache.PlaybackPreparer;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.KioskBrowser;
 import mediacenter.platform.PlatformServices;
@@ -82,6 +85,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private final SettingsStore settingsStore;
     private final PlatformServices platform;
     private final PlaybackService playbackService;
+    private final PlaybackPreparer playbackPreparer;
     private final ExecutorService backgroundExecutor;
 
     private final StackPane rootPane = new StackPane();
@@ -91,6 +95,18 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private final Label bannerLabel = new Label();
     private final StackPane bannerBox = new StackPane(bannerLabel);
     private final PauseTransition bannerTimer = new PauseTransition(BANNER_DURATION);
+
+    /** The modal card shown while a file buffers from a slow share. */
+    private final Label bufferingTitleLabel = new Label();
+    private final Label bufferingDetailLabel = new Label();
+    private final ProgressBar bufferingBar = new ProgressBar(0);
+    private final StackPane bufferingBackdrop = new StackPane();
+
+    /**
+     * The viewer's handle on the buffering wait now in progress — Esc and
+     * Enter reach the preparer through it. Null outside a playback request.
+     */
+    private volatile PlaybackPreparer.BufferingControl bufferingControl;
     private final PauseTransition cursorIdleTimer = new PauseTransition(CURSOR_IDLE_DELAY);
 
     private final Deque<View> viewStack = new ArrayDeque<>();
@@ -98,6 +114,13 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private final HomeView homeView;
     private final AtomicReference<ApplicationSettings> settingsRef;
     private long acceptPlaybackFromNanos;
+
+    /**
+     * True while mirror copies are being looked up for the built-in player —
+     * the moment between the play key and the player page appearing, when a
+     * second press must not start a second run.
+     */
+    private volatile boolean embeddedPlayerPreparing;
 
     /**
      * The kiosk browser currently open, if any. Watched so a remote stop can
@@ -123,6 +146,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
             PlaybackHistory history,
             WatchedService watched,
             PlaybackService playbackService,
+            PlaybackPreparer playbackPreparer,
             PlatformServices platform,
             MediaScanner scanner,
             ArtworkResolver artworkResolver,
@@ -133,6 +157,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         this.settingsStore = settingsStore;
         this.platform = platform;
         this.playbackService = playbackService;
+        this.playbackPreparer = playbackPreparer;
         this.backgroundExecutor = backgroundExecutor;
 
         this.context = new UiContext(
@@ -243,6 +268,23 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         StackPane.setMargin(bannerBox, new Insets(96, 32, 0, 32));
         bannerTimer.setOnFinished(event -> hideBanner());
 
+        bufferingTitleLabel.getStyleClass().add("buffering-title");
+        bufferingDetailLabel.getStyleClass().add("buffering-detail");
+        bufferingBar.getStyleClass().add("buffering-bar");
+        bufferingBar.setMaxWidth(Double.MAX_VALUE);
+        Label bufferingHints = new Label("Enter  Play now        Esc  Cancel");
+        bufferingHints.getStyleClass().add("buffering-hints");
+        VBox bufferingCard = new VBox(10,
+                bufferingTitleLabel, bufferingBar, bufferingDetailLabel, bufferingHints);
+        bufferingCard.getStyleClass().add("buffering-card");
+        bufferingCard.setAlignment(Pos.CENTER);
+        bufferingCard.setMaxSize(560, Region.USE_PREF_SIZE);
+        bufferingBackdrop.getStyleClass().add("buffering-overlay");
+        bufferingBackdrop.getChildren().add(bufferingCard);
+        // Kept managed so it always spans the whole window; only visibility
+        // toggles, which also keeps it from swallowing mouse events while off.
+        bufferingBackdrop.setVisible(false);
+
         remoteBadge.getStyleClass().add("remote-badge");
         remoteAddressLabel.getStyleClass().add("remote-badge-address");
         remoteBadge.setAlignment(Pos.CENTER);
@@ -254,7 +296,8 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         // Clear of the hint bar along the bottom.
         StackPane.setMargin(remoteBadge, new Insets(0, 24, 56, 0));
 
-        rootPane.getChildren().addAll(frame, bannerBox, remoteBadge);
+        // The overlay sits under the banner, so a notice can still land on top.
+        rootPane.getChildren().addAll(frame, bufferingBackdrop, bannerBox, remoteBadge);
     }
 
     private View currentView() {
@@ -305,6 +348,28 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private void handleGlobalKey(KeyEvent event) {
         // Never steal keys from a text field in Settings.
         if (event.getTarget() instanceof TextInputControl) {
+            return;
+        }
+        // The buffering overlay is modal: two keys mean something, the rest
+        // must not reach the page dimmed out underneath it.
+        if (bufferingBackdrop.isVisible()) {
+            PlaybackPreparer.BufferingControl control = bufferingControl;
+            switch (event.getCode()) {
+                case ESCAPE, BACK_SPACE -> {
+                    if (control != null) {
+                        control.cancel();
+                        bufferingDetailLabel.setText("Cancelling…");
+                    }
+                }
+                case ENTER, SPACE -> {
+                    if (control != null) {
+                        control.playNow();
+                        bufferingDetailLabel.setText("Starting…");
+                    }
+                }
+                default -> { }
+            }
+            event.consume();
             return;
         }
         switch (event.getCode()) {
@@ -523,7 +588,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     }
 
     private void startPlayback(PlayerView.Entry first, List<PlayerView.Entry> playOnwards) {
-        if (playbackService.isPlaying()) {
+        if (playbackService.isPlaying() || embeddedPlayerPreparing) {
             return;
         }
         if (System.nanoTime() < acceptPlaybackFromNanos) {
@@ -535,12 +600,57 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         }
         LOG.log(Level.INFO, () -> "Playback requested for " + first.path()
                 + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
-        hideForPlayback();
+        // The window stays up while the file is prepared, so the buffering
+        // overlay has somewhere to show; it hides when the player is really
+        // coming. The control outlives this method: Esc and Enter reach the
+        // wait through it for as long as the overlay is up.
+        PlaybackPreparer.BufferingControl control = new PlaybackPreparer.BufferingControl();
+        bufferingControl = control;
         playbackService.play(
                 first.path(),
                 playOnwards.stream().map(PlayerView.Entry::path).toList(),
                 first.title(),
-                this::onPlaybackFinished);
+                progress -> showBuffering(first.title(), progress),
+                this::showInfo,
+                control,
+                () -> {
+                    hideBuffering();
+                    hideForPlayback();
+                },
+                result -> {
+                    bufferingControl = null;
+                    hideBuffering();
+                    onPlaybackFinished(result);
+                });
+    }
+
+    // -- buffering overlay ---------------------------------------------------
+
+    private void showBuffering(String title, PlaybackPreparer.BufferingProgress progress) {
+        bufferingTitleLabel.setText(title);
+        bufferingBar.setProgress(progress.percent() / 100d);
+        String eta = etaText(progress.etaSeconds());
+        bufferingDetailLabel.setText("Buffering from the network… " + progress.percent() + "%"
+                + (eta.isEmpty() ? "" : "  ·  " + eta));
+        if (!bufferingBackdrop.isVisible()) {
+            bufferingBackdrop.setVisible(true);
+            Motion.fadeIn(bufferingBackdrop, Motion.NORMAL);
+        }
+    }
+
+    private void hideBuffering() {
+        bufferingBackdrop.setVisible(false);
+    }
+
+    /** "about 40 s left" below a couple of minutes, whole minutes above. */
+    private static String etaText(long etaSeconds) {
+        if (etaSeconds < 0) {
+            return "";
+        }
+        if (etaSeconds <= 90) {
+            return "about " + Math.max(etaSeconds, 1) + " s left";
+        }
+        return "about " + ((etaSeconds + 30) / 60) + " min left";
     }
 
     /**
@@ -560,7 +670,29 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         entries.addAll(playOnwards);
         LOG.log(Level.INFO, () -> "Embedded playback of " + first.path()
                 + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
-        push(new PlayerView(context, engine.get(), entries, playbackService::recordPlayed));
+        if (playbackPreparer == null) {
+            push(new PlayerView(context, engine.get(), entries, PlayablePaths.originals(),
+                    playbackService::recordPlayed));
+            return true;
+        }
+        // Looking mirror copies up stats their sources, and a stat against a
+        // dead share blocks — so it happens off the UI thread, and the page is
+        // pushed when the answers are in. Entries keep the paths the viewer
+        // chose; only what the player opens is swapped for a local copy. The
+        // session is live: a queued episode whose prefetch lands during the
+        // one before it plays from the mirror when its turn comes, and a
+        // stuttering stream can be paused, given a moment, and resumed onto
+        // the local copy growing behind it.
+        embeddedPlayerPreparing = true;
+        List<Path> paths = entries.stream().map(PlayerView.Entry::path).toList();
+        backgroundExecutor.execute(() -> {
+            PlayablePaths playablePaths = playbackPreparer.embeddedSession(paths);
+            FxTasks.onFx(() -> {
+                embeddedPlayerPreparing = false;
+                push(new PlayerView(context, engine.get(), entries, playablePaths,
+                        playbackService::recordPlayed));
+            });
+        });
         return true;
     }
 
@@ -621,11 +753,18 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     }
 
     private void onPlaybackFinished(PlaybackResult result) {
+        if (result instanceof PlaybackResult.Cancelled) {
+            // The window never hid — the viewer stopped the wait, and the page
+            // they were on simply gets its keyboard back.
+            focusCurrentView();
+            return;
+        }
         restoreAfterPlayback();
         switch (result) {
             case PlaybackResult.Failed failure -> showError(failure.userMessage());
             case PlaybackResult.Completed completed ->
                     LOG.log(Level.FINE, () -> "Player exited with code " + completed.exitCode());
+            case PlaybackResult.Cancelled cancelled -> { }
         }
     }
 

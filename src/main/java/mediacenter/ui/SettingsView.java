@@ -69,6 +69,8 @@ public final class SettingsView implements View {
     private final List<ToggleButton> slideshowToggles = new ArrayList<>();
     private final Label bufferValue = new Label();
     private final List<ToggleButton> bufferToggles = new ArrayList<>();
+    private final Label mirrorValue = new Label();
+    private final List<ToggleButton> mirrorToggles = new ArrayList<>();
     private final Label embeddedPlayerValue = new Label();
     private final ToggleGroup playerGroup = new ToggleGroup();
     private final Label browserScaleValue = new Label();
@@ -153,6 +155,7 @@ public final class SettingsView implements View {
         Node themeRow = themeRow();
         Node slideshowRow = slideshowRow();
         Node bufferRow = bufferRow();
+        Node mirrorRow = mirrorRow();
         Node embeddedPlayerRow = embeddedPlayerRow();
         Node browserScaleRow = browserScaleRow();
         Node scraperRow = scraperRow();
@@ -160,7 +163,7 @@ public final class SettingsView implements View {
         Node websitesSection = websitesSection();
 
         root.getChildren().addAll(
-                vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow,
+                vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow, mirrorRow,
                 embeddedPlayerRow, browserScaleRow, scraperRow, rootsSection, websitesSection);
 
         installArrowNavigation();
@@ -322,6 +325,46 @@ public final class SettingsView implements View {
         navigationRows.add(List.copyOf(bufferToggles));
 
         HBox line = new HBox(16, name, bufferValue, choices);
+        line.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(line);
+        card.getStyleClass().add("setting-row");
+        return card;
+    }
+
+    /**
+     * Disk given to local copies of network media. Before a playback the slow
+     * parts of a share are buffered here; files played again and again are
+     * copied here for good. Worded as a size because that is the only question
+     * a viewer has to answer: how much disk may this take.
+     */
+    private Node mirrorRow() {
+        Label name = new Label("Network media cache");
+        name.getStyleClass().add("setting-name");
+        name.setMinWidth(320);
+
+        mirrorValue.getStyleClass().add("setting-value");
+        HBox.setHgrow(mirrorValue, Priority.ALWAYS);
+        mirrorValue.setMaxWidth(Double.MAX_VALUE);
+
+        ToggleGroup group = new ToggleGroup();
+        HBox choices = new HBox(12);
+        choices.setAlignment(Pos.CENTER_RIGHT);
+        for (int gigabytes : List.of(0, 5, 10, 25)) {
+            ToggleButton button = new ToggleButton(gigabytes == 0 ? "Off" : gigabytes + " GB");
+            button.setUserData(gigabytes);
+            button.setToggleGroup(group);
+            button.setMinWidth(Region.USE_PREF_SIZE);
+            button.setOnAction(event -> {
+                button.setSelected(true);
+                update(settings().withMirrorGigabytes(gigabytes));
+            });
+            choices.getChildren().add(button);
+            mirrorToggles.add(button);
+        }
+        navigationRows.add(List.copyOf(mirrorToggles));
+
+        HBox line = new HBox(16, name, mirrorValue, choices);
         line.setAlignment(Pos.CENTER_LEFT);
 
         VBox card = new VBox(line);
@@ -862,6 +905,12 @@ public final class SettingsView implements View {
         bufferValue.setText(configuredBuffer + "s");
         for (ToggleButton toggle : bufferToggles) {
             toggle.setSelected(configuredBuffer.equals(toggle.getUserData()));
+        }
+
+        Integer configuredMirror = settings.mirrorGigabytes();
+        mirrorValue.setText(configuredMirror == 0 ? "Off" : configuredMirror + " GB");
+        for (ToggleButton toggle : mirrorToggles) {
+            toggle.setSelected(configuredMirror.equals(toggle.getUserData()));
         }
 
         Integer configuredScale = settings.browserScalePercent();

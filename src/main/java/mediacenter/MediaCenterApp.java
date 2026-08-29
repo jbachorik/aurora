@@ -32,6 +32,8 @@ import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
 import mediacenter.platform.PlatformServices;
 import mediacenter.playback.PlaybackService;
+import mediacenter.playback.cache.MediaMirror;
+import mediacenter.playback.cache.PlaybackPreparer;
 import mediacenter.remote.RemoteControlServer;
 import mediacenter.playback.PlayerLauncher;
 import mediacenter.playback.VlcPlayerLauncher;
@@ -105,8 +107,15 @@ public final class MediaCenterApp extends Application {
                 () -> settingsRef.get().playerBufferSeconds(),
                 platform.playerOptions());
         WatchedService watched = new WatchedService(watchedVideos, watchedStore, backgroundExecutor);
+        // Local copies of network media live beside the other application data,
+        // sized by the Settings screen; a live read so a change applies at once.
+        MediaMirror mediaMirror = new MediaMirror(
+                dataDirectory.resolve("media-cache"),
+                () -> settingsRef.get().mirrorGigabytes() * (1024L * 1024 * 1024));
+        PlaybackPreparer playbackPreparer = new PlaybackPreparer(mediaMirror);
         PlaybackService playbackService = new PlaybackService(
-                playerLauncher, history, historyStore, watched, backgroundExecutor, Platform::runLater);
+                playerLauncher, history, historyStore, watched, backgroundExecutor, Platform::runLater,
+                playbackPreparer);
 
         MediaCenterShell shell = new MediaCenterShell(
                 stage,
@@ -115,6 +124,7 @@ public final class MediaCenterApp extends Application {
                 history,
                 watched,
                 playbackService,
+                playbackPreparer,
                 platform,
                 new MediaScanner(),
                 new ArtworkResolver(),

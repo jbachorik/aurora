@@ -81,6 +81,70 @@ to `loginctl suspend` where there is no systemd), and Windows through
 hibernation is enabled, Windows hibernates instead of sleeping.
 
 
+Slow network shares
+-------------------
+
+Before a video plays, the media center **measures how fast its file can
+actually be read** — a bounded probe of a couple of seconds at most, invisible
+on a healthy link. The measured rate is compared against the file's own
+bitrate (its size over the duration read from the MP4 or Matroska header), and
+what happens next depends on the verdict:
+
+* **Fast enough** — the file plays from where it is, as always. While it
+  streams, whatever bandwidth the picture leaves over quietly carries the
+  **next episodes in the queue** into the local cache — throttled to that
+  surplus, so the copy can never cause the stutter it exists to prevent. An
+  episode whose copy is guaranteed to finish before the player reaches it is
+  handed to the player as its local copy outright.
+* **Too slow** — the file is copied into a local **network media cache**
+  first, and playback starts as soon as the head start is large enough that
+  the player can never catch up with the copy. The maths covers the **next
+  episode in the queue too**, so an evening of episodes survives a share that
+  cannot quite keep up. While this runs the screen shows a buffering card —
+  title, progress bar, percentage and an estimated wait — with two keys:
+  **Enter** starts playback immediately over the share (stutters accepted),
+  **Esc** calls the whole thing off and returns to browsing. A copy already
+  under way keeps running in the background either way.
+* **Far too slow** — when building that head start would take more than a
+  couple of minutes, the film starts immediately over the share, stutters and
+  all, with a banner saying so — and the cache quietly takes a full copy in
+  the background, so the *next* viewing plays from the local disk.
+
+The built-in player resolves each episode at the moment it starts, so a copy
+that landed during the previous episode is picked up at the boundary and the
+run walks off the network as the cache fills behind it.
+
+**Rescuing a stuttering stream (built-in player).** A file the built-in
+player streams directly is measured as it starts; one that measures too slow
+gets a **rescue copy** downloading behind the picture, and the overlay says
+so: *"Downloading a local copy — pause a while, then resume to switch over."*
+That line means exactly what the viewer would do anyway: **pause** (a stalled
+player leaves the copy the share's whole bandwidth), wait a little, and press
+**Space** — if the copy is far enough ahead that playback can no longer catch
+its front, the resume reopens the local file at the very same position and
+the rest of the film never touches the network again. A share that was fine
+at the start but degrades mid-film is covered too: pausing a directly-played
+network file is itself the cue to start the rescue copy. The external VLC
+window cannot be switched mid-flight; there, quitting VLC and pressing play
+again picks the partial download back up — the head start already copied is
+credited, so the second attempt starts after a short top-up rather than a
+full re-buffer.
+
+Independently of the pre-play buffering, a network file that has been played
+**twice or more** earns a permanent local copy — so the titles a household
+keeps returning to stop depending on the network (or its restrictions)
+altogether. Whenever a fresh local copy exists, it is preferred automatically;
+a copy is dropped the moment the original changes on the share, and the
+least-recently-used copies are evicted when space runs short.
+
+The cache is the **Network media cache** row in Settings: Off, 5, 10 (the
+default) or 25 GB. Off stops all copying; existing copies are still served
+until the space is reclaimed. Copies live under the application data directory
+(see [Where it keeps things](#where-it-keeps-things)) and one copy runs at a
+time, so buffering never competes with itself for the bandwidth that was
+already scarce.
+
+
 Website tiles
 -------------
 
@@ -401,6 +465,7 @@ Where it keeps things
 ```
 config.json      VLC path, browser, full screen, theme, media roots, website tiles
 history.json     recently played
+media-cache/     local copies of network media, and the index that tracks them
 logs/            application.log (rotating, 3 x 1 MiB)
 ```
 

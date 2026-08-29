@@ -33,6 +33,7 @@
     -mc-scroll-thumb: #39435a;
     -mc-scroll-thumb-hover: #4b5772;
 
+    -mc-scrim: rgba(0, 0, 0, 0.60);
     -mc-shadow: rgba(0, 0, 0, 0.55);
     -mc-shadow-soft: rgba(0, 0, 0, 0.35);
     -mc-focus-glow: rgba(255, 182, 77, 0.55);
