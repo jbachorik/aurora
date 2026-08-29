@@ -110,6 +110,38 @@ tasks.jar {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Version resource — shown on the home screen
+//
+// Not read from the manifest above: jlink assembles the runtime image
+// module-by-module and does not carry a module's META-INF into it, so by the
+// time the application is actually distributed there is no manifest left to
+// read "Implementation-Version" back from. A plain bundled resource is an
+// ordinary part of the module's content and survives linking.
+// ---------------------------------------------------------------------------
+
+val versionResourceDir = layout.buildDirectory.dir("generated/resources/version")
+
+val generateVersionResource = tasks.register("generateVersionResource") {
+    group = "build"
+    description = "Writes the application version into a resource bundled with the jar."
+    val outputDir = versionResourceDir
+    val versionValue = project.version.toString()
+    inputs.property("version", versionValue)
+    outputs.dir(outputDir)
+    doLast {
+        val file = outputDir.get().file("mediacenter/version.properties").asFile
+        file.parentFile.mkdirs()
+        file.writeText("version=$versionValue\n")
+    }
+}
+
+sourceSets {
+    main {
+        resources.srcDir(generateVersionResource)
+    }
+}
+
 // Tests exercise the plain (non-JavaFX) logic and run on the classpath; there
 // is no test module descriptor and no reason to patch the application module.
 tasks.named<JavaCompile>("compileTestJava") {

@@ -12,6 +12,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.VBox;
 
+import mediacenter.ApplicationVersion;
 import mediacenter.config.ApplicationSettings;
 import mediacenter.config.Website;
 import mediacenter.history.PlaybackHistoryEntry;
@@ -184,6 +185,12 @@ public final class HomeView implements View {
     @Override
     public String title() {
         return "Media Center";
+    }
+
+    /** So a build running on a set-top box can be told apart from an older one. */
+    @Override
+    public String subtitle() {
+        return "v" + ApplicationVersion.current();
     }
 
     @Override
