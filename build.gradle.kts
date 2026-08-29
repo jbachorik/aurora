@@ -276,7 +276,15 @@ val jpackage = tasks.register<Exec>("jpackage") {
     }
     val runtimePath = runtimeImageDir.get().asFile.absolutePath
     val destPath = appImageDir.get().asFile.absolutePath
-    val appVersion = project.version.toString()
+    // jpackage's macOS bundler refuses an app-version whose first number is
+    // zero (an ordinary state for this project, which is still pre-1.0);
+    // Windows and Linux don't mind. Rather than let the platform decide the
+    // real version number, only the leading component of what jpackage sees
+    // is floored at 1 — the true version stays intact everywhere else
+    // (on-screen, the jar manifest, generateVersionResource).
+    val appVersion = project.version.toString().split(".").toMutableList().also { parts ->
+        if ((parts.getOrNull(0)?.toIntOrNull() ?: 0) < 1) parts[0] = "1"
+    }.joinToString(".")
     // A macOS .app bundle wants a reverse-DNS identifier; the other platforms
     // have no equivalent and reject the option.
     val platformOptions = if (hostIsMac) {
