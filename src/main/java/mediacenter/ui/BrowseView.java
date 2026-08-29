@@ -143,7 +143,7 @@ public final class BrowseView implements View {
         refreshWatchedMarks();
         // Scrapes started from a page deeper in the stack may still be running;
         // now that this page is the one on screen, their answers belong here.
-        if (root.type() == MediaRootType.TV) {
+        if (scrapableRoot()) {
             context.scrapeService().setOnScraped(this::onFolderScraped);
         }
         View.super.onShown();
@@ -417,22 +417,33 @@ public final class BrowseView implements View {
     // -- series scraping ------------------------------------------------------
 
     /**
-     * Under a TV root, every folder on screen is offered to the scraper — the
-     * root has said out loud what its folders hold, exactly the declaration
-     * {@link #playsOnwards} already trusts. Offering is all this does: the
-     * service is the one that knows whether scraping is even switched on, and
-     * a folder already carrying its {@code aurora-series.json} costs nothing.
+     * Under a TV or Movies root, every folder on screen is offered to the
+     * scraper — as a series or as a film, because the root has said out loud
+     * what its folders hold, exactly the declaration {@link #playsOnwards}
+     * already trusts. Offering is all this does: the service is the one that
+     * knows whether scraping is even switched on, and a folder already
+     * carrying its metadata file costs nothing.
      */
     private void offerFoldersForScraping() {
-        if (root.type() != MediaRootType.TV) {
+        if (!scrapableRoot()) {
             return;
         }
         context.scrapeService().setOnScraped(this::onFolderScraped);
         for (MediaItem item : items) {
-            if (item.isDirectory()) {
-                context.scrapeService().scrapeIfNeeded(item.path());
+            if (!item.isDirectory()) {
+                continue;
+            }
+            if (root.type() == MediaRootType.TV) {
+                context.scrapeService().scrapeSeriesIfNeeded(item.path());
+            } else {
+                context.scrapeService().scrapeMovieIfNeeded(item.path());
             }
         }
+    }
+
+    /** The roots whose folders have declared what they are; General has not. */
+    private boolean scrapableRoot() {
+        return root.type() == MediaRootType.TV || root.type() == MediaRootType.MOVIES;
     }
 
     /**

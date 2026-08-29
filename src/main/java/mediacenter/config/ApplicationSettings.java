@@ -161,7 +161,7 @@ public record ApplicationSettings(
                 vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, newBrowserScalePercent, scraper);
     }
 
-    /** How — and whether — series folders are identified online. */
+    /** How — and whether — series and movie folders are identified online. */
     public ApplicationSettings withScraper(ScraperSettings newScraper) {
         return new ApplicationSettings(
                 vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, newScraper);

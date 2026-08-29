@@ -17,25 +17,31 @@ import mediacenter.config.ScraperSettings;
 /**
  * Queues folder scrapes behind browsing, one at a time.
  *
- * <p>Browsing a TV shelf offers every folder on it to this service; the
- * service decides which are worth a scrape. Cheap disqualifications first —
- * scraping switched off, folder already carrying its metadata file, folder
- * already tried since startup — and only then the real work, serialised so
- * twenty new series never open twenty conversations with TheTVDB at once.
+ * <p>Browsing a TV or Movies shelf offers every folder on it to this service
+ * — as a series or as a film, by the root's declaration — and the service
+ * decides which are worth a scrape. Cheap disqualifications first — scraping
+ * switched off, folder already carrying its metadata file, folder already
+ * tried since startup — and only then the real work, serialised so twenty new
+ * titles never open twenty conversations with TheTVDB at once.
  *
  * <p>"Already tried" is remembered per run and not on disk: a folder that
  * found no confident match is left alone until the next start rather than
  * being retried on every visit, but is never marked failed forever — the
- * missing season that made it ambiguous may arrive next week.
+ * missing season, or the year a rename adds, may arrive next week.
  */
-public final class SeriesScrapeService {
+public final class ScrapeService {
 
-    private static final Logger LOG = Logger.getLogger(SeriesScrapeService.class.getName());
+    private static final Logger LOG = Logger.getLogger(ScrapeService.class.getName());
+
+    /** Which pipeline a folder goes down; the root it sits under decides. */
+    private enum Kind { SERIES, MOVIE }
 
     private final Supplier<ScraperSettings> settings;
     private final Executor backgroundExecutor;
     private final Executor notificationExecutor;
-    private final SeriesMetadataStore store = new SeriesMetadataStore();
+    private final ScrapedMetadataStore seriesStore = ScrapedMetadataStore.series();
+    private final ScrapedMetadataStore movieStore = ScrapedMetadataStore.movies();
+    private final PosterDownloader posters = new PosterDownloader();
 
     /** One scrape at a time; the queue is the executor's. */
     private final Semaphore oneAtATime = new Semaphore(1);
@@ -52,7 +58,7 @@ public final class SeriesScrapeService {
      * @param notificationExecutor where {@link #setOnScraped} callbacks run —
      *                             the JavaFX thread, in the application
      */
-    public SeriesScrapeService(
+    public ScrapeService(
             Supplier<ScraperSettings> settings,
             Executor backgroundExecutor,
             Executor notificationExecutor) {
@@ -66,29 +72,37 @@ public final class SeriesScrapeService {
         this.onScraped = listener == null ? folder -> { } : listener;
     }
 
-    /**
-     * Offers a folder for scraping. Returns immediately; whether anything
-     * comes of it is decided in the background.
-     */
-    public void scrapeIfNeeded(Path seriesFolder) {
-        Path folderName = seriesFolder.getFileName();
+    /** Offers a folder from a TV shelf. Returns immediately. */
+    public void scrapeSeriesIfNeeded(Path seriesFolder) {
+        offer(seriesFolder, Kind.SERIES);
+    }
+
+    /** Offers a folder from a Movies shelf. Returns immediately. */
+    public void scrapeMovieIfNeeded(Path movieFolder) {
+        offer(movieFolder, Kind.MOVIE);
+    }
+
+    private void offer(Path folder, Kind kind) {
+        Path folderName = folder.getFileName();
         if (folderName == null
                 || SeriesEvidenceCollector.seasonNumberOf(folderName.toString()).isPresent()) {
-            // A "Season 2" folder is part of a series, not one of its own; its
-            // parent is the folder whose name means something.
+            // A "Season 2" folder is part of a series, not a title of its own;
+            // its parent is the folder whose name means something. The same
+            // guard on a Movies shelf keeps a misfiled season from being
+            // identified as a film called "Season 2".
             return;
         }
-        if (!settings.get().readyToScrape() || !attempted.add(seriesFolder)) {
+        if (!settings.get().readyToScrape() || !attempted.add(folder)) {
             return;
         }
         try {
-            backgroundExecutor.execute(() -> scrapeQuietly(seriesFolder));
+            backgroundExecutor.execute(() -> scrapeQuietly(folder, kind));
         } catch (RejectedExecutionException e) {
             // Shutdown; the folder will be offered again next run.
         }
     }
 
-    private void scrapeQuietly(Path seriesFolder) {
+    private void scrapeQuietly(Path folder, Kind kind) {
         try {
             oneAtATime.acquire();
         } catch (InterruptedException e) {
@@ -101,16 +115,16 @@ public final class SeriesScrapeService {
             // switched scraping off — or the previous scrape may have been
             // this very folder, queued twice from two visits — while this
             // one waited its turn.
-            if (!current.readyToScrape() || store.exists(seriesFolder)) {
+            if (!current.readyToScrape() || storeFor(kind).exists(folder)) {
                 return;
             }
-            Optional<SeriesMetadata> scraped = buildScraper(current).scrape(seriesFolder);
+            Optional<ScrapedMetadata> scraped = scrape(folder, kind, current);
             if (scraped.isPresent()) {
                 Consumer<Path> listener = onScraped;
-                notificationExecutor.execute(() -> listener.accept(seriesFolder));
+                notificationExecutor.execute(() -> listener.accept(folder));
             }
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, e, () -> "Scraping " + seriesFolder + " failed");
+            LOG.log(Level.WARNING, e, () -> "Scraping " + folder + " failed");
         } finally {
             oneAtATime.release();
         }
@@ -118,18 +132,24 @@ public final class SeriesScrapeService {
 
     /**
      * Built fresh per scrape from the settings of the moment. A TheTVDB login
-     * token is the only thing this discards, and one login per scraped series
+     * token is the only thing this discards, and one login per scraped title
      * is well within the API's manners.
      */
-    private SeriesScraper buildScraper(ScraperSettings current) {
+    private Optional<ScrapedMetadata> scrape(Path folder, Kind kind, ScraperSettings current) {
         Optional<OllamaTitleService> ollama = current.ollamaConfigured()
                 ? Optional.of(new OllamaTitleService(
                         current.ollamaEndpoint(), current.ollamaApiKey(), current.ollamaModel()))
                 : Optional.empty();
-        return new SeriesScraper(
-                new SeriesEvidenceCollector(),
-                ollama,
-                new TvdbClient(current.tvdbApiKey().orElseThrow()),
-                store);
+        TvdbClient tvdb = new TvdbClient(current.tvdbApiKey().orElseThrow());
+        return switch (kind) {
+            case SERIES -> new SeriesScraper(
+                    new SeriesEvidenceCollector(), ollama, tvdb, seriesStore, posters).scrape(folder);
+            case MOVIE -> new MovieScraper(
+                    new MovieEvidenceCollector(), ollama, tvdb, movieStore, posters).scrape(folder);
+        };
+    }
+
+    private ScrapedMetadataStore storeFor(Kind kind) {
+        return kind == Kind.SERIES ? seriesStore : movieStore;
     }
 }

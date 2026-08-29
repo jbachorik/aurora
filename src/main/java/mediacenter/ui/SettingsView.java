@@ -496,7 +496,7 @@ public final class SettingsView implements View {
     }
 
     /**
-     * Whether TV folders are identified online, and against which accounts.
+     * Whether TV and movie folders are identified online, and against which accounts.
      * The row carries the switch; the keys and endpoints — typed once, with a
      * real keyboard nearby — live in a dialog behind one button, because four
      * text fields permanently on a 10-foot screen help nobody.
@@ -520,7 +520,7 @@ public final class SettingsView implements View {
         Dialog<ScraperSettings> dialog = new Dialog<>();
         dialog.initOwner(window());
         dialog.setTitle("Series scraper");
-        dialog.setHeaderText("How series folders are identified");
+        dialog.setHeaderText("How series and movie folders are identified");
         dialog.setResizable(true);
         dialog.getDialogPane().getStyleClass().add("media-center-dialog");
         dialog.getDialogPane().getStylesheets().addAll(root.getScene() == null
@@ -578,7 +578,7 @@ public final class SettingsView implements View {
         dialog.showAndWait().ifPresent(updated -> {
             update(settings().withScraper(updated));
             showStatus(scraperStatus, updated.tvdbApiKey().isPresent()
-                    ? "Saved. New TV folders are identified as they are browsed."
+                    ? "Saved. New TV and movie folders are identified as they are browsed."
                     : "Saved — but without a TheTVDB API key nothing can be looked up.");
         });
     }
@@ -586,7 +586,7 @@ public final class SettingsView implements View {
     /** The scraper row's one-line summary of what would happen right now. */
     private static String describeScraper(ScraperSettings scraper) {
         if (!scraper.enabled()) {
-            return "Off — TV folders are not identified online";
+            return "Off — TV and movie folders are not identified online";
         }
         if (scraper.tvdbApiKey().isEmpty()) {
             return "On, but missing a TheTVDB API key — configure one";

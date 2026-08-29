@@ -3,7 +3,7 @@ package mediacenter.config;
 import java.util.Optional;
 
 /**
- * How — and whether — series folders are identified online.
+ * How — and whether — series and movie folders are identified online.
  *
  * <p>Two services take part. An Ollama model turns a ripper's folder name into
  * a searchable title: the endpoint is Ollama's hosted service by default,

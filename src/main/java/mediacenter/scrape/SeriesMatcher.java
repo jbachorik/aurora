@@ -44,17 +44,17 @@ public final class SeriesMatcher {
     }
 
     /** One candidate together with what TheTVDB says its seasons hold. */
-    public record Candidate(SeriesCandidate series, Optional<Map<Integer, Integer>> episodesPerSeason) {
+    public record Candidate(TvdbCandidate series, Optional<Map<Integer, Integer>> episodesPerSeason) {
     }
 
     /**
      * The one candidate worth writing to disk, or empty when none is, or when
      * two are too close to call.
      */
-    public static Optional<SeriesCandidate> pick(
+    public static Optional<TvdbCandidate> pick(
             SeriesEvidence evidence, Optional<TitleGuess> guess, List<Candidate> candidates) {
 
-        SeriesCandidate best = null;
+        TvdbCandidate best = null;
         double bestScore = 0;
         double secondScore = 0;
         for (Candidate candidate : candidates) {
@@ -99,7 +99,7 @@ public final class SeriesMatcher {
     }
 
     /** The best similarity the candidate's name or any alias manages. */
-    static double titleScore(SeriesCandidate candidate, Optional<TitleGuess> guess, String folderName) {
+    static double titleScore(TvdbCandidate candidate, Optional<TitleGuess> guess, String folderName) {
         double best = 0;
         for (String candidateName : names(candidate)) {
             best = Math.max(best, similarity(candidateName, folderName));
@@ -110,7 +110,7 @@ public final class SeriesMatcher {
         return best;
     }
 
-    private static List<String> names(SeriesCandidate candidate) {
+    private static List<String> names(TvdbCandidate candidate) {
         List<String> names = new ArrayList<>();
         names.add(candidate.name());
         names.addAll(candidate.aliases());

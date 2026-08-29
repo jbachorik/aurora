@@ -25,7 +25,7 @@ import mediacenter.json.JsonValue.JsonString;
 
 /**
  * The little of TheTVDB's v4 API the scraper needs: log in, search for a
- * series, and count the episodes each of its seasons holds.
+ * series or a film, and count the episodes each of a series' seasons holds.
  *
  * <p>Authentication is a bearer token bought with the API key. The token is
  * fetched lazily, kept for the client's lifetime, and bought again once when a
@@ -76,9 +76,18 @@ public final class TvdbClient {
     }
 
     /** Series matching a title, best first as TheTVDB ranks them. */
-    public List<SeriesCandidate> searchSeries(String query) {
+    public List<TvdbCandidate> searchSeries(String query) {
+        return search(query, "series");
+    }
+
+    /** Films matching a title — the same endpoint, the same shape, another type. */
+    public List<TvdbCandidate> searchMovies(String query) {
+        return search(query, "movie");
+    }
+
+    private List<TvdbCandidate> search(String query, String type) {
         String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
-        return get("/search?query=" + encoded + "&type=series&limit=" + SEARCH_LIMIT)
+        return get("/search?query=" + encoded + "&type=" + type + "&limit=" + SEARCH_LIMIT)
                 .map(TvdbClient::parseSearch)
                 .orElse(List.of());
     }
@@ -108,8 +117,8 @@ public final class TvdbClient {
     // -- response shapes -----------------------------------------------------
 
     /** Reads a search response. Static and pure so the shape stays testable offline. */
-    public static List<SeriesCandidate> parseSearch(JsonObject document) {
-        List<SeriesCandidate> candidates = new ArrayList<>();
+    public static List<TvdbCandidate> parseSearch(JsonObject document) {
+        List<TvdbCandidate> candidates = new ArrayList<>();
         for (JsonObject result : document.objectArray("data")) {
             // The search endpoint spells the id as a string.
             Optional<Long> id = result.longValue("tvdb_id");
@@ -127,7 +136,7 @@ public final class TvdbClient {
                     }
                 }
             });
-            candidates.add(new SeriesCandidate(
+            candidates.add(new TvdbCandidate(
                     id.get(),
                     name.get(),
                     aliases,

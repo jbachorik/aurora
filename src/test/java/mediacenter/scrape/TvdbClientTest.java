@@ -20,7 +20,7 @@ class TvdbClientTest {
     @Test
     @DisplayName("a search response is read into candidates, string-typed ids and all")
     void parsesSearchResults() throws JsonException {
-        List<SeriesCandidate> candidates = TvdbClient.parseSearch(Json.parseObject("""
+        List<TvdbCandidate> candidates = TvdbClient.parseSearch(Json.parseObject("""
                 {"status": "success", "data": [
                   {"tvdb_id": "81189", "name": "Breaking Bad", "year": "2008",
                    "overview": "A chemistry teacher.", "status": "Ended",
@@ -32,7 +32,7 @@ class TvdbClientTest {
                 """));
 
         assertEquals(2, candidates.size());
-        SeriesCandidate first = candidates.getFirst();
+        TvdbCandidate first = candidates.getFirst();
         assertEquals(81189, first.tvdbId());
         assertEquals("Breaking Bad", first.name());
         assertEquals(Optional.of(2008), first.year());

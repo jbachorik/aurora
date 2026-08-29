@@ -67,22 +67,31 @@ public final class OllamaTitleService {
                 .build();
     }
 
+    /** The model's reading of a movie folder, or empty when anything went wrong. */
+    public Optional<TitleGuess> guessMovieTitle(MovieEvidence evidence) {
+        return ask(buildMoviePrompt(evidence), evidence.folderName());
+    }
+
     /** The model's reading of the evidence, or empty when anything went wrong. */
     public Optional<TitleGuess> guessTitle(SeriesEvidence evidence) {
+        return ask(buildPrompt(evidence), evidence.folderName());
+    }
+
+    private Optional<TitleGuess> ask(String prompt, String folderName) {
         try {
             HttpRequest.Builder request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "/api/chat"))
                     .timeout(RESPONSE_TIMEOUT)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(
-                            Json.write(requestBody(evidence)), StandardCharsets.UTF_8));
+                            Json.write(requestBody(prompt)), StandardCharsets.UTF_8));
             apiKey.ifPresent(key -> request.header("Authorization", "Bearer " + key));
 
             HttpResponse<String> response = client.send(
                     request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
                 LOG.log(Level.INFO, () -> "Ollama answered HTTP " + response.statusCode()
-                        + " for \"" + evidence.folderName() + "\"");
+                        + " for \"" + folderName + "\"");
                 return Optional.empty();
             }
             return parseResponse(response.body());
@@ -90,15 +99,15 @@ public final class OllamaTitleService {
             Thread.currentThread().interrupt();
             return Optional.empty();
         } catch (Exception e) {
-            LOG.log(Level.INFO, e, () -> "Ollama title guess failed for \"" + evidence.folderName() + "\"");
+            LOG.log(Level.INFO, e, () -> "Ollama title guess failed for \"" + folderName + "\"");
             return Optional.empty();
         }
     }
 
-    private JsonObject requestBody(SeriesEvidence evidence) {
+    private JsonObject requestBody(String prompt) {
         Map<String, JsonValue> message = new LinkedHashMap<>();
         message.put("role", new JsonString("user"));
-        message.put("content", new JsonString(buildPrompt(evidence)));
+        message.put("content", new JsonString(prompt));
 
         Map<String, JsonValue> body = new LinkedHashMap<>();
         body.put("model", new JsonString(model));
@@ -132,6 +141,23 @@ public final class OllamaTitleService {
         prompt.append("Answer with JSON only, exactly {\"title\": string, \"year\": number or null} — ")
                 .append("the title as officially released, without quality tags or release-group noise, ")
                 .append("and the year of first airing if you are confident, else null.");
+        return prompt.toString();
+    }
+
+    /**
+     * The same question for one film. Public and pure like
+     * {@link #buildPrompt(SeriesEvidence)}, and for the same reason.
+     */
+    public static String buildMoviePrompt(MovieEvidence evidence) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("A media library folder holds one film. ")
+                .append("Infer the film's official title from the names below.\n")
+                .append("Folder name: ").append(evidence.folderName()).append('\n')
+                .append("Video file name: ").append(evidence.videoFileName()).append('\n');
+        prompt.append("Answer with JSON only, exactly {\"title\": string, \"year\": number or null} — ")
+                .append("the title as officially released, without quality tags or release-group noise, ")
+                .append("and the year of release if you are confident, else null. ")
+                .append("Take care with titles that contain numbers or years of their own.");
         return prompt.toString();
     }
 

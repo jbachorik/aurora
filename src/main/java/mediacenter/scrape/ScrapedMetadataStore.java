@@ -19,42 +19,62 @@ import mediacenter.json.JsonValue.JsonObject;
 import mediacenter.json.JsonValue.JsonString;
 
 /**
- * Reads and writes a series folder's {@code aurora-series.json}.
+ * Reads and writes a scraped folder's metadata file — {@code aurora-series.json}
+ * for a series, {@code aurora-movie.json} for a film. Two names, one shape:
+ * the file also says which kind of thing its folder is, without a field to say
+ * it in.
  *
  * <p>The file is deliberately plain: two-space JSON a person can open over the
  * share and correct by hand, which — with no database anywhere — is also the
  * entire administration story. A file that cannot be parsed reads as "not
  * scraped yet", so a corrupted one costs a re-scrape and nothing else.
  */
-public final class SeriesMetadataStore {
+public final class ScrapedMetadataStore {
 
-    private static final Logger LOG = Logger.getLogger(SeriesMetadataStore.class.getName());
+    private static final Logger LOG = Logger.getLogger(ScrapedMetadataStore.class.getName());
 
     /**
      * Prefixed with the application's name so a folder full of other tools'
      * files — Kodi's {@code tvshow.nfo}, Plex's leavings — never collides.
      */
-    public static final String FILE_NAME = "aurora-series.json";
+    public static final String SERIES_FILE_NAME = "aurora-series.json";
+    public static final String MOVIE_FILE_NAME = "aurora-movie.json";
+
+    private final String fileName;
+
+    private ScrapedMetadataStore(String fileName) {
+        this.fileName = fileName;
+    }
+
+    /** The store a series folder's metadata lives in. */
+    public static ScrapedMetadataStore series() {
+        return new ScrapedMetadataStore(SERIES_FILE_NAME);
+    }
+
+    /** The store a movie folder's metadata lives in. */
+    public static ScrapedMetadataStore movies() {
+        return new ScrapedMetadataStore(MOVIE_FILE_NAME);
+    }
 
     /** Whether a folder already carries scraped metadata, however old. */
-    public boolean exists(Path seriesFolder) {
-        return Files.isRegularFile(seriesFolder.resolve(FILE_NAME));
+    public boolean exists(Path folder) {
+        return Files.isRegularFile(folder.resolve(fileName));
     }
 
     /** The folder's stored metadata, or empty when there is none worth reading. */
-    public Optional<SeriesMetadata> load(Path seriesFolder) {
-        Path file = seriesFolder.resolve(FILE_NAME);
+    public Optional<ScrapedMetadata> load(Path folder) {
+        Path file = folder.resolve(fileName);
         try {
-            return JsonFiles.readObject(file).flatMap(SeriesMetadataStore::fromJson);
+            return JsonFiles.readObject(file).flatMap(ScrapedMetadataStore::fromJson);
         } catch (IOException | JsonException e) {
             LOG.log(Level.FINE, e, () -> "Could not read " + file);
             return Optional.empty();
         }
     }
 
-    /** Writes the metadata into the series folder. Returns false when the share refused. */
-    public boolean save(Path seriesFolder, SeriesMetadata metadata) {
-        Path file = seriesFolder.resolve(FILE_NAME);
+    /** Writes the metadata into the folder. Returns false when the share refused. */
+    public boolean save(Path folder, ScrapedMetadata metadata) {
+        Path file = folder.resolve(fileName);
         try {
             JsonFiles.write(file, toJson(metadata));
             return true;
@@ -66,7 +86,7 @@ public final class SeriesMetadataStore {
 
     // -- mapping ------------------------------------------------------------
 
-    public static JsonObject toJson(SeriesMetadata metadata) {
+    public static JsonObject toJson(ScrapedMetadata metadata) {
         Map<String, JsonValue> members = new LinkedHashMap<>();
         members.put("tvdbId", new JsonNumber(metadata.tvdbId()));
         members.put("title", new JsonString(metadata.title()));
@@ -78,7 +98,7 @@ public final class SeriesMetadataStore {
         return new JsonObject(members);
     }
 
-    public static Optional<SeriesMetadata> fromJson(JsonObject document) {
+    public static Optional<ScrapedMetadata> fromJson(JsonObject document) {
         Optional<Long> tvdbId = document.longValue("tvdbId");
         Optional<String> title = document.nonBlankString("title");
         if (tvdbId.isEmpty() || title.isEmpty()) {
@@ -88,10 +108,10 @@ public final class SeriesMetadataStore {
         try {
             scrapedAt = document.nonBlankString("scrapedAt").map(Instant::parse).orElse(Instant.EPOCH);
         } catch (DateTimeParseException e) {
-            // A hand-mangled timestamp does not unscrape the series.
+            // A hand-mangled timestamp does not unscrape the folder.
             scrapedAt = Instant.EPOCH;
         }
-        return Optional.of(new SeriesMetadata(
+        return Optional.of(new ScrapedMetadata(
                 tvdbId.get(),
                 title.get(),
                 document.longValue("year").map(Long::intValue),

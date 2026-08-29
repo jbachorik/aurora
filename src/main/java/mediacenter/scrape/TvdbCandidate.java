@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 /** One series TheTVDB offered for a search, as much of it as the match needs. */
-public record SeriesCandidate(
+public record TvdbCandidate(
         long tvdbId,
         String name,
         List<String> aliases,
@@ -13,7 +13,7 @@ public record SeriesCandidate(
         Optional<String> status,
         Optional<String> posterUrl) {
 
-    public SeriesCandidate {
+    public TvdbCandidate {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("A series candidate must carry a name");
         }

@@ -35,6 +35,18 @@ class OllamaTitleServiceTest {
     }
 
     @Test
+    @DisplayName("the movie prompt quotes both names and asks for a release year")
+    void theMoviePromptCarriesTheEvidence() {
+        String prompt = OllamaTitleService.buildMoviePrompt(new MovieEvidence(
+                "Blade Runner 2049 (2017)", "Blade.Runner.2049.2017.mkv", Optional.of(2017)));
+
+        assertTrue(prompt.contains("one film"));
+        assertTrue(prompt.contains("Blade Runner 2049 (2017)"));
+        assertTrue(prompt.contains("Blade.Runner.2049.2017.mkv"));
+        assertTrue(prompt.contains("\"title\""));
+    }
+
+    @Test
     @DisplayName("a clean JSON answer is read as title and year")
     void parsesACleanAnswer() {
         Optional<TitleGuess> guess = OllamaTitleService.parseResponse("""

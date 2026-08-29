@@ -19,8 +19,8 @@ class SeriesMatcherTest {
         return new SeriesEvidence(folderName, new TreeMap<>(episodesPerSeason), List.of());
     }
 
-    private static SeriesCandidate candidate(long id, String name, Integer year) {
-        return new SeriesCandidate(id, name, List.of(),
+    private static TvdbCandidate candidate(long id, String name, Integer year) {
+        return new TvdbCandidate(id, name, List.of(),
                 Optional.ofNullable(year), Optional.empty(), Optional.empty(), Optional.empty());
     }
 
@@ -60,10 +60,10 @@ class SeriesMatcherTest {
     @DisplayName("a clear title with the right shape wins the match")
     void picksTheObviousCandidate() {
         SeriesEvidence evidence = evidence("Breaking.Bad.S01-S05.1080p", Map.of(1, 7, 2, 13));
-        SeriesCandidate breakingBad = candidate(81189, "Breaking Bad", 2008);
-        SeriesCandidate unrelated = candidate(1, "Baking Bread", 2015);
+        TvdbCandidate breakingBad = candidate(81189, "Breaking Bad", 2008);
+        TvdbCandidate unrelated = candidate(1, "Baking Bread", 2015);
 
-        Optional<SeriesCandidate> picked = SeriesMatcher.pick(
+        Optional<TvdbCandidate> picked = SeriesMatcher.pick(
                 evidence,
                 Optional.of(new TitleGuess("Breaking Bad", Optional.of(2008))),
                 List.of(
@@ -77,7 +77,7 @@ class SeriesMatcherTest {
     @DisplayName("the language model's guess rescues a folder name rules cannot read")
     void theGuessCarriesAMessyFolderName() {
         SeriesEvidence evidence = evidence("BrBa.COMPLETE.720p.x264-GRP", Map.of(1, 7));
-        SeriesCandidate breakingBad = candidate(81189, "Breaking Bad", 2008);
+        TvdbCandidate breakingBad = candidate(81189, "Breaking Bad", 2008);
 
         assertEquals(Optional.of(breakingBad), SeriesMatcher.pick(
                 evidence,
@@ -96,10 +96,10 @@ class SeriesMatcherTest {
     void theShapeBreaksTheTie() {
         // Two candidates with the very same name; only their seasons differ.
         SeriesEvidence evidence = evidence("The Office", Map.of(5, 28));
-        SeriesCandidate american = candidate(73244, "The Office", 2005);
-        SeriesCandidate british = candidate(78107, "The Office", 2001);
+        TvdbCandidate american = candidate(73244, "The Office", 2005);
+        TvdbCandidate british = candidate(78107, "The Office", 2001);
 
-        Optional<SeriesCandidate> picked = SeriesMatcher.pick(
+        Optional<TvdbCandidate> picked = SeriesMatcher.pick(
                 evidence,
                 Optional.empty(),
                 List.of(
@@ -113,8 +113,8 @@ class SeriesMatcherTest {
     @DisplayName("two candidates too close to call is no match at all")
     void ambiguityLosesTheMatch() {
         SeriesEvidence evidence = evidence("The Office", Map.of(1, 6));
-        SeriesCandidate american = candidate(73244, "The Office", 2005);
-        SeriesCandidate british = candidate(78107, "The Office", 2001);
+        TvdbCandidate american = candidate(73244, "The Office", 2005);
+        TvdbCandidate british = candidate(78107, "The Office", 2001);
 
         // Season one of six episodes fits both; nothing tells them apart.
         assertEquals(Optional.empty(), SeriesMatcher.pick(
@@ -129,7 +129,7 @@ class SeriesMatcherTest {
     @DisplayName("an alias counts as much as the name itself")
     void aliasesCount() {
         SeriesEvidence evidence = evidence("La Casa de Papel", Map.of(1, 13));
-        SeriesCandidate moneyHeist = new SeriesCandidate(
+        TvdbCandidate moneyHeist = new TvdbCandidate(
                 327417, "Money Heist", List.of("La Casa de Papel"),
                 Optional.of(2017), Optional.empty(), Optional.empty(), Optional.empty());
 
@@ -143,7 +143,7 @@ class SeriesMatcherTest {
     @DisplayName("no episode data is no opinion — the title stands alone")
     void missingEpisodeDataStaysNeutral() {
         SeriesEvidence evidence = evidence("Chernobyl", Map.of(1, 5));
-        SeriesCandidate chernobyl = candidate(360893, "Chernobyl", 2019);
+        TvdbCandidate chernobyl = candidate(360893, "Chernobyl", 2019);
 
         assertEquals(Optional.of(chernobyl), SeriesMatcher.pick(
                 evidence,
