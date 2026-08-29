@@ -13,15 +13,17 @@ import mediacenter.media.MediaItemType;
 import mediacenter.media.ParentPrefixes;
 
 /**
- * One line of a browsed folder: a type symbol and the actual file name.
+ * One line of a browsed folder: a type symbol and the entry's display name.
  *
- * <p>Deliberately not a tile. The whole point of the list is that the name on
- * disk is readable — the row shows it verbatim, extension and all, and a name
- * still wider than the line scrolls slowly under the selection rather than
- * being cut off. Only the selected row scrolls; the rest hold still, because a
- * page of sliding names cannot be read. The one edit made is dropping a parent
- * folder's name echoed at the front — see {@link ParentPrefixes} — which is
- * removing repetition, not information: the folder is the page being browsed.
+ * <p>Deliberately not a tile. The whole point of the list is that the name is
+ * readable at a glance, and a name still wider than the line scrolls slowly
+ * under the selection rather than being cut off. Only the selected row
+ * scrolls; the rest hold still, because a page of sliding names cannot be
+ * read. The name itself is the same cleaned-up one every other view already
+ * shows — see {@link mediacenter.media.DisplayNames} — with one further edit
+ * made here: dropping a parent folder's name echoed at the front, see
+ * {@link ParentPrefixes}, which is removing repetition, not information,
+ * since the folder is the page being browsed.
  *
  * <p>Focus is the selection, exactly as with {@code Tile}: the {@code :focused}
  * pseudo-class drives the highlight, so "what is highlighted" and "what Enter
@@ -44,7 +46,7 @@ public final class MediaListRow extends HBox {
     private boolean watched;
 
     /**
-     * A row for one scanned entry, showing its on-disk name — less any parent
+     * A row for one scanned entry, showing its display name — less any parent
      * folder's name echoed at the front of it.
      *
      * @param parentFolderNames the on-disk names of the folders above the entry,
@@ -52,7 +54,7 @@ public final class MediaListRow extends HBox {
      */
     public static MediaListRow forItem(MediaItem item, Collection<String> parentFolderNames) {
         return new MediaListRow(item, symbolFor(item),
-                ParentPrefixes.withoutParentPrefix(fileNameOf(item), parentFolderNames));
+                ParentPrefixes.withoutParentPrefix(item.displayName(), parentFolderNames));
     }
 
     /** A row for a page action such as the slideshow; {@link #item()} is empty. */
@@ -136,16 +138,5 @@ public final class MediaListRow extends HBox {
             case IMAGE -> "▣";
             case VIDEO -> "▶";
         };
-    }
-
-    /**
-     * The name as it is on disk, extension included — what this list exists to
-     * show. Only a filesystem root has no file name of its own, and such a path
-     * never appears as an entry inside a scanned folder; the display name is a
-     * fallback for exactly that never-case.
-     */
-    private static String fileNameOf(MediaItem item) {
-        var fileName = item.path().getFileName();
-        return fileName == null ? item.displayName() : fileName.toString();
     }
 }

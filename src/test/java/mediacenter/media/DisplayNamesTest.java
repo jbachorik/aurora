@@ -104,6 +104,20 @@ class DisplayNamesTest {
     }
 
     @Test
+    @DisplayName("a name that is nothing but the tag is reworded, since there is no nickname left to show")
+    void rewordsABareEpisodeTag() {
+        // "Season 08" is already the folder being browsed, so the season is not
+        // repeated — only the episode number is worth showing.
+        assertEquals("Episode 01", DisplayNames.forFileName("S08E01.avi"));
+        assertEquals("Episode 10", DisplayNames.forFileName("s08e10.avi"));
+        assertEquals("Episode 01", DisplayNames.forFileName("S08.E01.avi"));
+        assertEquals("Episode 01", DisplayNames.forFileName("S08EP01.avi"));
+        assertEquals("Episode 1", DisplayNames.forFileName("8x1.avi"));
+        // Cleaned down to a bare tag only once the release-group noise is gone.
+        assertEquals("Episode 01", DisplayNames.forFileName("[Group] S08E01.avi"));
+    }
+
+    @Test
     @DisplayName("an episode tag in the middle of a longer name is left alone")
     void keepsAMidNameEpisodeTag() {
         // Something meaningful — the episode's own title — follows the tag here,

@@ -1,6 +1,7 @@
 package mediacenter.media;
 
 import java.nio.file.Path;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -8,9 +9,10 @@ import java.util.regex.Pattern;
  *
  * <p>Deliberately conservative: extensions are removed, separators become
  * spaces, an "01 - " ordering prefix is dropped, anything in square brackets
- * goes, a trailing "S01E01" style episode tag goes, and whitespace is tidied.
- * Years and unbracketed quality markers are left alone — guessing wrong is
- * worse than showing the original name.
+ * goes, a trailing "S01E01" style episode tag goes (or is reworded to
+ * "Episode 01" when it was the whole name), and whitespace is tidied. Years
+ * and unbracketed quality markers are left alone — guessing wrong is worse
+ * than showing the original name.
  */
 public final class DisplayNames {
 
@@ -76,12 +78,31 @@ public final class DisplayNames {
     private static final Pattern TRAILING_EPISODE_TAG =
             Pattern.compile("(?i)[\\s._-]+(?:" + SeriesFolders.EPISODE_TAG_CORE + ")$");
 
+    /**
+     * A name that, brackets and extension aside, is nothing but the episode
+     * tag — "S08E05", with no nickname of its own. There is no title left to
+     * keep once the tag is gone, so rather than drop it into nothing this
+     * rewords it into what it means: "Episode 05". The season is not
+     * repeated — it is already the folder being browsed.
+     *
+     * <p>Two capturing groups, one per branch of the shape shared with
+     * {@link SeriesFolders#EPISODE_TAG_CORE}, since each branch's episode
+     * number sits in a different place; exactly one of the two is ever
+     * populated for a given match.
+     */
+    private static final Pattern BARE_EPISODE_TAG = Pattern.compile(
+            "(?i)^s\\d{1,2}[\\s._-]{0,3}ep?(\\d{1,3})$|^\\d{1,2}x(\\d{1,3})$");
+
     private static String clean(String rawName) {
         String name = rawName.replace('_', ' ');
         // Before the ordering prefix is looked for, so a tag in front of the
         // number does not hide it, and before the dots are touched, so that a
         // stripped name is judged on the separators it actually has left.
         name = BRACKETED_TAG.matcher(name).replaceAll(" ").trim();
+        String bareEpisode = asBareEpisodeLabel(name);
+        if (bareEpisode != null) {
+            return bareEpisode;
+        }
         name = TRAILING_EPISODE_TAG.matcher(name).replaceFirst("");
         // Before the dots are touched, so "01.Dead.Mans.Chest" still has its
         // separator to recognise.
@@ -93,6 +114,16 @@ public final class DisplayNames {
         }
         name = name.replaceAll("\\s+", " ").trim();
         return name.isEmpty() ? rawName.trim() : name;
+    }
+
+    /** "Episode 05" for a name that is nothing but a tag, or {@code null} otherwise. */
+    private static String asBareEpisodeLabel(String name) {
+        Matcher matcher = BARE_EPISODE_TAG.matcher(name);
+        if (!matcher.matches()) {
+            return null;
+        }
+        String episode = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
+        return "Episode " + episode;
     }
 
     /** Numbering the grid already conveys, so showing it twice only costs room. */
