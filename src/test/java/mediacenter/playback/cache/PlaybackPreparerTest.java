@@ -13,12 +13,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.function.UnaryOperator;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import mediacenter.playback.PlayablePaths;
 import mediacenter.playback.cache.MediaDurations.VideoHeader;
 import mediacenter.playback.cache.PlaybackPreparer.BufferingControl;
 import mediacenter.playback.cache.PlaybackPreparer.BufferingProgress;
@@ -251,7 +251,7 @@ class PlaybackPreparerTest {
     }
 
     @Test
-    @DisplayName("the built-in player's resolver picks up copies as they land")
+    @DisplayName("the built-in player's session picks up copies as they land")
     void livePathsResolveAsPrefetchesFinish(@TempDir Path temp) throws Exception {
         MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
         Path media = source(temp, "e1.mkv");
@@ -260,14 +260,14 @@ class PlaybackPreparerTest {
         assertTrue(first.await(10_000));
         PlaybackPreparer preparer = preparer(mirror, 500_000, STREAMABLE_SECOND);
 
-        UnaryOperator<Path> playablePath = preparer.playablePathsFor(List.of(media, next));
+        PlayablePaths session = preparer.embeddedSession(List.of(media, next));
 
-        assertEquals(first.target(), playablePath.apply(media));
+        assertEquals(first.target(), session.playablePath(media));
         long deadline = System.currentTimeMillis() + 10_000;
-        while (playablePath.apply(next).equals(next) && System.currentTimeMillis() < deadline) {
+        while (session.playablePath(next).equals(next) && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }
-        assertNotEquals(next, playablePath.apply(next),
+        assertNotEquals(next, session.playablePath(next),
                 "the copy that landed mid-run answers at the next episode boundary");
     }
 
@@ -279,10 +279,72 @@ class PlaybackPreparerTest {
         Path next = source(temp, "e2.mkv");
         PlaybackPreparer preparer = preparer(mirror, 500_000, STREAMABLE_SECOND);
 
-        UnaryOperator<Path> playablePath = preparer.playablePathsFor(List.of(media, next));
+        PlayablePaths session = preparer.embeddedSession(List.of(media, next));
 
-        assertEquals(media, playablePath.apply(media));
+        assertEquals(media, session.playablePath(media));
         assertEquals(0, mirror.usedBytes(), "no copy competes with the stream");
+    }
+
+    @Test
+    @DisplayName("a stream that measures too slow gets a rescue copy and offers a takeover")
+    void slowStreamGetsARescueTakeover(@TempDir Path temp) throws Exception {
+        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        Path media = source(temp, "film.mkv");
+        // A tenth of the required rate: the entry streams (the built-in player
+        // never blocks on buffering) and the session starts a copy behind it.
+        PlaybackPreparer preparer = preparer(mirror, 10_000, STREAMABLE_SECOND);
+        PlayablePaths session = preparer.embeddedSession(List.of(media));
+
+        assertEquals(media, session.playablePath(media), "the stream starts on the original");
+        session.startedFromOriginal(media);
+
+        assertTrue(session.adviceFor(media).isPresent(), "the viewer hears about the rescue");
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (session.takeoverAt(media, 0).isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        Path takeover = session.takeoverAt(media, 0).orElseThrow();
+        assertNotEquals(media, takeover);
+        assertArrayEquals(Files.readAllBytes(media), Files.readAllBytes(takeover));
+        assertNotEquals(media, session.playablePath(media),
+                "once landed, the copy also answers for later entries and sessions");
+    }
+
+    @Test
+    @DisplayName("a stream that measures fast is left alone — until the viewer pauses it")
+    void pausingStartsARescueEvenWhenTheProbeSaidFast(@TempDir Path temp) throws Exception {
+        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        Path media = source(temp, "film.mkv");
+        PlaybackPreparer preparer = preparer(mirror, 1_250_000, STREAMABLE_SECOND);
+        PlayablePaths session = preparer.embeddedSession(List.of(media));
+
+        session.startedFromOriginal(media);
+        assertTrue(session.adviceFor(media).isEmpty(), "fast enough: no rescue, no chatter");
+        assertEquals(0, mirror.usedBytes());
+
+        // The share degraded mid-film; the viewer pauses. That is the cue.
+        session.pausedOnOriginal(media);
+
+        assertTrue(session.adviceFor(media).isPresent());
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (session.takeoverAt(media, 30_000).isEmpty()
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertTrue(session.takeoverAt(media, 30_000).isPresent(),
+                "resume finds the local copy ready");
+    }
+
+    @Test
+    @DisplayName("with no rescue running a resume has nothing to switch to")
+    void noRescueMeansNoTakeover(@TempDir Path temp) throws IOException {
+        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        Path media = source(temp, "film.mkv");
+        PlaybackPreparer preparer = preparer(mirror, 1_250_000, STREAMABLE_SECOND);
+        PlayablePaths session = preparer.embeddedSession(List.of(media));
+
+        assertTrue(session.takeoverAt(media, 10_000).isEmpty());
+        assertTrue(session.adviceFor(media).isEmpty());
     }
 
     @Test

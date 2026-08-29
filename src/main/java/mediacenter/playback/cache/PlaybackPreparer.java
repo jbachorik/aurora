@@ -13,10 +13,10 @@ import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-import java.util.function.UnaryOperator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import mediacenter.playback.PlayablePaths;
 import mediacenter.playback.cache.MediaDurations.VideoHeader;
 import mediacenter.playback.cache.MediaMirror.MirrorTask;
 
@@ -195,42 +195,177 @@ public final class PlaybackPreparer {
     }
 
     /**
-     * Path resolution for the built-in player, which decides per episode at
-     * the moment each one starts. The resolver answers from a map that starts
-     * with today's finished copies and grows as prefetches land — so an
-     * episode whose copy finished during the previous one plays locally, with
-     * no lookup (and no stat against a possibly dead share) on the UI thread.
+     * A session for the built-in player, which decides per episode at the
+     * moment each one starts. Paths answer from a map that starts with today's
+     * finished copies and grows as copies land — so an episode whose copy
+     * finished during the previous one plays locally, with no lookup (and no
+     * stat against a possibly dead share) on the UI thread.
      *
-     * <p>Prefetching happens only when the first entry itself plays from the
-     * mirror: then the bandwidth is free. A run that starts by streaming keeps
-     * the network to itself. Call on a background thread.
+     * <p>Prefetching of the following titles happens only when the first entry
+     * itself plays from the mirror: then the bandwidth is free. A run that
+     * starts by <em>streaming</em> keeps the network to itself — until the
+     * stream proves too slow, at which point the session starts a rescue copy
+     * behind it and offers the player a takeover the moment the maths allow
+     * one (see {@link PlayablePaths}). Call on a background thread.
      */
-    public UnaryOperator<Path> playablePathsFor(List<Path> files) {
-        Map<Path, Path> resolved = new ConcurrentHashMap<>(completedCopies(files));
-        boolean firstPlaysLocally = !files.isEmpty() && resolved.containsKey(files.getFirst());
-        if (firstPlaysLocally && mirror.enabled()) {
-            int planned = 0;
-            for (Path file : files.subList(1, files.size())) {
-                if (planned >= PREFETCH_LOOKAHEAD) {
-                    break;
-                }
-                if (resolved.containsKey(file) || !network.test(file)) {
-                    continue;
-                }
-                Optional<MirrorTask> task = mirror.copy(file);
-                if (task.isEmpty()) {
-                    break;
-                }
-                MirrorTask started = task.get();
-                started.whenDone(() -> {
-                    if (!started.isFailed()) {
-                        resolved.put(started.source(), started.target());
+    public PlayablePaths embeddedSession(List<Path> files) {
+        return new EmbeddedSession(files);
+    }
+
+    private final class EmbeddedSession implements PlayablePaths {
+
+        private final Map<Path, Path> resolved;
+        private final Map<Path, Rescue> rescues = new ConcurrentHashMap<>();
+
+        /** A copy running behind an entry that is playing from its original path. */
+        private record Rescue(MirrorTask task, long size, VideoHeader header, long fallbackRate) {
+        }
+
+        private EmbeddedSession(List<Path> files) {
+            resolved = new ConcurrentHashMap<>(completedCopies(files));
+            boolean firstPlaysLocally = !files.isEmpty() && resolved.containsKey(files.getFirst());
+            if (firstPlaysLocally && mirror.enabled()) {
+                int planned = 0;
+                for (Path file : files.subList(1, files.size())) {
+                    if (planned >= PREFETCH_LOOKAHEAD) {
+                        break;
                     }
-                });
-                planned++;
+                    if (resolved.containsKey(file) || !network.test(file)) {
+                        continue;
+                    }
+                    if (!copyIntoResolved(file)) {
+                        break;
+                    }
+                    planned++;
+                }
             }
         }
-        return path -> resolved.getOrDefault(path, path);
+
+        @Override
+        public Path playablePath(Path entry) {
+            return resolved.getOrDefault(entry, entry);
+        }
+
+        @Override
+        public void startedFromOriginal(Path entry) {
+            if (rescues.containsKey(entry) || !worthRescuing(entry)) {
+                return;
+            }
+            OptionalLong measured = throughput.bytesPerSecond(entry);
+            if (measured.isEmpty()) {
+                return;
+            }
+            long size;
+            try {
+                size = Files.size(entry);
+            } catch (IOException e) {
+                return;
+            }
+            VideoHeader header = headers.read(entry);
+            long requiredRate = header.duration()
+                    .map(duration -> (long) (bitrate(size, duration) * HEADROOM))
+                    .orElse(ASSUMED_RATE_UNKNOWN_DURATION);
+            // The probe ran beside the playback, so it reads low; a share that
+            // still clears the bar under that handicap needs no rescue.
+            if (measured.getAsLong() >= requiredRate) {
+                return;
+            }
+            beginRescue(entry, size, header, measured.getAsLong());
+        }
+
+        @Override
+        public void pausedOnOriginal(Path entry) {
+            // Pausing is the viewer's own verdict on the stream; a share the
+            // start-time probe passed can still have degraded since. No speed
+            // test here — the pause is the evidence.
+            if (rescues.containsKey(entry) || !worthRescuing(entry)) {
+                return;
+            }
+            long size;
+            try {
+                size = Files.size(entry);
+            } catch (IOException e) {
+                return;
+            }
+            beginRescue(entry, size, headers.read(entry),
+                    throughput.bytesPerSecond(entry).orElse(0));
+        }
+
+        @Override
+        public Optional<Path> takeoverAt(Path entry, long positionMillis) {
+            Rescue rescue = rescues.get(entry);
+            if (rescue == null || rescue.task().isFailed()) {
+                return Optional.empty();
+            }
+            MirrorTask task = rescue.task();
+            if (task.isDone()) {
+                return Optional.of(task.target());
+            }
+            VideoHeader header = rescue.header();
+            if (header.duration().isEmpty() || !header.headerBeforeMedia()) {
+                // Without both, only a finished copy is safe to open.
+                return Optional.empty();
+            }
+            double durationMillis = header.duration().get().toMillis();
+            if (durationMillis <= 0 || positionMillis >= durationMillis) {
+                return Optional.empty();
+            }
+            long rate = task.observedBytesPerSecond();
+            if (rate <= 0) {
+                rate = rescue.fallbackRate();
+            }
+            if (rate <= 0) {
+                return Optional.empty();
+            }
+            // The pre-play lead formula, started mid-film: the copy must be
+            // past the current position by a margin, and far enough ahead that
+            // the remaining play time out-lasts the remaining copy time.
+            long positionBytes = (long) (rescue.size() * (positionMillis / durationMillis));
+            double remainingSeconds = (durationMillis - positionMillis) / 1000d;
+            long needed = Math.min(rescue.size(), Math.max(
+                    positionBytes + MINIMUM_LEAD_BYTES,
+                    (long) (rescue.size() - rate / HEADROOM * remainingSeconds)));
+            return task.copiedBytes() >= needed
+                    ? Optional.of(task.target())
+                    : Optional.empty();
+        }
+
+        @Override
+        public Optional<String> adviceFor(Path entry) {
+            Rescue rescue = rescues.get(entry);
+            if (rescue == null || rescue.task().isFailed()) {
+                return Optional.empty();
+            }
+            return Optional.of(
+                    "Downloading a local copy — pause a while, then resume to switch over.");
+        }
+
+        private boolean worthRescuing(Path entry) {
+            return mirror.enabled() && network.test(entry) && !resolved.containsKey(entry);
+        }
+
+        private void beginRescue(Path entry, long size, VideoHeader header, long fallbackRate) {
+            mirror.copy(entry).ifPresent(task -> {
+                LOG.log(Level.INFO, () -> "Rescue copy behind the stream of " + entry);
+                rescues.put(entry, new Rescue(task, size, header, fallbackRate));
+                task.whenDone(() -> {
+                    if (!task.isFailed()) {
+                        resolved.put(task.source(), task.target());
+                    }
+                });
+            });
+        }
+
+        /** Starts a copy that lands in the resolved map when it completes. */
+        private boolean copyIntoResolved(Path file) {
+            Optional<MirrorTask> task = mirror.copy(file);
+            task.ifPresent(started -> started.whenDone(() -> {
+                if (!started.isFailed()) {
+                    resolved.put(started.source(), started.target());
+                }
+            }));
+            return task.isPresent();
+        }
     }
 
     /**
@@ -323,25 +458,29 @@ public final class PlaybackPreparer {
         Optional<NextTitle> plannedNext = playOnwards.isEmpty() ? Optional.empty()
                 : planNextTitle(playOnwards.getFirst());
 
-        long mainLead = leadBytes(size, header, probedRate);
-        long nextLead = plannedNext.map(next -> next.leadBytes(probedRate)).orElse(0L);
-        long estimatedWaitSeconds = (mainLead + nextLead) / Math.max(probedRate, 1);
-        if (estimatedWaitSeconds > MAX_BUFFER_WAIT_SECONDS) {
-            // Play now over the slow share; mirror the whole file meanwhile so
-            // the *next* viewing comes off the local disk.
-            LOG.log(Level.INFO, () -> "Buffering would take ~" + estimatedWaitSeconds
-                    + "s; playing " + mediaFile + " directly and mirroring in the background");
-            mirror.copy(mediaFile);
-            return Optional.of(new Prepared(
-                    mediaFile, substitute(playOnwards), Optional.of(SLOW_SHARE_NOTICE)));
-        }
-
         Optional<MirrorTask> started = mirror.copy(mediaFile);
         if (started.isEmpty()) {
             return Optional.of(new Prepared(mediaFile, substitute(playOnwards),
                     Optional.of(SLOW_SHARE_NO_MIRROR_NOTICE)));
         }
         MirrorTask mainTask = started.get();
+
+        long mainLead = leadBytes(size, header, probedRate);
+        long nextLead = plannedNext.map(next -> next.leadBytes(probedRate)).orElse(0L);
+        // A copy already part-done — running since an attempt the viewer gave
+        // up on, or since a play-now — counts toward the head start, so coming
+        // back to a film that has been downloading means a short wait, not the
+        // full one all over again.
+        long stillNeeded = Math.max(0, mainLead + nextLead - mainTask.copiedBytes());
+        long estimatedWaitSeconds = stillNeeded / Math.max(probedRate, 1);
+        if (estimatedWaitSeconds > MAX_BUFFER_WAIT_SECONDS) {
+            // Play now over the slow share; the copy keeps running so the
+            // *next* viewing comes off the local disk.
+            LOG.log(Level.INFO, () -> "Buffering would take ~" + estimatedWaitSeconds
+                    + "s; playing " + mediaFile + " directly and mirroring in the background");
+            return Optional.of(new Prepared(
+                    mediaFile, substitute(playOnwards), Optional.of(SLOW_SHARE_NOTICE)));
+        }
         Optional<MirrorTask> nextTask = plannedNext.flatMap(next -> mirror.copy(next.path()));
 
         long deadline = System.nanoTime() + HARD_WAIT_LIMIT_NANOS;

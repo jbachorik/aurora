@@ -3,9 +3,9 @@ package mediacenter.ui;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
-import java.util.function.UnaryOperator;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
@@ -26,6 +26,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import mediacenter.playback.PlayablePaths;
 import mediacenter.playback.Timecodes;
 import mediacenter.playback.vlc.EmbeddedVlcPlayer;
 import mediacenter.playback.vlc.VlcEngine;
@@ -79,11 +80,11 @@ public final class PlayerView implements View {
     private final List<Entry> entries;
     /**
      * Turns an entry's path into the file the player actually opens — a local
-     * mirror copy when one exists, the entry's own path otherwise. Entries keep
-     * the paths the viewer chose, so history and watched marks never point into
-     * the cache.
+     * mirror copy when one exists, the entry's own path otherwise — and runs
+     * the rescue line under a stuttering stream. Entries keep the paths the
+     * viewer chose, so history and watched marks never point into the cache.
      */
-    private final UnaryOperator<Path> playablePath;
+    private final PlayablePaths playablePaths;
     /** What to do when a file verifiably starts playing — the history's way in. */
     private final BiConsumer<Path, String> onPlayed;
 
@@ -91,7 +92,8 @@ public final class PlayerView implements View {
     private final ImageView videoView = new ImageView();
     private final Label titleLabel = new Label();
     private final Label clockLabel = new Label();
-    private final VBox overlay = new VBox(2, titleLabel, clockLabel);
+    private final Label statusLabel = new Label();
+    private final VBox overlay = new VBox(2, titleLabel, clockLabel, statusLabel);
     private final PauseTransition overlayLinger = new PauseTransition(OVERLAY_LINGER);
     private final VBox keysHint = new VBox(3);
     private final PauseTransition keysHintLinger = new PauseTransition(KEYS_HINT_LINGER);
@@ -105,6 +107,15 @@ public final class PlayerView implements View {
     private boolean started;
     /** Whether the entry at {@link #position} has proven itself with a frame. */
     private boolean currentRecorded;
+    /** Whether the current entry is streaming from its own path, with no copy. */
+    private boolean playingFromOriginal;
+    /** The rescue advice is shown once per entry, then leaves the viewer alone. */
+    private boolean rescueAdviceShown;
+    /**
+     * Position to restore after a media switch, applied on the first clock
+     * tick after the new file reports a length; -1 when nothing is pending.
+     */
+    private long pendingSeekMillis = -1;
     private volatile boolean disposed;
 
     private PixelBuffer<ByteBuffer> pixelBuffer;
@@ -112,10 +123,10 @@ public final class PlayerView implements View {
     private final AtomicBoolean frameQueued = new AtomicBoolean();
 
     public PlayerView(UiContext context, VlcEngine engine, List<Entry> entries,
-                      UnaryOperator<Path> playablePath, BiConsumer<Path, String> onPlayed) {
+                      PlayablePaths playablePaths, BiConsumer<Path, String> onPlayed) {
         this.context = context;
         this.entries = List.copyOf(entries);
-        this.playablePath = playablePath;
+        this.playablePaths = playablePaths;
         this.onPlayed = onPlayed;
 
         root.getStyleClass().add("player-view");
@@ -133,6 +144,7 @@ public final class PlayerView implements View {
 
         titleLabel.getStyleClass().add("player-osd-title");
         clockLabel.getStyleClass().add("player-osd-time");
+        statusLabel.getStyleClass().add("player-osd-status");
         overlay.getStyleClass().add("player-osd");
         overlay.setMaxWidth(Region.USE_PREF_SIZE);
         overlay.setMaxHeight(Region.USE_PREF_SIZE);
@@ -179,7 +191,7 @@ public final class PlayerView implements View {
             }
         });
 
-        clock.getKeyFrames().add(new KeyFrame(CLOCK_TICK, event -> updateClock()));
+        clock.getKeyFrames().add(new KeyFrame(CLOCK_TICK, event -> tick()));
         clock.setCycleCount(Timeline.INDEFINITE);
     }
 
@@ -234,10 +246,21 @@ public final class PlayerView implements View {
     private void startCurrent() {
         Entry entry = entries.get(position);
         currentRecorded = false;
+        rescueAdviceShown = false;
+        pendingSeekMillis = -1;
         titleLabel.setText(entry.title());
         clockLabel.setText("");
+        statusLabel.setText("");
         showOverlay();
-        player.play(playablePath.apply(entry.path()));
+        Path opened = playablePaths.playablePath(entry.path());
+        playingFromOriginal = opened.equals(entry.path());
+        player.play(opened);
+        if (playingFromOriginal) {
+            // Off the UI thread: it measures the share, and may start a rescue
+            // copy behind a stream that measures too slow to hold.
+            context.backgroundExecutor().execute(
+                    () -> playablePaths.startedFromOriginal(entry.path()));
+        }
     }
 
     /** Moves along the run; off either end means the page is done and leaves. */
@@ -274,7 +297,7 @@ public final class PlayerView implements View {
         switch (event.getCode()) {
             case SPACE, ENTER -> {
                 if (activationGate.pressed(System.nanoTime())) {
-                    player.togglePause();
+                    togglePause();
                 }
                 showOverlay();
                 event.consume();
@@ -302,6 +325,37 @@ public final class PlayerView implements View {
         event.consume();
     }
 
+    /**
+     * Space during a stuttering stream is where the rescue line pays off.
+     * Pausing tells the mirror to start (or keep feeding) a copy of what is
+     * playing — the stalled player leaves it the share's whole bandwidth.
+     * Resuming asks whether that copy is far enough ahead to take over; if it
+     * is, the player reopens the local file at the very same position, and the
+     * rest of the film never touches the network again.
+     */
+    private void togglePause() {
+        Entry entry = entries.get(position);
+        if (player.isPlaying()) {
+            player.togglePause();
+            if (playingFromOriginal) {
+                context.backgroundExecutor().execute(
+                        () -> playablePaths.pausedOnOriginal(entry.path()));
+            }
+            return;
+        }
+        Optional<Path> takeover = playingFromOriginal
+                ? playablePaths.takeoverAt(entry.path(), player.timeMillis())
+                : Optional.empty();
+        if (takeover.isEmpty()) {
+            player.togglePause();
+            return;
+        }
+        pendingSeekMillis = player.timeMillis();
+        playingFromOriginal = false;
+        player.play(takeover.get());
+        statusLabel.setText("Now playing from the local copy");
+    }
+
     // -- overlay ------------------------------------------------------------
 
     private void showKeysHint() {
@@ -327,6 +381,27 @@ public final class PlayerView implements View {
         updateClock();
         overlay.setVisible(true);
         overlayLinger.playFromStart();
+    }
+
+    /** Every 400ms while the page lives: the clock, plus the rescue bookkeeping. */
+    private void tick() {
+        // A position waiting since a media switch is applied as soon as the
+        // new file has opened far enough to report its length.
+        if (pendingSeekMillis >= 0 && player.lengthMillis() > 0) {
+            player.seekTo(pendingSeekMillis);
+            pendingSeekMillis = -1;
+            showOverlay();
+        }
+        // One heads-up per entry, when a rescue copy has started behind a
+        // stream: the pause key is now worth knowing about.
+        if (playingFromOriginal && !rescueAdviceShown) {
+            playablePaths.adviceFor(entries.get(position).path()).ifPresent(advice -> {
+                rescueAdviceShown = true;
+                statusLabel.setText(advice);
+                showOverlay();
+            });
+        }
+        updateClock();
     }
 
     private void updateClock() {

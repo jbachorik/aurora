@@ -176,6 +176,19 @@ public final class EmbeddedVlcPlayer implements AutoCloseable {
         lib.playerSetTimeMillis(player, target);
     }
 
+    /** Jumps to an absolute time, clamped to the file; a player mid-open ignores it. */
+    public void seekTo(long millis) {
+        if (closed) {
+            return;
+        }
+        long length = lib.playerLengthMillis(player);
+        if (length <= 0) {
+            return;
+        }
+        // Same guard as seekBy: landing exactly on the end races EndReached.
+        lib.playerSetTimeMillis(player, Math.clamp(millis, 0, Math.max(0, length - 1000)));
+    }
+
     public long timeMillis() {
         return closed ? 0 : Math.max(0, lib.playerTimeMillis(player));
     }

@@ -114,6 +114,22 @@ The built-in player resolves each episode at the moment it starts, so a copy
 that landed during the previous episode is picked up at the boundary and the
 run walks off the network as the cache fills behind it.
 
+**Rescuing a stuttering stream (built-in player).** A file the built-in
+player streams directly is measured as it starts; one that measures too slow
+gets a **rescue copy** downloading behind the picture, and the overlay says
+so: *"Downloading a local copy — pause a while, then resume to switch over."*
+That line means exactly what the viewer would do anyway: **pause** (a stalled
+player leaves the copy the share's whole bandwidth), wait a little, and press
+**Space** — if the copy is far enough ahead that playback can no longer catch
+its front, the resume reopens the local file at the very same position and
+the rest of the film never touches the network again. A share that was fine
+at the start but degrades mid-film is covered too: pausing a directly-played
+network file is itself the cue to start the rescue copy. The external VLC
+window cannot be switched mid-flight; there, quitting VLC and pressing play
+again picks the partial download back up — the head start already copied is
+credited, so the second attempt starts after a short top-up rather than a
+full re-buffer.
+
 Independently of the pre-play buffering, a network file that has been played
 **twice or more** earns a permanent local copy — so the titles a household
 keeps returning to stop depending on the network (or its restrictions)

@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.UnaryOperator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -44,6 +43,7 @@ import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
+import mediacenter.playback.PlayablePaths;
 import mediacenter.playback.PlaybackResult;
 import mediacenter.playback.PlaybackService;
 import mediacenter.playback.cache.PlaybackPreparer;
@@ -671,7 +671,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         LOG.log(Level.INFO, () -> "Embedded playback of " + first.path()
                 + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
         if (playbackPreparer == null) {
-            push(new PlayerView(context, engine.get(), entries, path -> path,
+            push(new PlayerView(context, engine.get(), entries, PlayablePaths.originals(),
                     playbackService::recordPlayed));
             return true;
         }
@@ -679,15 +679,17 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         // dead share blocks — so it happens off the UI thread, and the page is
         // pushed when the answers are in. Entries keep the paths the viewer
         // chose; only what the player opens is swapped for a local copy. The
-        // resolver is live: a queued episode whose prefetch lands during the
-        // one before it plays from the mirror when its turn comes.
+        // session is live: a queued episode whose prefetch lands during the
+        // one before it plays from the mirror when its turn comes, and a
+        // stuttering stream can be paused, given a moment, and resumed onto
+        // the local copy growing behind it.
         embeddedPlayerPreparing = true;
         List<Path> paths = entries.stream().map(PlayerView.Entry::path).toList();
         backgroundExecutor.execute(() -> {
-            UnaryOperator<Path> playablePath = playbackPreparer.playablePathsFor(paths);
+            PlayablePaths playablePaths = playbackPreparer.embeddedSession(paths);
             FxTasks.onFx(() -> {
                 embeddedPlayerPreparing = false;
-                push(new PlayerView(context, engine.get(), entries, playablePath,
+                push(new PlayerView(context, engine.get(), entries, playablePaths,
                         playbackService::recordPlayed));
             });
         });

@@ -530,6 +530,12 @@
     -fx-text-fill: rgba(255, 255, 255, 0.85);
 }
 
+/* The rescue line: a copy is downloading behind the stream, or just took over. */
+.player-osd-status {
+    -fx-font-size: 18px;
+    -fx-text-fill: -mc-accent;
+}
+
 .player-hint-line {
     -fx-font-size: 19px;
     -fx-text-fill: rgba(255, 255, 255, 0.85);
