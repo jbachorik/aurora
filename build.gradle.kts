@@ -1,3 +1,7 @@
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
 plugins {
     application
 }
@@ -17,7 +21,7 @@ val applicationImageName = "MediaCenter"
  */
 val distributionName = "Aurora-MediaCenter"
 
-version = providers.gradleProperty("applicationVersion").getOrElse("1.0.0")
+version = providers.gradleProperty("applicationVersion").getOrElse("0.1.0")
 group = "mediacenter"
 
 val javaLanguageVersion = providers.gradleProperty("javaLanguageVersion").getOrElse("25").toInt()
@@ -107,6 +111,45 @@ tasks.jar {
             "Implementation-Title" to applicationImageName,
             "Implementation-Version" to project.version.toString()
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Version resource — shown on the home screen
+//
+// Not read from the manifest above: jlink assembles the runtime image
+// module-by-module and does not carry a module's META-INF into it, so by the
+// time the application is actually distributed there is no manifest left to
+// read "Implementation-Version" back from. A plain bundled resource is an
+// ordinary part of the module's content and survives linking.
+// ---------------------------------------------------------------------------
+
+val versionResourceDir = layout.buildDirectory.dir("generated/resources/version")
+
+val generateVersionResource = tasks.register("generateVersionResource") {
+    group = "build"
+    description = "Writes the application version and build date into a resource bundled with the jar."
+    val outputDir = versionResourceDir
+    val versionValue = project.version.toString()
+    inputs.property("version", versionValue)
+    outputs.dir(outputDir)
+    // The build date is "now", not a cacheable input — without this the task
+    // is considered up to date on every build after the first and the date
+    // written on day one would still be the one shown a year later.
+    outputs.upToDateWhen { false }
+    doLast {
+        val buildDate = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            .withZone(ZoneOffset.UTC)
+            .format(Instant.now())
+        val file = outputDir.get().file("mediacenter/version.properties").asFile
+        file.parentFile.mkdirs()
+        file.writeText("version=$versionValue\nbuildDate=$buildDate\n")
+    }
+}
+
+sourceSets {
+    main {
+        resources.srcDir(generateVersionResource)
     }
 }
 

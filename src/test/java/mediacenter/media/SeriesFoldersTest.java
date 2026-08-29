@@ -34,10 +34,33 @@ class SeriesFoldersTest {
     }
 
     @Test
+    @DisplayName("a spaced-out dash still parts the season from the episode")
+    void recognisesASpacedSeparator() {
+        // "S01 - E01": the dash carries a space on both sides, not just one
+        // character between the numbers.
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Show - S01 - E01 - Pilot.mkv"));
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Show_S01_-_E01_Pilot.mkv"));
+    }
+
+    @Test
+    @DisplayName("Ep is read the same as a bare E")
+    void recognisesEpAsTheEpisodeMarker() {
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Show.S01EP01.mkv"));
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Show.S01.Ep01.mkv"));
+    }
+
+    @Test
+    @DisplayName("a title immediately followed by a dash and the tag still counts")
+    void recognisesATagRightAfterADash() {
+        assertTrue(SeriesFolders.carriesAnOrderingMark("Title-S01E01.mkv"));
+    }
+
+    @Test
     @DisplayName("a parted tag still has to be a tag, not two unrelated numbers")
     void doesNotInventEpisodeTags() {
-        // The separator is one character, and what follows it has to be an
-        // episode number — otherwise every "...s1. Episode two..." would count.
+        // The separator is a short run of punctuation, and what follows it has
+        // to be an episode number — otherwise every "...s1. Episode two..."
+        // would count.
         assertFalse(SeriesFolders.carriesAnOrderingMark("Best of the 90s. Extras.mkv"));
         assertFalse(SeriesFolders.carriesAnOrderingMark("Series 1 - Episode 1.mkv"));
         assertFalse(SeriesFolders.carriesAnOrderingMark("movie.1280x720.mkv"));
@@ -87,5 +110,11 @@ class SeriesFoldersTest {
     void aResolutionIsNotAnEpisodeTag() {
         assertFalse(SeriesFolders.carriesAnOrderingMark("movie.1280x720.mkv"));
         assertTrue(SeriesFolders.carriesAnOrderingMark("show.1x01.mkv"));
+    }
+
+    @Test
+    @DisplayName("the x form works with a single-digit episode too")
+    void recognisesASingleDigitXTag() {
+        assertTrue(SeriesFolders.carriesAnOrderingMark("show.1x1.mkv"));
     }
 }
