@@ -5,6 +5,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
@@ -44,6 +45,7 @@ import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
 import mediacenter.playback.PlaybackResult;
 import mediacenter.playback.PlaybackService;
+import mediacenter.playback.cache.PlaybackPreparer;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.KioskBrowser;
 import mediacenter.platform.PlatformServices;
@@ -82,6 +84,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private final SettingsStore settingsStore;
     private final PlatformServices platform;
     private final PlaybackService playbackService;
+    private final PlaybackPreparer playbackPreparer;
     private final ExecutorService backgroundExecutor;
 
     private final StackPane rootPane = new StackPane();
@@ -98,6 +101,13 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private final HomeView homeView;
     private final AtomicReference<ApplicationSettings> settingsRef;
     private long acceptPlaybackFromNanos;
+
+    /**
+     * True while mirror copies are being looked up for the built-in player —
+     * the moment between the play key and the player page appearing, when a
+     * second press must not start a second run.
+     */
+    private volatile boolean embeddedPlayerPreparing;
 
     /**
      * The kiosk browser currently open, if any. Watched so a remote stop can
@@ -123,6 +133,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
             PlaybackHistory history,
             WatchedService watched,
             PlaybackService playbackService,
+            PlaybackPreparer playbackPreparer,
             PlatformServices platform,
             MediaScanner scanner,
             ArtworkResolver artworkResolver,
@@ -133,6 +144,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         this.settingsStore = settingsStore;
         this.platform = platform;
         this.playbackService = playbackService;
+        this.playbackPreparer = playbackPreparer;
         this.backgroundExecutor = backgroundExecutor;
 
         this.context = new UiContext(
@@ -523,7 +535,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     }
 
     private void startPlayback(PlayerView.Entry first, List<PlayerView.Entry> playOnwards) {
-        if (playbackService.isPlaying()) {
+        if (playbackService.isPlaying() || embeddedPlayerPreparing) {
             return;
         }
         if (System.nanoTime() < acceptPlaybackFromNanos) {
@@ -535,11 +547,14 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         }
         LOG.log(Level.INFO, () -> "Playback requested for " + first.path()
                 + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
-        hideForPlayback();
+        // The window stays up while the file is prepared, so buffering progress
+        // has somewhere to show; it hides when the player is really coming.
         playbackService.play(
                 first.path(),
                 playOnwards.stream().map(PlayerView.Entry::path).toList(),
                 first.title(),
+                this::showInfo,
+                this::hideForPlayback,
                 this::onPlaybackFinished);
     }
 
@@ -560,7 +575,26 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         entries.addAll(playOnwards);
         LOG.log(Level.INFO, () -> "Embedded playback of " + first.path()
                 + (playOnwards.isEmpty() ? "" : ", playing onwards through " + playOnwards.size() + " more"));
-        push(new PlayerView(context, engine.get(), entries, playbackService::recordPlayed));
+        if (playbackPreparer == null) {
+            push(new PlayerView(context, engine.get(), entries, path -> path,
+                    playbackService::recordPlayed));
+            return true;
+        }
+        // Looking mirror copies up stats their sources, and a stat against a
+        // dead share blocks — so it happens off the UI thread, and the page is
+        // pushed when the answers are in. Entries keep the paths the viewer
+        // chose; only what the player opens is swapped for a local copy.
+        embeddedPlayerPreparing = true;
+        List<Path> paths = entries.stream().map(PlayerView.Entry::path).toList();
+        backgroundExecutor.execute(() -> {
+            Map<Path, Path> copies = playbackPreparer.completedCopies(paths);
+            FxTasks.onFx(() -> {
+                embeddedPlayerPreparing = false;
+                push(new PlayerView(context, engine.get(), entries,
+                        path -> copies.getOrDefault(path, path),
+                        playbackService::recordPlayed));
+            });
+        });
         return true;
     }
 

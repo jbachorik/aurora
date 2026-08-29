@@ -85,6 +85,7 @@ public final class SettingsStore {
         members.put("theme", new JsonString(settings.theme().name()));
         members.put("slideshowSeconds", new JsonNumber(settings.slideshowSeconds()));
         members.put("playerBufferSeconds", new JsonNumber(settings.playerBufferSeconds()));
+        members.put("mirrorGigabytes", new JsonNumber(settings.mirrorGigabytes()));
         members.put("embeddedPlayer", new JsonBoolean(settings.embeddedPlayer()));
         members.put("browserScalePercent", new JsonNumber(settings.browserScalePercent()));
 
@@ -129,6 +130,10 @@ public final class SettingsStore {
         // JsonValue reads numbers as longs; the interval is small enough to narrow.
         int slideshowSeconds = document.longValue("slideshowSeconds").orElse(5L).intValue();
         int playerBufferSeconds = document.longValue("playerBufferSeconds").orElse(1L).intValue();
+        // Absent in files from before the mirror existed; the default applies,
+        // because a share too slow to stream should get help without a visit
+        // to Settings first.
+        int mirrorGigabytes = document.longValue("mirrorGigabytes").orElse(10L).intValue();
         // Absent in every file written before the built-in player existed, and
         // off is the right reading of those files.
         boolean embeddedPlayer = document.booleanValue("embeddedPlayer", false);
@@ -146,7 +151,7 @@ public final class SettingsStore {
         }
         return new ApplicationSettings(
                 vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds, playerBufferSeconds,
-                embeddedPlayer, websites, browserScalePercent, readScraper(document));
+                mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, readScraper(document));
     }
 
     /** Absent in every file written before the scraper existed; defaults are off. */

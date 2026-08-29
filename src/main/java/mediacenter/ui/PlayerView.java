@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
+import java.util.function.UnaryOperator;
 
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
@@ -76,6 +77,13 @@ public final class PlayerView implements View {
 
     private final UiContext context;
     private final List<Entry> entries;
+    /**
+     * Turns an entry's path into the file the player actually opens — a local
+     * mirror copy when one exists, the entry's own path otherwise. Entries keep
+     * the paths the viewer chose, so history and watched marks never point into
+     * the cache.
+     */
+    private final UnaryOperator<Path> playablePath;
     /** What to do when a file verifiably starts playing — the history's way in. */
     private final BiConsumer<Path, String> onPlayed;
 
@@ -104,9 +112,10 @@ public final class PlayerView implements View {
     private final AtomicBoolean frameQueued = new AtomicBoolean();
 
     public PlayerView(UiContext context, VlcEngine engine, List<Entry> entries,
-                      BiConsumer<Path, String> onPlayed) {
+                      UnaryOperator<Path> playablePath, BiConsumer<Path, String> onPlayed) {
         this.context = context;
         this.entries = List.copyOf(entries);
+        this.playablePath = playablePath;
         this.onPlayed = onPlayed;
 
         root.getStyleClass().add("player-view");
@@ -228,7 +237,7 @@ public final class PlayerView implements View {
         titleLabel.setText(entry.title());
         clockLabel.setText("");
         showOverlay();
-        player.play(entry.path());
+        player.play(playablePath.apply(entry.path()));
     }
 
     /** Moves along the run; off either end means the page is done and leaves. */

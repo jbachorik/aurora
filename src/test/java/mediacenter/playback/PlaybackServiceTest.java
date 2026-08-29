@@ -128,6 +128,34 @@ class PlaybackServiceTest {
     }
 
     @Test
+    @DisplayName("with a preparer the window-hiding callback still precedes the player")
+    void runsThePreparerBeforeThePlayer(@TempDir Path temp) throws Exception {
+        Path localMedia = temp.resolve("clip.mkv");
+        // Large enough that even a busy CI disk measures far above the assumed
+        // required rate, keeping this on the fast pass-through path.
+        Files.write(localMedia, new byte[8 << 20]);
+        List<String> order = new ArrayList<>();
+        FakePlayerLauncher launcher = FakePlayerLauncher.behavingAs(file -> {
+            order.add("player");
+            return new PlaybackResult.Completed(0, java.time.Duration.ofMinutes(1));
+        });
+        // A real preparer over a local file: measured fast, passed through.
+        mediacenter.playback.cache.MediaMirror mirror = new mediacenter.playback.cache.MediaMirror(
+                temp.resolve("cache"), () -> 1L << 30);
+        PlaybackService service = new PlaybackService(
+                launcher, new PlaybackHistory(), new HistoryStore(temp), watchedService(temp),
+                DIRECT, DIRECT, new mediacenter.playback.cache.PlaybackPreparer(mirror));
+
+        service.play(localMedia, List.of(), "Clip",
+                status -> order.add("status:" + status),
+                () -> order.add("hide"),
+                result -> order.add("finished"));
+
+        assertEquals(List.of("hide", "player", "finished"), order);
+        assertEquals(List.of(localMedia), launcher.played());
+    }
+
+    @Test
     @DisplayName("only one player runs at a time")
     void ignoresASecondRequestWhileAPlayerIsRunning(@TempDir Path temp) {
         PlaybackHistory history = new PlaybackHistory();

@@ -12,6 +12,7 @@ import java.util.logging.Logger;
 import mediacenter.history.HistoryStore;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
+import mediacenter.playback.cache.PlaybackPreparer;
 
 /**
  * Runs a playback off the UI thread and reports back on it.
@@ -29,6 +30,7 @@ public final class PlaybackService {
     private final WatchedService watched;
     private final Executor backgroundExecutor;
     private final Executor uiExecutor;
+    private final PlaybackPreparer preparer;
     private final AtomicBoolean playing = new AtomicBoolean();
 
     public PlaybackService(
@@ -38,12 +40,30 @@ public final class PlaybackService {
             WatchedService watched,
             Executor backgroundExecutor,
             Executor uiExecutor) {
+        this(playerLauncher, history, historyStore, watched, backgroundExecutor, uiExecutor, null);
+    }
+
+    /**
+     * @param preparer checks the throughput of a file's home and buffers ahead
+     *                 into the local mirror before the player starts; may be
+     *                 null, and playback then goes straight to the player as it
+     *                 always did
+     */
+    public PlaybackService(
+            PlayerLauncher playerLauncher,
+            PlaybackHistory history,
+            HistoryStore historyStore,
+            WatchedService watched,
+            Executor backgroundExecutor,
+            Executor uiExecutor,
+            PlaybackPreparer preparer) {
         this.playerLauncher = playerLauncher;
         this.history = history;
         this.historyStore = historyStore;
         this.watched = watched;
         this.backgroundExecutor = backgroundExecutor;
         this.uiExecutor = uiExecutor;
+        this.preparer = preparer;
     }
 
     /** True while a player is running. */
@@ -71,6 +91,26 @@ public final class PlaybackService {
             List<Path> playOnwards,
             String displayTitle,
             Consumer<PlaybackResult> onFinished) {
+        play(mediaFile, playOnwards, displayTitle, status -> { }, () -> { }, onFinished);
+    }
+
+    /**
+     * @param onStatus           hears, on the UI executor, anything worth telling
+     *                           the viewer while the file is prepared — buffering
+     *                           progress, a slow-share warning
+     * @param beforePlayerStarts runs on the UI executor once preparation is over
+     *                           and the player is about to take the screen; the
+     *                           shell hides its window here, after the buffering
+     *                           messages have had a screen to appear on
+     * @see #play(Path, List, String, Consumer)
+     */
+    public void play(
+            Path mediaFile,
+            List<Path> playOnwards,
+            String displayTitle,
+            Consumer<String> onStatus,
+            Runnable beforePlayerStarts,
+            Consumer<PlaybackResult> onFinished) {
         if (!playing.compareAndSet(false, true)) {
             LOG.fine("Ignoring playback request, a player is already running");
             return;
@@ -78,7 +118,20 @@ public final class PlaybackService {
         backgroundExecutor.execute(() -> {
             PlaybackResult result;
             try {
-                result = playerLauncher.play(mediaFile, playOnwards);
+                // Preparation may swap in local mirror copies; the history below
+                // still records the paths the viewer chose, never the copies.
+                Path playFile = mediaFile;
+                List<Path> playQueue = playOnwards;
+                if (preparer != null) {
+                    PlaybackPreparer.Prepared prepared = preparer.prepare(mediaFile, playOnwards,
+                            status -> uiExecutor.execute(() -> onStatus.accept(status)));
+                    prepared.notice().ifPresent(
+                            notice -> uiExecutor.execute(() -> onStatus.accept(notice)));
+                    playFile = prepared.mediaFile();
+                    playQueue = prepared.playOnwards();
+                }
+                uiExecutor.execute(beforePlayerStarts);
+                result = playerLauncher.play(playFile, playQueue);
             } catch (RuntimeException e) {
                 LOG.log(Level.SEVERE, "Unexpected failure while playing " + mediaFile, e);
                 result = PlaybackResult.Failed.of("Playback failed unexpectedly.", e);
@@ -130,6 +183,11 @@ public final class PlaybackService {
             // only when the embedded player reports each episode through
             // recordPlayed.
             watched.markWatched(mediaFile);
+            if (preparer != null) {
+                // Counts toward "frequently played", which is what eventually
+                // earns a network file its permanent local mirror copy.
+                preparer.recordPlayed(mediaFile);
+            }
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Could not update playback history", e);
         }
