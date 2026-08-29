@@ -12,4 +12,10 @@ class ApplicationVersionTest {
     void readsTheGeneratedVersion() {
         assertFalse(ApplicationVersion.current().isBlank());
     }
+
+    @Test
+    @DisplayName("the build date generated at build time is read back, not left blank")
+    void readsTheGeneratedBuildDate() {
+        assertFalse(ApplicationVersion.buildDate().isBlank());
+    }
 }

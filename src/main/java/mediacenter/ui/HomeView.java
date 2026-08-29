@@ -190,7 +190,7 @@ public final class HomeView implements View {
     /** So a build running on a set-top box can be told apart from an older one. */
     @Override
     public String subtitle() {
-        return "v" + ApplicationVersion.current();
+        return "v" + ApplicationVersion.current() + " (built " + ApplicationVersion.buildDate() + ")";
     }
 
     @Override

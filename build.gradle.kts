@@ -1,3 +1,7 @@
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
 plugins {
     application
 }
@@ -124,15 +128,22 @@ val versionResourceDir = layout.buildDirectory.dir("generated/resources/version"
 
 val generateVersionResource = tasks.register("generateVersionResource") {
     group = "build"
-    description = "Writes the application version into a resource bundled with the jar."
+    description = "Writes the application version and build date into a resource bundled with the jar."
     val outputDir = versionResourceDir
     val versionValue = project.version.toString()
     inputs.property("version", versionValue)
     outputs.dir(outputDir)
+    // The build date is "now", not a cacheable input — without this the task
+    // is considered up to date on every build after the first and the date
+    // written on day one would still be the one shown a year later.
+    outputs.upToDateWhen { false }
     doLast {
+        val buildDate = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            .withZone(ZoneOffset.UTC)
+            .format(Instant.now())
         val file = outputDir.get().file("mediacenter/version.properties").asFile
         file.parentFile.mkdirs()
-        file.writeText("version=$versionValue\n")
+        file.writeText("version=$versionValue\nbuildDate=$buildDate\n")
     }
 }
 
