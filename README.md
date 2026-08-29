@@ -236,6 +236,53 @@ see the share sees it, and deleting the file is how you ask for a re-scrape.
 Scrapes run one at a time in the background; a folder that found no confident
 match is retried on the next start, when the missing season may have arrived.
 
+### Setting up Ollama
+
+Ollama is optional — without it, folder names are searched on TheTVDB as they
+are, which is fine for tidy libraries and hopeless for
+`BrBa.COMPLETE.720p.x264-GRP`. There are two ways to have it, and the settings
+dialog (**Settings → Series scraper → Configure…**) takes either:
+
+**The hosted service (the default endpoint).** Nothing to install; a title
+guess is one tiny request, so the free tier's limits are far more than this
+feature ever uses.
+
+1. Create an account at [ollama.com](https://ollama.com).
+2. Create an API key at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+3. Paste it into **Ollama API key**. Leave the endpoint
+   (`https://ollama.com`) and the model (`gpt-oss:20b`) as they are — any
+   other model the hosted service offers works too.
+
+Without a key the hosted endpoint turns requests away, and the media center
+knows it: it skips the call entirely rather than waiting out a timeout per
+folder, and scrapes with the folder name alone.
+
+**An Ollama in the house (no account, no key).** The
+[open-source Ollama](https://ollama.com/download) running on any machine that
+is on when the media center is — a desktop, the NAS if it has the memory. A
+small model is entirely enough for reading folder names:
+
+```bash
+ollama pull llama3.2     # ~2 GB; qwen3:4b works too
+```
+
+Then set **Ollama endpoint** to where it listens — `http://localhost:11434`
+on the same machine, `http://desktop:11434` or `http://192.168.1.20:11434`
+across the LAN — put that model's name into **Ollama model**, and leave the
+API key empty. One caveat for the across-the-LAN case: Ollama binds to
+localhost unless told otherwise, so on the machine running it set
+`OLLAMA_HOST=0.0.0.0` (an environment variable) before starting it.
+
+Either way, a quick check that the endpoint answers, from any machine that
+can reach it:
+
+```bash
+curl http://desktop:11434/api/tags        # local: lists the pulled models
+```
+
+Nothing else is needed — the media center speaks Ollama's standard chat API,
+which is the same for both.
+
 
 How it is put together
 ----------------------
