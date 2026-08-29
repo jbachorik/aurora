@@ -93,6 +93,26 @@ class DisplayNamesTest {
     }
 
     @Test
+    @DisplayName("a trailing episode tag is dropped, since the grid already lays episodes out in order")
+    void dropsATrailingEpisodeTag() {
+        // A viewer's own rename of an episode file: the nickname is what matters,
+        // the tag at the end just repeats what the grid position already shows.
+        assertEquals("bad parents", DisplayNames.forFileName("bad parents-S07E03.avi"));
+        assertEquals("j springfield pirate",
+                DisplayNames.forFileName("j springfield pirate-S07E16.avi"));
+        assertEquals("Show", DisplayNames.forFileName("Show.S01E01.avi"));
+    }
+
+    @Test
+    @DisplayName("an episode tag in the middle of a longer name is left alone")
+    void keepsAMidNameEpisodeTag() {
+        // Something meaningful — the episode's own title — follows the tag here,
+        // so only a *trailing* tag is read as noise worth dropping.
+        assertEquals("My Name Is Earl - S01.E01 - Pilot",
+                DisplayNames.forFileName("My Name Is Earl - S01.E01 - Pilot.avi"));
+    }
+
+    @Test
     @DisplayName("brackets are left where dropping them would leave nothing behind")
     void keepsANameThatIsEntirelyBracketed() {
         // [REC] is a real film, and an empty caption says less than a bracket does.

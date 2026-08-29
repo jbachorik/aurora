@@ -8,8 +8,9 @@ import java.util.regex.Pattern;
  *
  * <p>Deliberately conservative: extensions are removed, separators become
  * spaces, an "01 - " ordering prefix is dropped, anything in square brackets
- * goes, and whitespace is tidied. Years and unbracketed quality markers are
- * left alone — guessing wrong is worse than showing the original name.
+ * goes, a trailing "S01E01" style episode tag goes, and whitespace is tidied.
+ * Years and unbracketed quality markers are left alone — guessing wrong is
+ * worse than showing the original name.
  */
 public final class DisplayNames {
 
@@ -61,12 +62,27 @@ public final class DisplayNames {
      */
     private static final Pattern BRACKETED_TAG = Pattern.compile("\\[[^\\[\\]]*\\]");
 
+    /**
+     * A "-S01E01" style episode tag stuck on the end of a name — the shape a
+     * viewer's own rename leaves behind: "bad parents-S07E03". Only a
+     * <em>trailing</em> tag is stripped, requiring a separator before it, so a
+     * tag sitting in the middle of a longer release name — "My Name Is Earl -
+     * S01.E01 - Pilot" — is left alone, since something meaningful follows it
+     * there. The grid already lays episodes out in order, so a tag that is the
+     * last word of the name adds nothing a viewer needs to read.
+     *
+     * @see SeriesFolders the same tag shape, used there to detect a series folder
+     */
+    private static final Pattern TRAILING_EPISODE_TAG =
+            Pattern.compile("(?i)[\\s._-]+(?:" + SeriesFolders.EPISODE_TAG_CORE + ")$");
+
     private static String clean(String rawName) {
         String name = rawName.replace('_', ' ');
         // Before the ordering prefix is looked for, so a tag in front of the
         // number does not hide it, and before the dots are touched, so that a
         // stripped name is judged on the separators it actually has left.
         name = BRACKETED_TAG.matcher(name).replaceAll(" ").trim();
+        name = TRAILING_EPISODE_TAG.matcher(name).replaceFirst("");
         // Before the dots are touched, so "01.Dead.Mans.Chest" still has its
         // separator to recognise.
         name = withoutOrderingPrefix(name);

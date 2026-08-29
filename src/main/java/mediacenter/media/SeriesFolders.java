@@ -26,21 +26,29 @@ import java.util.regex.Pattern;
 public final class SeriesFolders {
 
     /**
-     * {@code S01E01}, {@code s1e1}, {@code 1x01} — bounded by non-alphanumerics
-     * so the {@code 80x72} inside a {@code 1280x720} resolution tag never counts.
+     * {@code S01E01}, {@code s1e1}, {@code 1x01} — the season and episode may be
+     * parted by a short run of spaces, dots, underscores or dashes — up to three
+     * characters, so {@code S01.E01} (what a good many rippers write) and
+     * {@code S01 - E01} (its spaced-out cousin, "-" with a space either side)
+     * both read as one tag. The episode marker itself may be a bare {@code E} or
+     * the {@code Ep} some rippers write instead — {@code S01Ep01}.
      *
-     * <p>Season and episode may be parted by a short run of spaces, dots,
-     * underscores or dashes — up to three characters, so {@code S01.E01} (what a
-     * good many rippers write) and {@code S01 - E01} (its spaced-out cousin, "-"
-     * with a space either side) both read as one tag. Reading either as two
-     * unrelated numbers left the folder queueing nothing at all: the run stopped
-     * dead after its first episode, with nothing on screen to say why. An episode
-     * number still has to follow the separator, or "Series 1 - Episode 1" would
-     * start counting as a tag. The episode marker itself may be a bare {@code E}
-     * or the {@code Ep} some rippers write instead — {@code S01Ep01}.
+     * <p>Shared with {@link DisplayNames}, which strips the same shape off the
+     * end of what is shown — this string carries no word-boundary guard of its
+     * own, so each user of it supplies the boundary its own matching needs.
+     */
+    static final String EPISODE_TAG_CORE = "s\\d{1,2}[\\s._-]{0,3}ep?\\d{1,3}|\\d{1,2}x\\d{1,3}";
+
+    /**
+     * Bounded by non-alphanumerics so the {@code 80x72} inside a
+     * {@code 1280x720} resolution tag never counts, and an episode number has
+     * to follow the separator, or "Series 1 - Episode 1" would start counting
+     * as a tag. Reading either as two unrelated numbers left the folder
+     * queueing nothing at all: the run stopped dead after its first episode,
+     * with nothing on screen to say why.
      */
     private static final Pattern EPISODE_TAG = Pattern.compile(
-            "(?i)(?<![\\p{L}\\p{N}])(?:s\\d{1,2}[\\s._-]{0,3}ep?\\d{1,3}|\\d{1,2}x\\d{1,3})(?![\\p{L}\\p{N}])");
+            "(?i)(?<![\\p{L}\\p{N}])(?:" + EPISODE_TAG_CORE + ")(?![\\p{L}\\p{N}])");
 
     /** @see DisplayNames the same shape its display-stripping recognises */
     private static final Pattern ORDERING_PREFIX = Pattern.compile("^\\d{1,2}\\s*[-.)\\]]\\s*");
