@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aurora Remote</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 24px;
+    background: #14161c; color: #e8eaf0;
+    font: 16px/1.5 system-ui, sans-serif;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 420px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 8px 0 24px; }
+  h1 span { color: #7aa2ff; }
+  form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+  input {
+    padding: 14px; font-size: 16px; border-radius: 10px;
+    border: 1px solid #3a3f4d; background: #1d2029; color: inherit;
+  }
+  input:focus { outline: none; border-color: #7aa2ff; }
+  button {
+    padding: 14px; font-size: 16px; font-weight: 600;
+    border: none; border-radius: 10px; cursor: pointer;
+    background: #7aa2ff; color: #10121a;
+  }
+  button.stop { background: #2a2e3a; color: #e8eaf0; width: 100%; }
+  button:active { opacity: .8; }
+  #status {
+    margin-top: 20px; padding: 12px 14px; border-radius: 10px;
+    background: #1d2029; color: #9aa0ae; font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  #status.error { color: #ff9a9a; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>Aurora</span> Remote</h1>
+  <form id="open-form">
+    <input id="url" type="text" inputmode="url" autocapitalize="off" autocorrect="off"
+           placeholder="Paste or type an address…" required>
+    <button type="submit">Open on the TV</button>
+  </form>
+  <button id="stop" class="stop" type="button">Stop &amp; back to the menu</button>
+  <p id="status">Checking…</p>
+</main>
+<script>
+  const statusLine = document.getElementById('status');
+
+  function show(text, isError) {
+    statusLine.textContent = text;
+    statusLine.classList.toggle('error', !!isError);
+  }
+
+  async function call(path, options) {
+    const response = await fetch(path, options);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || ('HTTP ' + response.status));
+    return body;
+  }
+
+  async function refresh() {
+    try {
+      const status = await call('/api/status');
+      show(status.active ? 'Showing: ' + status.url : 'Nothing open — the menu is showing.');
+    } catch (e) {
+      show('Cannot reach the media center: ' + e.message, true);
+    }
+  }
+
+  document.getElementById('open-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const url = document.getElementById('url').value.trim();
+    if (!url) return;
+    show('Opening…');
+    try {
+      await call('/api/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      setTimeout(refresh, 1500);
+    } catch (e) {
+      show(e.message, true);
+    }
+  });
+
+  document.getElementById('stop').addEventListener('click', async () => {
+    show('Stopping…');
+    try {
+      const result = await call('/api/stop', { method: 'POST' });
+      show(result.stopped ? 'Stopped — back at the menu.' : 'Nothing was open.');
+      setTimeout(refresh, 1500);
+    } catch (e) {
+      show(e.message, true);
+    }
+  });
+
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+</body>
+</html>

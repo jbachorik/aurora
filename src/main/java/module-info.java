@@ -10,6 +10,8 @@
 module media.center {
     requires javafx.controls;
     requires java.logging;
+    // The remote control's HTTP server; one platform module, no dependency.
+    requires jdk.httpserver;
 
     // JavaFX instantiates the Application subclass reflectively; nothing else
     // needs access to this module.

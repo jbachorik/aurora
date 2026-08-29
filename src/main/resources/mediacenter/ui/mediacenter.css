@@ -493,3 +493,16 @@
     -fx-background-radius: 8;
     -fx-padding: 10 18 10 18;
 }
+
+/* -------------------------------------------------------- remote control */
+
+/* The QR code renders its own white field, so the badge only carries the
+   address underneath and a little breathing room. */
+.remote-badge {
+    -fx-padding: 8;
+}
+
+.remote-badge-address {
+    -fx-font-size: 14px;
+    -fx-text-fill: -mc-text-dim;
+}

@@ -21,6 +21,9 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextInputControl;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
@@ -45,6 +48,8 @@ import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.KioskBrowser;
 import mediacenter.platform.PlatformServices;
 import mediacenter.platform.KioskExtension;
+import mediacenter.remote.QrCode;
+import mediacenter.remote.RemoteKiosk;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
 import mediacenter.ui.components.ArtworkCache;
@@ -54,7 +59,7 @@ import mediacenter.ui.components.Motion;
  * The application frame: header, page stack, status banner, global keys and the
  * hide/play/restore lifecycle.
  */
-public final class MediaCenterShell implements Navigation {
+public final class MediaCenterShell implements Navigation, RemoteKiosk {
 
     private static final Logger LOG = Logger.getLogger(MediaCenterShell.class.getName());
     private static final Duration BANNER_DURATION = Duration.seconds(6);
@@ -91,6 +96,23 @@ public final class MediaCenterShell implements Navigation {
     private final HomeView homeView;
     private final AtomicReference<ApplicationSettings> settingsRef;
     private long acceptPlaybackFromNanos;
+
+    /**
+     * The kiosk browser currently open, if any. Watched so a remote stop can
+     * close it; whichever launch put a process here is the one that may clear
+     * it again, which keeps a replaced browser's watcher from restoring the
+     * window over its successor.
+     */
+    private final AtomicReference<Process> kioskProcess = new AtomicReference<>();
+
+    /** What the kiosk browser is showing; null when it is closed. */
+    private volatile String kioskUrl;
+
+    /** The badge in the home screen's corner: a QR code to the remote control. */
+    private final ImageView remoteQrView = new ImageView();
+    private final Label remoteAddressLabel = new Label();
+    private final VBox remoteBadge = new VBox(6, remoteQrView, remoteAddressLabel);
+    private boolean remoteBadgeReady;
 
     public MediaCenterShell(
             Stage stage,
@@ -211,7 +233,18 @@ public final class MediaCenterShell implements Navigation {
         StackPane.setMargin(bannerBox, new Insets(96, 32, 0, 32));
         bannerTimer.setOnFinished(event -> hideBanner());
 
-        rootPane.getChildren().addAll(frame, bannerBox);
+        remoteBadge.getStyleClass().add("remote-badge");
+        remoteAddressLabel.getStyleClass().add("remote-badge-address");
+        remoteBadge.setAlignment(Pos.CENTER);
+        remoteBadge.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+        // Purely informational: it must never take a click from the page under it.
+        remoteBadge.setMouseTransparent(true);
+        remoteBadge.setVisible(false);
+        StackPane.setAlignment(remoteBadge, Pos.BOTTOM_RIGHT);
+        // Clear of the hint bar along the bottom.
+        StackPane.setMargin(remoteBadge, new Insets(0, 24, 56, 0));
+
+        rootPane.getChildren().addAll(frame, bannerBox, remoteBadge);
     }
 
     private View currentView() {
@@ -230,6 +263,10 @@ public final class MediaCenterShell implements Navigation {
         frame.getTop().setManaged(chrome);
         frame.getBottom().setVisible(chrome);
         frame.getBottom().setManaged(chrome);
+
+        // The QR badge belongs to the main menu alone; any page pushed over it
+        // takes it away.
+        remoteBadge.setVisible(remoteBadgeReady && view == homeView);
 
         titleLabel.setText(view.title());
         String subtitle = view.subtitle();
@@ -337,6 +374,15 @@ public final class MediaCenterShell implements Navigation {
         }
         LOG.log(Level.INFO, () -> "Opening website " + website.url());
         backgroundExecutor.execute(() -> {
+            // A browser already open — a remote request replacing the page —
+            // is closed first. Taking it out of the reference before the
+            // destroy keeps its watcher from restoring the window (the
+            // compare-and-set below fails for it), so the handover is silent.
+            Process previous = kioskProcess.getAndSet(null);
+            kioskUrl = null; // not stale even if the launch below fails
+            if (previous != null) {
+                previous.destroy();
+            }
             try {
                 Path dataDirectory = platform.applicationDataDirectory();
                 List<String> command = KioskBrowser.commandFor(
@@ -350,10 +396,15 @@ public final class MediaCenterShell implements Navigation {
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                         .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
+                kioskProcess.set(process);
+                kioskUrl = website.url();
                 FxTasks.onFx(stage::toBack);
                 int exitCode = process.waitFor();
                 LOG.log(Level.INFO, () -> "Browser closed with exit code " + exitCode + ", returning");
-                FxTasks.onFx(this::restoreAfterPlayback);
+                if (kioskProcess.compareAndSet(process, null)) {
+                    kioskUrl = null;
+                    FxTasks.onFx(this::restoreAfterPlayback);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 FxTasks.onFx(this::restoreAfterPlayback);
@@ -365,6 +416,81 @@ public final class MediaCenterShell implements Navigation {
                 });
             }
         });
+    }
+
+    // -- RemoteKiosk ---------------------------------------------------------
+    //
+    // Called from the remote-control server's worker threads. Everything here
+    // stays off the JavaFX thread and hands UI work to it explicitly.
+
+    @Override
+    public Optional<String> openUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return Optional.of("The address is empty.");
+        }
+        if (settings().browserPath().isEmpty()) {
+            return Optional.of("No browser is configured — choose one in Settings on the TV first.");
+        }
+        openWebsite(Website.create("Remote", url));
+        return Optional.empty();
+    }
+
+    @Override
+    public boolean stopBrowser() {
+        Process process = kioskProcess.get();
+        if (process == null) {
+            return false;
+        }
+        // The watcher in openWebsite sees the process die and restores the
+        // window; going home as well is what "stop" promises the phone.
+        process.destroy();
+        FxTasks.onFx(this::goHome);
+        return true;
+    }
+
+    @Override
+    public Optional<String> currentUrl() {
+        return Optional.ofNullable(kioskUrl);
+    }
+
+    // -- remote-control badge ------------------------------------------------
+
+    /**
+     * Puts the remote control's address on the main menu, as a QR code for a
+     * phone camera with the address written under it. Call on the JavaFX
+     * thread once the server is up.
+     */
+    public void showRemoteControl(String address) {
+        LOG.log(Level.INFO, () -> "Remote control reachable at " + address);
+        remoteQrView.setImage(qrImage(QrCode.encode(address)));
+        remoteAddressLabel.setText(address);
+        remoteBadgeReady = true;
+        remoteBadge.setVisible(currentView() == homeView);
+    }
+
+    /**
+     * Renders the symbol at an integer scale straight into the image — no
+     * resampling afterwards, which would blur the modules a camera needs
+     * crisp. Always dark on white, whatever the theme: contrast is what makes
+     * it scannable, and the white field doubles as the quiet zone.
+     */
+    private static WritableImage qrImage(QrCode qr) {
+        final int quietModules = 4;
+        final int scale = Math.max(3, 132 / qr.size());
+        int sizePixels = (qr.size() + quietModules * 2) * scale;
+        WritableImage image = new WritableImage(sizePixels, sizePixels);
+        PixelWriter writer = image.getPixelWriter();
+        for (int y = 0; y < sizePixels; y++) {
+            for (int x = 0; x < sizePixels; x++) {
+                int moduleX = x / scale - quietModules;
+                int moduleY = y / scale - quietModules;
+                boolean dark = moduleX >= 0 && moduleX < qr.size()
+                        && moduleY >= 0 && moduleY < qr.size()
+                        && qr.moduleAt(moduleX, moduleY);
+                writer.setArgb(x, y, dark ? 0xFF000000 : 0xFFFFFFFF);
+            }
+        }
+        return image;
     }
 
     @Override

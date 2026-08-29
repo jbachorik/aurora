@@ -32,6 +32,7 @@ import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaScanner;
 import mediacenter.platform.PlatformServices;
 import mediacenter.playback.PlaybackService;
+import mediacenter.remote.RemoteControlServer;
 import mediacenter.playback.PlayerLauncher;
 import mediacenter.playback.VlcPlayerLauncher;
 import mediacenter.ui.MediaCenterShell;
@@ -68,6 +69,7 @@ public final class MediaCenterApp extends Application {
     private static final List<Integer> ICON_SIZES = List.of(16, 32, 48, 64, 128, 256);
 
     private ExecutorService backgroundExecutor;
+    private volatile RemoteControlServer remoteControl;
 
     /** Required by JavaFX, which instantiates this class reflectively. */
     public MediaCenterApp() {
@@ -146,15 +148,42 @@ public final class MediaCenterApp extends Application {
         SceneSnapshot.scheduleIfRequested(scene, getParameters().getRaw());
 
         discoverVlcIfNeeded(platform, shell, settingsRef);
+        startRemoteControl(shell);
     }
 
     @Override
     public void stop() {
         LOG.info("Shutting down");
+        RemoteControlServer server = remoteControl;
+        if (server != null) {
+            server.stop();
+        }
         if (backgroundExecutor != null) {
             backgroundExecutor.shutdownNow();
         }
         Platform.exit();
+    }
+
+    /**
+     * Starts the remote-control server and, once it is up, puts its address on
+     * the main menu as a QR code. Failure to bind — the port is taken, or the
+     * machine forbids it — costs the remote control and nothing else, so it is
+     * logged and swallowed.
+     */
+    private void startRemoteControl(MediaCenterShell shell) {
+        backgroundExecutor.execute(() -> {
+            try {
+                RemoteControlServer server = new RemoteControlServer(
+                        shell, RemoteControlServer.DEFAULT_PORT, backgroundExecutor);
+                server.start();
+                remoteControl = server;
+                server.displayAddress().ifPresentOrElse(
+                        address -> Platform.runLater(() -> shell.showRemoteControl(address)),
+                        () -> LOG.info("Remote control is up, but no LAN address was found to advertise"));
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "The remote control server could not start", e);
+            }
+        });
     }
 
     /**

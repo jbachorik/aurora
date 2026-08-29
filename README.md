@@ -128,6 +128,31 @@ stopped honouring `--load-extension`, and Firefox, which does not sideload
 extensions at all.
 
 
+Remote control
+--------------
+
+The home screen shows a **QR code** in its bottom-right corner. Scanning it
+with a phone on the same network opens a small web page with two operations:
+paste an address and **open it on the TV** in the same kiosk browser the
+website tiles use, or **stop** whatever is showing and return to the main
+menu. Opening a second address simply replaces the first.
+
+Underneath sits a small REST API, so the remote can grow without the page:
+
+```
+GET  /api/status          what the kiosk browser is showing
+POST /api/open            {"url": "https://…"} — open it full screen
+POST /api/stop            close the browser, back to the menu
+```
+
+The server listens on port **8765** and needs the same browser configured in
+Settings as the website tiles. There is deliberately no authentication — it
+is reachable only from the home network, and the worst a caller can do is
+open a web page on the television. If the QR code does not appear, the
+machine had no LAN address to advertise (or the port was taken); the log
+says which.
+
+
 Photographs
 -----------
 
@@ -196,6 +221,7 @@ src/main/java/
     mediacenter/media/             MediaRoot, MediaItem, MediaScanner, artwork
     mediacenter/playback/          PlayerLauncher, VlcPlayerLauncher, service
     mediacenter/platform/          Windows / macOS / Linux services
+    mediacenter/remote/            remote-control HTTP server, QR encoder
     mediacenter/config/            ApplicationSettings, SettingsStore, Theme
     mediacenter/history/           PlaybackHistory, HistoryStore
     mediacenter/json/              small JSON reader/writer
