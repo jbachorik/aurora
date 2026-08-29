@@ -253,9 +253,19 @@ there. That file is the whole database: the metadata travels with the folder,
 every machine that can see the share sees it, and deleting the file is how
 you ask for a re-scrape. Scrapes run one at a time in the background; a
 folder that found no confident match is retried on the next start, when the
-missing season — or the year a rename adds — may have arrived. Films that sit
-as loose video files directly on the shelf, with no folder of their own, are
-left alone: the folder is where the answer would be kept.
+missing season — or the year a rename adds — may have arrived.
+
+Films that sit as **loose video files** directly on a Movies shelf get
+folders of their own first: `Movies/Heat.1995.mkv` becomes
+`Movies/Heat.1995/Heat.1995.mkv` — the folder named exactly after the file,
+no cleverness — with its subtitles and sidecar artwork moved in alongside,
+and the new folder queued for identification right away. Watched marks and
+the recently-played list follow the moved file, so tidying never un-watches
+anything. It is a pure rename on the same volume, and the caution is broader
+still than the scraper's: a file with an ordering prefix or episode tag is
+part of a run and never folded away, a folder *named for* one of its videos
+is already that film's home — extras beside it and all — and is left whole,
+and samples, collisions and any doubt leave a file exactly where it was.
 
 ### Setting up Ollama
 

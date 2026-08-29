@@ -48,6 +48,13 @@ public final class WatchedService {
         return nowWatched;
     }
 
+    /** Carries a mark along with a file the library has moved. */
+    public void recordMove(Path from, Path to) {
+        if (watched.move(from, to)) {
+            save();
+        }
+    }
+
     /**
      * Clears the marks from everything in the folder and all of its subfolders.
      *

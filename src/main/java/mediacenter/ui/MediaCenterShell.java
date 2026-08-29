@@ -149,7 +149,10 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
                         () -> settings().scraper(), backgroundExecutor, Platform::runLater,
                         // The same libVLC install the player uses, borrowed to
                         // read film durations for the scraper's cross-check.
-                        new VlcDurationProbe(() -> settings().vlcPath())));
+                        new VlcDurationProbe(() -> settings().vlcPath()),
+                        // Watched marks and history follow a film the tidy-up
+                        // moved into its own folder.
+                        playbackService::recordFileMoved));
 
         buildFrame();
         this.homeView = new HomeView(context);

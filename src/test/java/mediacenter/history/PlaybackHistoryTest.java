@@ -30,6 +30,24 @@ class PlaybackHistoryTest {
     }
 
     @Test
+    @DisplayName("a moved file keeps its place and its timestamp in the history")
+    void aMovedFileKeepsItsEntry() {
+        PlaybackHistory history = new PlaybackHistory();
+        history.record(Path.of("/media/Heat.1995.mkv"), "Heat 1995", BASE);
+        history.record(Path.of("/media/b.mkv"), "B", BASE.plusSeconds(60));
+
+        assertTrue(history.move(
+                Path.of("/media/Heat.1995.mkv"),
+                Path.of("/media/Heat.1995/Heat.1995.mkv")));
+
+        PlaybackHistoryEntry moved = history.entries().getLast();
+        assertEquals(Path.of("/media/Heat.1995/Heat.1995.mkv"), moved.mediaPath());
+        assertEquals("Heat 1995", moved.displayTitle());
+        assertEquals(BASE, moved.lastPlayed());
+        assertFalse(history.move(Path.of("/media/unknown.mkv"), Path.of("/media/x.mkv")));
+    }
+
+    @Test
     @DisplayName("replaying a title moves it back to the front instead of duplicating it")
     void replayingMovesTheEntryToTheFront() {
         PlaybackHistory history = new PlaybackHistory();

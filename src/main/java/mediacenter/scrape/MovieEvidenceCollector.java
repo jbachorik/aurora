@@ -132,7 +132,7 @@ public final class MovieEvidenceCollector {
     }
 
     /** The preview file a ripper leaves beside the film. */
-    private static boolean isSample(String videoFileName) {
+    static boolean isSample(String videoFileName) {
         String base = VideoFiles.withoutExtension(videoFileName).toLowerCase(Locale.ROOT);
         return base.equals("sample") || base.startsWith("sample-") || base.startsWith("sample.")
                 || base.endsWith("-sample") || base.endsWith(".sample");

@@ -39,6 +39,21 @@ public final class WatchedVideos {
     }
 
     /**
+     * Carries a mark along with a file the library has moved — reorganising a
+     * shelf must not un-watch anything. A file that carried no mark carries
+     * nothing to its new home.
+     *
+     * @return whether a mark actually travelled
+     */
+    public synchronized boolean move(Path from, Path to) {
+        if (!paths.remove(from)) {
+            return false;
+        }
+        paths.add(to);
+        return true;
+    }
+
+    /**
      * Clears the mark from every video in the folder and all of its subfolders.
      * Component-wise, not textual: resetting {@code /media/tv} leaves
      * {@code /media/tvshows} alone.
