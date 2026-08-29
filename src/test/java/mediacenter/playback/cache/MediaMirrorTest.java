@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -160,6 +161,43 @@ class MediaMirrorTest {
         mirror.recordPlayed(local, false);
         mirror.recordPlayed(local, false);
         assertFalse(mirror.isFrequentlyPlayed(local), "a local file needs no mirror");
+    }
+
+    @Test
+    @DisplayName("a throttled copy keeps to its rate ceiling")
+    void throttledCopyPacesItself(@TempDir Path temp) throws Exception {
+        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        Path source = source(temp, "episode.mkv", 30_000);
+
+        long started = System.nanoTime();
+        MirrorTask task = mirror.copy(source, 30_000).orElseThrow();
+        assertTrue(task.await(10_000));
+        long elapsedMillis = (System.nanoTime() - started) / 1_000_000;
+
+        // 30 KB at 30 KB/s is a second; local disk alone would be instant.
+        assertTrue(elapsedMillis >= 700, "finished in " + elapsedMillis + "ms despite the throttle");
+        assertTrue(mirror.completedCopy(source).isPresent());
+    }
+
+    @Test
+    @DisplayName("completion callbacks fire when the copy lands — or at once if it already has")
+    void completionCallbacksFire(@TempDir Path temp) throws Exception {
+        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        Path source = source(temp, "episode.mkv", 50_000);
+        List<String> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        MirrorTask task = mirror.copy(source).orElseThrow();
+        task.whenDone(() -> events.add("done"));
+        assertTrue(task.await(10_000));
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (events.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(List.of("done"), events);
+
+        // Registered after the fact: runs immediately on the caller's thread.
+        task.whenDone(() -> events.add("late"));
+        assertEquals(List.of("done", "late"), events);
     }
 
     @Test

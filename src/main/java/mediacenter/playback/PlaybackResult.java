@@ -38,6 +38,13 @@ public sealed interface PlaybackResult {
         }
     }
 
+    /**
+     * The viewer called it off while the file was still being buffered. Not a
+     * failure — there is nothing to report, the browse page simply carries on.
+     */
+    record Cancelled() implements PlaybackResult {
+    }
+
     /** True when the player actually started, whatever its exit code was. */
     default boolean playerStarted() {
         return this instanceof Completed;

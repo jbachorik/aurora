@@ -3,6 +3,7 @@ package mediacenter.playback;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -91,24 +92,34 @@ public final class PlaybackService {
             List<Path> playOnwards,
             String displayTitle,
             Consumer<PlaybackResult> onFinished) {
-        play(mediaFile, playOnwards, displayTitle, status -> { }, () -> { }, onFinished);
+        play(mediaFile, playOnwards, displayTitle,
+                progress -> { }, status -> { }, new PlaybackPreparer.BufferingControl(),
+                () -> { }, onFinished);
     }
 
     /**
-     * @param onStatus           hears, on the UI executor, anything worth telling
-     *                           the viewer while the file is prepared — buffering
-     *                           progress, a slow-share warning
+     * @param onBuffering        hears, on the UI executor, how far along the
+     *                           pre-play buffering is — the shell draws its
+     *                           overlay from this
+     * @param onStatus           hears, on the UI executor, one-line notices the
+     *                           viewer should see — a slow-share warning
+     * @param bufferingControl   the viewer's way out of a buffering wait; the
+     *                           shell wires Esc and Enter to it while the
+     *                           overlay is up. Cancelling ends the request with
+     *                           {@link PlaybackResult.Cancelled} and no player
      * @param beforePlayerStarts runs on the UI executor once preparation is over
      *                           and the player is about to take the screen; the
      *                           shell hides its window here, after the buffering
-     *                           messages have had a screen to appear on
+     *                           overlay has had a screen to appear on
      * @see #play(Path, List, String, Consumer)
      */
     public void play(
             Path mediaFile,
             List<Path> playOnwards,
             String displayTitle,
+            Consumer<PlaybackPreparer.BufferingProgress> onBuffering,
             Consumer<String> onStatus,
+            PlaybackPreparer.BufferingControl bufferingControl,
             Runnable beforePlayerStarts,
             Consumer<PlaybackResult> onFinished) {
         if (!playing.compareAndSet(false, true)) {
@@ -123,12 +134,20 @@ public final class PlaybackService {
                 Path playFile = mediaFile;
                 List<Path> playQueue = playOnwards;
                 if (preparer != null) {
-                    PlaybackPreparer.Prepared prepared = preparer.prepare(mediaFile, playOnwards,
-                            status -> uiExecutor.execute(() -> onStatus.accept(status)));
-                    prepared.notice().ifPresent(
+                    Optional<PlaybackPreparer.Prepared> prepared = preparer.prepare(
+                            mediaFile, playOnwards,
+                            progress -> uiExecutor.execute(() -> onBuffering.accept(progress)),
+                            bufferingControl);
+                    if (prepared.isEmpty()) {
+                        // Cancelled while buffering: no player, no history entry.
+                        playing.set(false);
+                        uiExecutor.execute(() -> onFinished.accept(new PlaybackResult.Cancelled()));
+                        return;
+                    }
+                    prepared.get().notice().ifPresent(
                             notice -> uiExecutor.execute(() -> onStatus.accept(notice)));
-                    playFile = prepared.mediaFile();
-                    playQueue = prepared.playOnwards();
+                    playFile = prepared.get().mediaFile();
+                    playQueue = prepared.get().playOnwards();
                 }
                 uiExecutor.execute(beforePlayerStarts);
                 result = playerLauncher.play(playFile, playQueue);

@@ -166,12 +166,24 @@ public final class MediaMirror {
         }
     }
 
+    /** Starts (or joins) an unthrottled copy. See {@link #copy(Path, long)}. */
+    public Optional<MirrorTask> copy(Path source) {
+        return copy(source, 0);
+    }
+
     /**
      * Starts copying a file into the mirror, or joins the copy already running
-     * for it. Empty when the mirror is off, the source cannot be read, or the
-     * file does not fit even after evicting everything evictable.
+     * for it — the running copy keeps its own pace. Empty when the mirror is
+     * off, the source cannot be read, or the file does not fit even after
+     * evicting everything evictable.
+     *
+     * @param maxBytesPerSecond ceiling on the copy rate, {@code 0} for none.
+     *                          A copy taken while something is streaming from
+     *                          the same share must only use the bandwidth the
+     *                          stream leaves over, or it causes the very
+     *                          stutter it exists to prevent.
      */
-    public Optional<MirrorTask> copy(Path source) {
+    public Optional<MirrorTask> copy(Path source, long maxBytesPerSecond) {
         String key = key(source);
         synchronized (lock) {
             MirrorTask existing = running.get(key);
@@ -207,7 +219,8 @@ public final class MediaMirror {
             entries.put(key, new Entry(
                     key, fileName, size, modifiedMillis, false, System.currentTimeMillis()));
             save();
-            MirrorTask task = new MirrorTask(source, directory.resolve(fileName), size);
+            MirrorTask task = new MirrorTask(
+                    source, directory.resolve(fileName), size, maxBytesPerSecond);
             running.put(key, task);
             copier.execute(() -> runCopy(key, task));
             return Optional.of(task);
@@ -258,15 +271,18 @@ public final class MediaMirror {
         private final Path source;
         private final Path target;
         private final long totalBytes;
+        private final long maxBytesPerSecond;
         private final long startedNanos = System.nanoTime();
         private final CountDownLatch finished = new CountDownLatch(1);
+        private final List<Runnable> completionCallbacks = new ArrayList<>();
         private volatile long copiedBytes;
         private volatile boolean failed;
 
-        private MirrorTask(Path source, Path target, long totalBytes) {
+        private MirrorTask(Path source, Path target, long totalBytes, long maxBytesPerSecond) {
             this.source = source;
             this.target = target;
             this.totalBytes = totalBytes;
+            this.maxBytesPerSecond = maxBytesPerSecond;
         }
 
         public Path source() {
@@ -311,6 +327,37 @@ public final class MediaMirror {
         public boolean await(long timeoutMillis) throws InterruptedException {
             return finished.await(timeoutMillis, TimeUnit.MILLISECONDS);
         }
+
+        /**
+         * Runs once the copy has ended — succeeded or failed, ask
+         * {@link #isFailed()} — on the copy thread, or immediately on the
+         * caller's when it is already over. This is how a copy that finishes
+         * mid-playback announces itself to the player's path resolver.
+         */
+        public void whenDone(Runnable callback) {
+            synchronized (completionCallbacks) {
+                if (finished.getCount() > 0) {
+                    completionCallbacks.add(callback);
+                    return;
+                }
+            }
+            callback.run();
+        }
+
+        private void runCompletionCallbacks() {
+            List<Runnable> callbacks;
+            synchronized (completionCallbacks) {
+                callbacks = List.copyOf(completionCallbacks);
+                completionCallbacks.clear();
+            }
+            for (Runnable callback : callbacks) {
+                try {
+                    callback.run();
+                } catch (RuntimeException e) {
+                    LOG.log(Level.WARNING, "A mirror completion callback failed", e);
+                }
+            }
+        }
     }
 
     private void runCopy(String key, MirrorTask task) {
@@ -334,6 +381,7 @@ public final class MediaMirror {
                     out.write(buffer);
                 }
                 task.copiedBytes += read;
+                pace(task);
             }
             synchronized (lock) {
                 Entry entry = entries.get(key);
@@ -357,6 +405,28 @@ public final class MediaMirror {
                 running.remove(key);
             }
             task.finished.countDown();
+            task.runCompletionCallbacks();
+        }
+    }
+
+    /**
+     * Holds a throttled copy back to its rate ceiling, so a copy taken while
+     * the player streams from the same share never starves the picture.
+     */
+    private static void pace(MirrorTask task) throws IOException {
+        if (task.maxBytesPerSecond <= 0) {
+            return;
+        }
+        long dueNanos = task.copiedBytes * 1_000_000_000L / task.maxBytesPerSecond;
+        long aheadNanos = dueNanos - (System.nanoTime() - task.startedNanos);
+        if (aheadNanos <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(aheadNanos / 1_000_000, (int) (aheadNanos % 1_000_000));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Copy interrupted");
         }
     }
 

@@ -147,7 +147,9 @@ class PlaybackServiceTest {
                 DIRECT, DIRECT, new mediacenter.playback.cache.PlaybackPreparer(mirror));
 
         service.play(localMedia, List.of(), "Clip",
+                progress -> order.add("buffering"),
                 status -> order.add("status:" + status),
+                new mediacenter.playback.cache.PlaybackPreparer.BufferingControl(),
                 () -> order.add("hide"),
                 result -> order.add("finished"));
 

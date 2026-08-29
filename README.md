@@ -90,16 +90,29 @@ on a healthy link. The measured rate is compared against the file's own
 bitrate (its size over the duration read from the MP4 or Matroska header), and
 what happens next depends on the verdict:
 
-* **Fast enough** — the file plays from where it is, as always.
-* **Too slow** — the file is copied into a local **network media cache**, and
-  playback starts as soon as the head start is large enough that the player
-  can never catch up with the copy. The maths covers the **next episode in the
-  queue too**, so an evening of episodes survives a share that cannot quite
-  keep up. Progress shows as a "Buffering from the network…" banner.
+* **Fast enough** — the file plays from where it is, as always. While it
+  streams, whatever bandwidth the picture leaves over quietly carries the
+  **next episodes in the queue** into the local cache — throttled to that
+  surplus, so the copy can never cause the stutter it exists to prevent. An
+  episode whose copy is guaranteed to finish before the player reaches it is
+  handed to the player as its local copy outright.
+* **Too slow** — the file is copied into a local **network media cache**
+  first, and playback starts as soon as the head start is large enough that
+  the player can never catch up with the copy. The maths covers the **next
+  episode in the queue too**, so an evening of episodes survives a share that
+  cannot quite keep up. While this runs the screen shows a buffering card —
+  title, progress bar, percentage and an estimated wait — with two keys:
+  **Enter** starts playback immediately over the share (stutters accepted),
+  **Esc** calls the whole thing off and returns to browsing. A copy already
+  under way keeps running in the background either way.
 * **Far too slow** — when building that head start would take more than a
   couple of minutes, the film starts immediately over the share, stutters and
   all, with a banner saying so — and the cache quietly takes a full copy in
   the background, so the *next* viewing plays from the local disk.
+
+The built-in player resolves each episode at the moment it starts, so a copy
+that landed during the previous episode is picked up at the boundary and the
+run walks off the network as the cache fills behind it.
 
 Independently of the pre-play buffering, a network file that has been played
 **twice or more** earns a permanent local copy — so the titles a household
