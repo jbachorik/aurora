@@ -9,7 +9,8 @@
       "matches": ["<all_urls>"],
       "js": ["quit.js", "fullscreen.js"],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "match_origin_as_fallback": true
     }
   ],
   "commands": {
