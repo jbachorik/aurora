@@ -35,6 +35,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Window;
 
 import mediacenter.config.ApplicationSettings;
+import mediacenter.config.ScraperSettings;
 import mediacenter.config.Theme;
 import mediacenter.config.Website;
 import mediacenter.media.MediaRoot;
@@ -72,6 +73,9 @@ public final class SettingsView implements View {
     private final ToggleGroup playerGroup = new ToggleGroup();
     private final Label browserScaleValue = new Label();
     private final List<ToggleButton> scaleToggles = new ArrayList<>();
+    private final Label scraperValue = new Label();
+    private final ToggleButton scraperToggle = new ToggleButton();
+    private final Label scraperStatus = new Label();
     private final ListView<Website> websitesList = new ListView<>();
     private final ListView<MediaRoot> rootsList = new ListView<>();
     private final Label rootStatus = new Label();
@@ -151,12 +155,13 @@ public final class SettingsView implements View {
         Node bufferRow = bufferRow();
         Node embeddedPlayerRow = embeddedPlayerRow();
         Node browserScaleRow = browserScaleRow();
+        Node scraperRow = scraperRow();
         Node rootsSection = mediaRootsSection();
         Node websitesSection = websitesSection();
 
         root.getChildren().addAll(
                 vlcRow, browserRow, fullScreenRow, themeRow, slideshowRow, bufferRow,
-                embeddedPlayerRow, browserScaleRow, rootsSection, websitesSection);
+                embeddedPlayerRow, browserScaleRow, scraperRow, rootsSection, websitesSection);
 
         installArrowNavigation();
         readSettings();
@@ -490,6 +495,107 @@ public final class SettingsView implements View {
         return card;
     }
 
+    /**
+     * Whether TV folders are identified online, and against which accounts.
+     * The row carries the switch; the keys and endpoints — typed once, with a
+     * real keyboard nearby — live in a dialog behind one button, because four
+     * text fields permanently on a 10-foot screen help nobody.
+     */
+    private Node scraperRow() {
+        scraperToggle.setOnAction(event -> update(settings().withScraper(
+                settings().scraper().withEnabled(scraperToggle.isSelected()))));
+
+        Button configure = new Button("Configure…");
+        configure.setOnAction(event -> configureScraper());
+
+        Node row = settingRow("Series scraper", scraperValue, scraperStatus, scraperToggle, configure);
+        navigationRows.add(List.of(scraperToggle, configure));
+        return row;
+    }
+
+    /** The scraper's accounts and endpoints, edited in one dialog. */
+    private void configureScraper() {
+        ScraperSettings scraper = settings().scraper();
+
+        Dialog<ScraperSettings> dialog = new Dialog<>();
+        dialog.initOwner(window());
+        dialog.setTitle("Series scraper");
+        dialog.setHeaderText("How series folders are identified");
+        dialog.setResizable(true);
+        dialog.getDialogPane().getStyleClass().add("media-center-dialog");
+        dialog.getDialogPane().getStylesheets().addAll(root.getScene() == null
+                ? List.of()
+                : root.getScene().getStylesheets());
+
+        TextField tvdbKeyField = new TextField(scraper.tvdbApiKey().orElse(""));
+        tvdbKeyField.setPromptText("TheTVDB v4 API key");
+        tvdbKeyField.setPrefColumnCount(36);
+        TextField ollamaEndpointField = new TextField(scraper.ollamaEndpoint());
+        ollamaEndpointField.setPromptText(ScraperSettings.DEFAULT_OLLAMA_ENDPOINT);
+        TextField ollamaKeyField = new TextField(scraper.ollamaApiKey().orElse(""));
+        ollamaKeyField.setPromptText("Ollama API key (hosted service only)");
+        TextField ollamaModelField = new TextField(scraper.ollamaModel());
+        ollamaModelField.setPromptText(ScraperSettings.DEFAULT_OLLAMA_MODEL);
+
+        Label hint = new Label("TheTVDB supplies the metadata and always needs its key "
+                + "(thetvdb.com/api-information). Ollama reads messy folder names into titles: "
+                + "the hosted service at " + ScraperSettings.DEFAULT_OLLAMA_ENDPOINT
+                + " has a free tier and needs its key, an Ollama in the house "
+                + "(http://localhost:11434) needs none — and with neither, folder names "
+                + "are searched as they are.");
+        hint.getStyleClass().add("dialog-hint");
+        hint.setWrapText(true);
+        hint.setMaxWidth(560);
+
+        GridPane form = new GridPane();
+        form.setHgap(12);
+        form.setVgap(12);
+        form.setPadding(new Insets(16));
+        form.addRow(0, new Label("TheTVDB API key"), tvdbKeyField);
+        form.addRow(1, new Label("Ollama endpoint"), ollamaEndpointField);
+        form.addRow(2, new Label("Ollama API key"), ollamaKeyField);
+        form.addRow(3, new Label("Ollama model"), ollamaModelField);
+        form.add(hint, 1, 4);
+
+        dialog.getDialogPane().setContent(form);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != ButtonType.OK) {
+                return null;
+            }
+            // The record's own normalisation trims the keys and restores the
+            // defaults for anything blanked out.
+            return new ScraperSettings(
+                    scraper.enabled(),
+                    Optional.ofNullable(tvdbKeyField.getText()),
+                    ollamaEndpointField.getText(),
+                    Optional.ofNullable(ollamaKeyField.getText()),
+                    ollamaModelField.getText());
+        });
+
+        // The TheTVDB key is the one thing there is no scraping without.
+        javafx.application.Platform.runLater(tvdbKeyField::requestFocus);
+        dialog.showAndWait().ifPresent(updated -> {
+            update(settings().withScraper(updated));
+            showStatus(scraperStatus, updated.tvdbApiKey().isPresent()
+                    ? "Saved. New TV folders are identified as they are browsed."
+                    : "Saved — but without a TheTVDB API key nothing can be looked up.");
+        });
+    }
+
+    /** The scraper row's one-line summary of what would happen right now. */
+    private static String describeScraper(ScraperSettings scraper) {
+        if (!scraper.enabled()) {
+            return "Off — TV folders are not identified online";
+        }
+        if (scraper.tvdbApiKey().isEmpty()) {
+            return "On, but missing a TheTVDB API key — configure one";
+        }
+        return scraper.ollamaConfigured()
+                ? "TheTVDB via " + scraper.ollamaModel() + " title guesses"
+                : "TheTVDB, searching folder names as they are";
+    }
+
     private Node mediaRootsSection() {
         Label heading = new Label("Media folders");
         heading.getStyleClass().add("section-heading");
@@ -763,6 +869,10 @@ public final class SettingsView implements View {
         for (ToggleButton toggle : scaleToggles) {
             toggle.setSelected(configuredScale.equals(toggle.getUserData()));
         }
+
+        scraperToggle.setSelected(settings.scraper().enabled());
+        scraperToggle.setText(settings.scraper().enabled() ? "On" : "Off");
+        scraperValue.setText(describeScraper(settings.scraper()));
 
         Website selectedWebsite = websitesList.getSelectionModel().getSelectedItem();
         websitesList.setItems(FXCollections.observableArrayList(settings.websites()));

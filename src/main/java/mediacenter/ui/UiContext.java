@@ -9,6 +9,7 @@ import mediacenter.history.WatchedService;
 import mediacenter.media.ArtworkResolver;
 import mediacenter.media.MediaScanner;
 import mediacenter.platform.PlatformServices;
+import mediacenter.scrape.SeriesScrapeService;
 import mediacenter.ui.components.ArtworkCache;
 
 /** The collaborators every view needs, passed explicitly rather than injected. */
@@ -21,5 +22,6 @@ public record UiContext(
         ArtworkCache artworkCache,
         PlaybackHistory history,
         WatchedService watched,
-        PlatformServices platform) {
+        PlatformServices platform,
+        SeriesScrapeService scrapeService) {
 }

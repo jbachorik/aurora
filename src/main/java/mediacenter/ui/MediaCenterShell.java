@@ -52,6 +52,7 @@ import mediacenter.remote.QrCode;
 import mediacenter.remote.RemoteKiosk;
 import mediacenter.history.PlaybackHistory;
 import mediacenter.history.WatchedService;
+import mediacenter.scrape.SeriesScrapeService;
 import mediacenter.ui.components.ArtworkCache;
 import mediacenter.ui.components.Motion;
 
@@ -142,7 +143,9 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
                 new ArtworkCache(),
                 history,
                 watched,
-                platform);
+                platform,
+                new SeriesScrapeService(
+                        () -> settings().scraper(), backgroundExecutor, Platform::runLater));
 
         buildFrame();
         this.homeView = new HomeView(context);

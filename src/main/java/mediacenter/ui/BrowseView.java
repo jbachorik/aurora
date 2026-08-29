@@ -141,6 +141,11 @@ public final class BrowseView implements View {
         // Playback while this page was hidden may have marked videos watched —
         // cheap to re-read, the marks live in memory.
         refreshWatchedMarks();
+        // Scrapes started from a page deeper in the stack may still be running;
+        // now that this page is the one on screen, their answers belong here.
+        if (root.type() == MediaRootType.TV) {
+            context.scrapeService().setOnScraped(this::onFolderScraped);
+        }
         View.super.onShown();
     }
 
@@ -213,6 +218,7 @@ public final class BrowseView implements View {
         list.setRows(rows);
         list.focusSelection();
         resolveSoleMedia(directoryRows, generation);
+        offerFoldersForScraping();
         // A photograph in this very folder settles the question with no walk at
         // all, and this is the folder a viewer of photographs is usually in. The
         // walk below is the expensive case — a shelf of films whose posters are
@@ -406,6 +412,45 @@ public final class BrowseView implements View {
                 .flatMap(MediaListRow::item)
                 .map(selected -> selected.path().equals(item.path()))
                 .orElse(false);
+    }
+
+    // -- series scraping ------------------------------------------------------
+
+    /**
+     * Under a TV root, every folder on screen is offered to the scraper — the
+     * root has said out loud what its folders hold, exactly the declaration
+     * {@link #playsOnwards} already trusts. Offering is all this does: the
+     * service is the one that knows whether scraping is even switched on, and
+     * a folder already carrying its {@code aurora-series.json} costs nothing.
+     */
+    private void offerFoldersForScraping() {
+        if (root.type() != MediaRootType.TV) {
+            return;
+        }
+        context.scrapeService().setOnScraped(this::onFolderScraped);
+        for (MediaItem item : items) {
+            if (item.isDirectory()) {
+                context.scrapeService().scrapeIfNeeded(item.path());
+            }
+        }
+    }
+
+    /**
+     * A scrape may have just put a poster where this page remembered "none":
+     * the remembered answer goes, and the line — if it is the selected one —
+     * asks again and fills the column.
+     */
+    private void onFolderScraped(Path scrapedFolder) {
+        if (discarded) {
+            return;
+        }
+        directoryArtwork.remove(scrapedFolder);
+        list.selectedRow().ifPresent(row -> {
+            MediaItem item = row.item().orElse(null);
+            if (item != null && item.path().equals(scrapedFolder)) {
+                showPosterFor(row);
+            }
+        });
     }
 
     // -- activation ---------------------------------------------------------

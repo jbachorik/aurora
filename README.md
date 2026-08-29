@@ -199,6 +199,44 @@ A film's artwork — poster, folder and cover images, and any per-film sidecar �
 is never listed as a photograph, wherever it sits in the folder tree.
 
 
+Series identification (optional)
+--------------------------------
+
+Folders on a **TV** root can be identified online as they are browsed, so a
+shelf of ripper-named folders gains real posters and synopses without anyone
+renaming anything. It is **off by default** — scraping sends folder names to
+services on the internet — and lives behind a **Series scraper** row in
+Settings.
+
+Three steps, each falling back gracefully to the next:
+
+1. **What is on disk.** The folder is read into evidence: episodes per season
+   (from `Season 1`-style folders or from `S01E01` tags) and a few episode
+   file names. A folder with no episode structure is not a series and is never
+   sent anywhere.
+2. **What it is called.** An Ollama model reads the folder name *and* that
+   evidence into a clean title — `Breaking.Bad.S01-S05.COMPLETE.1080p.x265`
+   becomes "Breaking Bad". The endpoint is Ollama's hosted service by default
+   (its free tier needs the API key), or point it at an Ollama in the house
+   (`http://localhost:11434`, no key). With neither, the cleaned folder name
+   is the search term.
+3. **What TheTVDB knows.** The title is searched on TheTVDB (v4 API key
+   required — the one thing there is no scraping without) and every leading
+   candidate is **cross-checked against the seasons on disk**: a season
+   holding more episodes than the candidate ever aired rules it out, which is
+   how the American *The Office* is told from the British one. A match that
+   is not clearly ahead of the runner-up is discarded — a wrong poster is
+   worse than none.
+
+What was learned is written into the series folder itself: a hand-editable
+`aurora-series.json` (title, year, overview, status, TheTVDB id) and a
+`poster.jpg` — but never over artwork that is already there. That file is the
+whole database: the metadata travels with the folder, every machine that can
+see the share sees it, and deleting the file is how you ask for a re-scrape.
+Scrapes run one at a time in the background; a folder that found no confident
+match is retried on the next start, when the missing season may have arrived.
+
+
 How it is put together
 ----------------------
 
@@ -207,6 +245,7 @@ JavaFX Media Center
         |
         +-- MediaScanner ........... local disks, UNC/SMB paths
         +-- ArtworkResolver ........ local poster/folder/cover images
+        +-- SeriesScrapeService .... Ollama title guess, TheTVDB metadata
         +-- PlaybackHistory ........ recently played
         +-- PlayerLauncher ......... external VLC process
         +-- PlatformServices ....... VLC discovery, sleep, data directory
@@ -219,6 +258,7 @@ src/main/java/
     mediacenter/ui/                views, shell, tile grid, artwork cache
     mediacenter/ui/components/     tiles, grid, motion, activation gate
     mediacenter/media/             MediaRoot, MediaItem, MediaScanner, artwork
+    mediacenter/scrape/            series evidence, Ollama, TheTVDB, matcher
     mediacenter/playback/          PlayerLauncher, VlcPlayerLauncher, service
     mediacenter/platform/          Windows / macOS / Linux services
     mediacenter/remote/            remote-control HTTP server, QR encoder
@@ -267,7 +307,8 @@ Design rules the code follows:
   under a quarter of a second and nothing delays input.
 * **Only the modules actually used.** In particular `javafx.media` is *not*
   required — this application never decodes media. The linked runtime image
-  contains 11 modules.
+  contains 12 modules (`java.net.http`, the series scraper's client side,
+  being the latest addition).
 
 
 Where it keeps things

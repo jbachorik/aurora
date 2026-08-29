@@ -108,6 +108,16 @@ public final class SettingsStore {
             websites.add(new JsonObject(websiteMembers));
         }
         members.put("websites", new JsonArray(websites));
+
+        Map<String, JsonValue> scraperMembers = new LinkedHashMap<>();
+        scraperMembers.put("enabled", new JsonBoolean(settings.scraper().enabled()));
+        settings.scraper().tvdbApiKey()
+                .ifPresent(key -> scraperMembers.put("tvdbApiKey", new JsonString(key)));
+        scraperMembers.put("ollamaEndpoint", new JsonString(settings.scraper().ollamaEndpoint()));
+        settings.scraper().ollamaApiKey()
+                .ifPresent(key -> scraperMembers.put("ollamaApiKey", new JsonString(key)));
+        scraperMembers.put("ollamaModel", new JsonString(settings.scraper().ollamaModel()));
+        members.put("scraper", new JsonObject(scraperMembers));
         return new JsonObject(members);
     }
 
@@ -136,7 +146,21 @@ public final class SettingsStore {
         }
         return new ApplicationSettings(
                 vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds, playerBufferSeconds,
-                embeddedPlayer, websites, browserScalePercent);
+                embeddedPlayer, websites, browserScalePercent, readScraper(document));
+    }
+
+    /** Absent in every file written before the scraper existed; defaults are off. */
+    private static ScraperSettings readScraper(JsonObject document) {
+        Optional<JsonValue> value = document.get("scraper");
+        if (value.isEmpty() || !(value.get() instanceof JsonObject scraper)) {
+            return ScraperSettings.defaults();
+        }
+        return new ScraperSettings(
+                scraper.booleanValue("enabled", false),
+                scraper.nonBlankString("tvdbApiKey"),
+                scraper.nonBlankString("ollamaEndpoint").orElse(ScraperSettings.DEFAULT_OLLAMA_ENDPOINT),
+                scraper.nonBlankString("ollamaApiKey"),
+                scraper.nonBlankString("ollamaModel").orElse(ScraperSettings.DEFAULT_OLLAMA_MODEL));
     }
 
     private static Optional<MediaRoot> readRoot(JsonObject document) {

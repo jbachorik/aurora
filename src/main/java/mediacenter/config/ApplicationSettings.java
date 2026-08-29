@@ -22,7 +22,8 @@ public record ApplicationSettings(
         int playerBufferSeconds,
         boolean embeddedPlayer,
         List<Website> websites,
-        int browserScalePercent) {
+        int browserScalePercent,
+        ScraperSettings scraper) {
 
     public ApplicationSettings {
         vlcPath = vlcPath == null ? Optional.empty() : vlcPath;
@@ -40,47 +41,48 @@ public record ApplicationSettings(
         // 100 is "as the browser would"; past 300 a single headline fills the
         // screen. The hint exists so a desktop page reads from a sofa.
         browserScalePercent = Math.clamp(browserScalePercent, 100, 300);
+        scraper = scraper == null ? ScraperSettings.defaults() : scraper;
     }
 
     public static ApplicationSettings defaults() {
         return new ApplicationSettings(
                 Optional.empty(), Optional.empty(), true, Theme.DARK, List.of(), 5, 1, false,
-                List.of(), 150);
+                List.of(), 150, ScraperSettings.defaults());
     }
 
     public ApplicationSettings withVlcPath(Optional<Path> newVlcPath) {
         return new ApplicationSettings(
-                newVlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                newVlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withBrowserPath(Optional<Path> newBrowserPath) {
         return new ApplicationSettings(
-                vlcPath, newBrowserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                vlcPath, newBrowserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withFullScreen(boolean newFullScreen) {
         return new ApplicationSettings(
-                vlcPath, browserPath, newFullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                vlcPath, browserPath, newFullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withTheme(Theme newTheme) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, newTheme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                vlcPath, browserPath, fullScreen, newTheme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withMediaRoots(List<MediaRoot> newMediaRoots) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, newMediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                vlcPath, browserPath, fullScreen, theme, newMediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withSlideshowSeconds(int newSlideshowSeconds) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, newSlideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, newSlideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withPlayerBufferSeconds(int newPlayerBufferSeconds) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, newPlayerBufferSeconds, embeddedPlayer, websites, browserScalePercent);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, newPlayerBufferSeconds, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     /**
@@ -91,7 +93,7 @@ public record ApplicationSettings(
      */
     public ApplicationSettings withEmbeddedPlayer(boolean newEmbeddedPlayer) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, newEmbeddedPlayer, websites, browserScalePercent);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, newEmbeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     /** Adds a root, replacing any existing root with the same id. */
@@ -128,7 +130,7 @@ public record ApplicationSettings(
 
     public ApplicationSettings withWebsites(List<Website> newWebsites) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, newWebsites, browserScalePercent);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, newWebsites, browserScalePercent, scraper);
     }
 
     /** Adds a website tile, replacing any existing one with the same id. */
@@ -156,6 +158,12 @@ public record ApplicationSettings(
     /** How much larger a website tile asks the browser to draw everything. */
     public ApplicationSettings withBrowserScalePercent(int newBrowserScalePercent) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, newBrowserScalePercent);
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, newBrowserScalePercent, scraper);
+    }
+
+    /** How — and whether — series folders are identified online. */
+    public ApplicationSettings withScraper(ScraperSettings newScraper) {
+        return new ApplicationSettings(
+                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, embeddedPlayer, websites, browserScalePercent, newScraper);
     }
 }

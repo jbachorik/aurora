@@ -12,6 +12,8 @@ module media.center {
     requires java.logging;
     // The remote control's HTTP server; one platform module, no dependency.
     requires jdk.httpserver;
+    // The series scraper's client side: Ollama, TheTVDB and poster downloads.
+    requires java.net.http;
 
     // JavaFX instantiates the Application subclass reflectively; nothing else
     // needs access to this module.
