@@ -21,7 +21,7 @@ val applicationImageName = "MediaCenter"
  */
 val distributionName = "Aurora-MediaCenter"
 
-version = providers.gradleProperty("applicationVersion").getOrElse("1.0.0")
+version = providers.gradleProperty("applicationVersion").getOrElse("0.1.0")
 group = "mediacenter"
 
 val javaLanguageVersion = providers.gradleProperty("javaLanguageVersion").getOrElse("25").toInt()
