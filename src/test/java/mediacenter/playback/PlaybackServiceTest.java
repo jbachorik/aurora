@@ -155,6 +155,9 @@ class PlaybackServiceTest {
 
         assertEquals(List.of("hide", "player", "finished"), order);
         assertEquals(List.of(localMedia), launcher.played());
+        // Nothing here should have started a copy; drained so the temp
+        // directory is never deleted under one if that ever changes.
+        assertTrue(mirror.awaitIdle(10_000));
     }
 
     @Test

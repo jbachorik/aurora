@@ -17,9 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -261,6 +264,42 @@ public final class MediaMirror {
         synchronized (lock) {
             return entries.values().stream().mapToLong(Entry::sourceSize).sum();
         }
+    }
+
+    /**
+     * Waits until every copy accepted so far has run to its end, successful or
+     * not, and no copy is left touching the mirror directory. Tests must call
+     * this before their temporary directory is torn down — deleting a tree
+     * that a copy thread is still writing into is a race the tests would
+     * otherwise lose on a slow runner. Orderly shutdown may use it the same
+     * way; the daemon copy thread never blocks an exit that skips it.
+     *
+     * @return whether the mirror went idle within the timeout
+     */
+    public boolean awaitIdle(long timeoutMillis) {
+        long deadline = System.nanoTime() + timeoutMillis * 1_000_000L;
+        try {
+            while (System.nanoTime() < deadline) {
+                // The copier is a single thread, so a barrier task completing
+                // means every copy submitted before it has fully returned —
+                // index writes, cleanup and callbacks included.
+                Future<?> barrier = copier.submit(() -> { });
+                long remainingMillis = Math.max(1, (deadline - System.nanoTime()) / 1_000_000L);
+                try {
+                    barrier.get(remainingMillis, TimeUnit.MILLISECONDS);
+                } catch (ExecutionException | TimeoutException e) {
+                    return false;
+                }
+                synchronized (lock) {
+                    if (running.isEmpty()) {
+                        return true;
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return false;
     }
 
     // -- the copy ------------------------------------------------------------

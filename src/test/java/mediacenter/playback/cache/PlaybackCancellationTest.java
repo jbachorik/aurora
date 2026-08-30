@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.Executor;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,12 +39,33 @@ class PlaybackCancellationTest {
 
     private static final Executor DIRECT = Runnable::run;
 
+    /** Mirrors built here are drained after the test — see {@link #drainCopies}. */
+    private final List<MediaMirror> mirrors = new ArrayList<>();
+
+    private MediaMirror mirror(Path directory, long capacityBytes) {
+        MediaMirror created = new MediaMirror(directory, () -> capacityBytes);
+        mirrors.add(created);
+        return created;
+    }
+
+    /**
+     * A copy thread still writing while JUnit deletes the temp directory is a
+     * race the suite loses on a slow runner — the cleanup cannot remove a tree
+     * that is growing under it. Every test therefore waits its mirrors out.
+     */
+    @AfterEach
+    void drainCopies() {
+        for (MediaMirror created : mirrors) {
+            assertTrue(created.awaitIdle(10_000), "a copy outlived the test");
+        }
+    }
+
     @Test
     @DisplayName("cancelling while buffering reports Cancelled and never starts the player")
     void cancelledPreparationNeverReachesThePlayer(@TempDir Path temp) throws Exception {
         Path media = temp.resolve("film.mkv");
         Files.write(media, new byte[100_000]);
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> 1L << 30);
+        MediaMirror mirror = mirror(temp.resolve("cache"), 1L << 30);
         // Measured far below the required rate, so preparation enters the
         // buffering wait — where it finds the cancellation already standing.
         PlaybackPreparer preparer = new PlaybackPreparer(

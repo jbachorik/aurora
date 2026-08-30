@@ -8,9 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,6 +22,27 @@ import mediacenter.playback.cache.MediaMirror.MirrorTask;
 class MediaMirrorTest {
 
     private static final long PLENTY = 1L << 30;
+
+    /** Mirrors built here are drained after the test — see {@link #drainCopies}. */
+    private final List<MediaMirror> mirrors = new ArrayList<>();
+
+    private MediaMirror mirror(Path directory, long capacityBytes) {
+        MediaMirror created = new MediaMirror(directory, () -> capacityBytes);
+        mirrors.add(created);
+        return created;
+    }
+
+    /**
+     * A copy thread still writing while JUnit deletes the temp directory is a
+     * race the suite loses on a slow runner — the cleanup cannot remove a tree
+     * that is growing under it. Every test therefore waits its mirrors out.
+     */
+    @AfterEach
+    void drainCopies() {
+        for (MediaMirror created : mirrors) {
+            assertTrue(created.awaitIdle(10_000), "a copy outlived the test");
+        }
+    }
 
     private static MirrorTask copied(MediaMirror mirror, Path source) throws InterruptedException {
         Optional<MirrorTask> task = mirror.copy(source);
@@ -41,7 +64,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("a finished copy is byte-identical and found again")
     void copiesAndServes(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path source = source(temp, "episode.mkv", 100_000);
 
         MirrorTask task = copied(mirror, source);
@@ -57,7 +80,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("asking twice while a copy runs joins it rather than racing it")
     void joinsARunningCopy(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path source = source(temp, "episode.mkv", 100_000);
 
         Optional<MirrorTask> first = mirror.copy(source);
@@ -73,7 +96,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("a source that changed since the copy invalidates it")
     void aChangedSourceInvalidatesTheCopy(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path source = source(temp, "episode.mkv", 50_000);
         copied(mirror, source);
 
@@ -85,7 +108,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("an unreachable source still serves its copy — that is the point")
     void anUnreachableSourceStillServes(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path source = source(temp, "episode.mkv", 50_000);
         copied(mirror, source);
 
@@ -99,9 +122,9 @@ class MediaMirrorTest {
     void copiesSurviveARestart(@TempDir Path temp) throws Exception {
         Path cache = temp.resolve("cache");
         Path source = source(temp, "episode.mkv", 50_000);
-        copied(new MediaMirror(cache, () -> PLENTY), source);
+        copied(mirror(cache, PLENTY), source);
 
-        MediaMirror reopened = new MediaMirror(cache, () -> PLENTY);
+        MediaMirror reopened = mirror(cache, PLENTY);
 
         assertTrue(reopened.completedCopy(source).isPresent());
     }
@@ -109,15 +132,15 @@ class MediaMirrorTest {
     @Test
     @DisplayName("least recently used copies make way for new ones")
     void evictsLeastRecentlyUsed(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> 250_000L);
+        MediaMirror mirror = mirror(temp.resolve("cache"), 250_000L);
         Path first = source(temp, "first.mkv", 100_000);
         Path second = source(temp, "second.mkv", 100_000);
         Path third = source(temp, "third.mkv", 100_000);
 
         copied(mirror, first);
-        Thread.sleep(5); // last-used stamps must differ
+        Thread.sleep(30); // last-used stamps must differ, even on Windows's ~16ms clock
         copied(mirror, second);
-        Thread.sleep(5);
+        Thread.sleep(30);
         mirror.completedCopy(first); // touch: first is now fresher than second
         copied(mirror, third);
 
@@ -130,7 +153,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("a file larger than the whole mirror is refused, not thrashed for")
     void refusesWhatCanNeverFit(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> 10_000L);
+        MediaMirror mirror = mirror(temp.resolve("cache"), 10_000L);
         Path source = source(temp, "film.mkv", 50_000);
 
         assertTrue(mirror.copy(source).isEmpty());
@@ -139,7 +162,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("a zero capacity switches the mirror off")
     void zeroCapacityDisables(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> 0L);
+        MediaMirror mirror = mirror(temp.resolve("cache"), 0L);
         Path source = source(temp, "film.mkv", 1_000);
 
         assertFalse(mirror.enabled());
@@ -149,7 +172,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("two viewings of a network file make it frequently played; local files never")
     void countsPlays(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path network = Path.of("\\\\synology\\video\\favourite.mkv");
         Path local = Path.of("/media/local.mkv");
 
@@ -166,7 +189,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("a throttled copy keeps to its rate ceiling")
     void throttledCopyPacesItself(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path source = source(temp, "episode.mkv", 30_000);
 
         long started = System.nanoTime();
@@ -182,7 +205,7 @@ class MediaMirrorTest {
     @Test
     @DisplayName("completion callbacks fire when the copy lands — or at once if it already has")
     void completionCallbacksFire(@TempDir Path temp) throws Exception {
-        MediaMirror mirror = new MediaMirror(temp.resolve("cache"), () -> PLENTY);
+        MediaMirror mirror = mirror(temp.resolve("cache"), PLENTY);
         Path source = source(temp, "episode.mkv", 50_000);
         List<String> events = new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -204,7 +227,7 @@ class MediaMirrorTest {
     @DisplayName("an interrupted copy is cleaned up on the next start")
     void discardsTorsosOnStart(@TempDir Path temp) throws Exception {
         Path cache = temp.resolve("cache");
-        MediaMirror mirror = new MediaMirror(cache, () -> PLENTY);
+        MediaMirror mirror = mirror(cache, PLENTY);
         Path source = source(temp, "film.mkv", 50_000);
         copied(mirror, source);
         // Simulate a crash mid-copy: the file is there but marked incomplete.
@@ -212,7 +235,7 @@ class MediaMirrorTest {
         Files.writeString(index, Files.readString(index)
                 .replace("\"complete\": true", "\"complete\": false"));
 
-        MediaMirror reopened = new MediaMirror(cache, () -> PLENTY);
+        MediaMirror reopened = mirror(cache, PLENTY);
 
         assertTrue(reopened.completedCopy(source).isEmpty());
         try (var listing = Files.list(cache)) {
