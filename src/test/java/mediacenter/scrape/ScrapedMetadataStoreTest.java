@@ -20,6 +20,7 @@ class ScrapedMetadataStoreTest {
 
     private static ScrapedMetadata metadata() {
         return new ScrapedMetadata(
+                "TheTVDB",
                 81189,
                 "Breaking Bad",
                 Optional.of(2008),
@@ -45,7 +46,7 @@ class ScrapedMetadataStoreTest {
     @DisplayName("the optional fields stay optional through the round trip")
     void roundTripsWithoutTheOptionalFields(@TempDir Path temp) {
         ScrapedMetadata bare = new ScrapedMetadata(
-                360893, "Chernobyl", Optional.empty(), Optional.empty(), Optional.empty(),
+                "TMDB", 360893, "Chernobyl", Optional.empty(), Optional.empty(), Optional.empty(),
                 "Chernobyl", Instant.parse("2026-08-29T10:15:30Z"));
 
         assertTrue(store.save(temp, bare));
@@ -95,5 +96,18 @@ class ScrapedMetadataStoreTest {
 
         assertEquals("Breaking Bad", loaded.title());
         assertEquals(Instant.EPOCH, loaded.scrapedAt());
+    }
+
+    @Test
+    @DisplayName("a file written before TMDB existed still reads, as TheTVDB's")
+    void readsTheLegacyFieldNames(@TempDir Path temp) throws IOException {
+        Files.writeString(temp.resolve(ScrapedMetadataStore.SERIES_FILE_NAME), """
+                {"tvdbId": 81189, "title": "Breaking Bad", "scrapedAt": "2026-08-29T10:15:30Z"}
+                """);
+
+        ScrapedMetadata loaded = store.load(temp).orElseThrow();
+
+        assertEquals("TheTVDB", loaded.provider());
+        assertEquals(81189, loaded.providerId());
     }
 }

@@ -12,7 +12,8 @@ import mediacenter.media.DisplayNames;
 
 /**
  * One series folder, start to finish: read the evidence, guess the title, ask
- * TheTVDB, cross-check, and write what was learned into the folder itself.
+ * the metadata provider, cross-check, and write what was learned into the
+ * folder itself.
  *
  * <p>The pipeline degrades a step at a time rather than failing whole. No
  * Ollama? The cleaned folder name is the search term. No episode data for a
@@ -28,26 +29,26 @@ public final class SeriesScraper {
 
     /**
      * How many search results are worth the episode lookups the cross-check
-     * costs. TheTVDB ranks its results; past the first few, a candidate that
-     * still wins on title similarity has not appeared yet.
+     * costs. The provider ranks its results; past the first few, a candidate
+     * that still wins on title similarity has not appeared yet.
      */
     private static final int CANDIDATES_TO_CHECK = 3;
 
     private final SeriesEvidenceCollector evidenceCollector;
     private final Optional<OllamaTitleService> titleService;
-    private final TvdbClient tvdb;
+    private final MetadataProvider provider;
     private final ScrapedMetadataStore store;
     private final PosterDownloader posters;
 
     public SeriesScraper(
             SeriesEvidenceCollector evidenceCollector,
             Optional<OllamaTitleService> titleService,
-            TvdbClient tvdb,
+            MetadataProvider provider,
             ScrapedMetadataStore store,
             PosterDownloader posters) {
         this.evidenceCollector = evidenceCollector;
         this.titleService = titleService;
-        this.tvdb = tvdb;
+        this.provider = provider;
         this.store = store;
         this.posters = posters;
     }
@@ -73,12 +74,12 @@ public final class SeriesScraper {
         // The model's title is the better search term when it exists; the folder
         // name — cleaned the way the UI cleans it — is the term that always exists.
         String fallbackQuery = DisplayNames.forDirectory(seriesFolder);
-        List<TvdbCandidate> found = guess
-                .map(titleGuess -> tvdb.searchSeries(titleGuess.title()))
+        List<TitleCandidate> found = guess
+                .map(titleGuess -> provider.searchSeries(titleGuess.title()))
                 .filter(results -> !results.isEmpty())
-                .orElseGet(() -> tvdb.searchSeries(fallbackQuery));
+                .orElseGet(() -> provider.searchSeries(fallbackQuery));
         if (found.isEmpty()) {
-            LOG.log(Level.INFO, () -> "TheTVDB has nothing for \"" + evidence.folderName() + "\"");
+            LOG.log(Level.INFO, () -> provider.name() + " has nothing for \"" + evidence.folderName() + "\"");
             return Optional.empty();
         }
 
@@ -86,23 +87,24 @@ public final class SeriesScraper {
         // aired episodes per season, so a same-named series of the wrong shape loses.
         List<SeriesMatcher.Candidate> candidates = new ArrayList<>();
         for (int i = 0; i < found.size(); i++) {
-            TvdbCandidate candidate = found.get(i);
+            TitleCandidate candidate = found.get(i);
             candidates.add(new SeriesMatcher.Candidate(
                     candidate,
                     i < CANDIDATES_TO_CHECK
-                            ? tvdb.episodesPerSeason(candidate.tvdbId())
+                            ? provider.episodesPerSeason(candidate.id())
                             : Optional.empty()));
         }
 
-        Optional<TvdbCandidate> match = SeriesMatcher.pick(evidence, guess, candidates);
+        Optional<TitleCandidate> match = SeriesMatcher.pick(evidence, guess, candidates);
         if (match.isEmpty()) {
-            LOG.log(Level.INFO, () -> "No TheTVDB candidate earned \"" + evidence.folderName() + "\"");
+            LOG.log(Level.INFO, () -> "No " + provider.name() + " candidate earned \"" + evidence.folderName() + "\"");
             return Optional.empty();
         }
 
-        TvdbCandidate series = match.get();
+        TitleCandidate series = match.get();
         ScrapedMetadata metadata = new ScrapedMetadata(
-                series.tvdbId(),
+                provider.name(),
+                series.id(),
                 series.name(),
                 series.year(),
                 series.overview(),
@@ -114,7 +116,7 @@ public final class SeriesScraper {
         }
         series.posterUrl().ifPresent(url -> posters.downloadIfMissing(seriesFolder, url));
         LOG.log(Level.INFO, () -> "Identified \"" + evidence.folderName() + "\" as \""
-                + series.name() + "\" (TheTVDB " + series.tvdbId() + ")");
+                + series.name() + "\" (" + provider.name() + " " + series.id() + ")");
         return Optional.of(metadata);
     }
 }

@@ -87,8 +87,8 @@ class SettingsStoreTest {
                 List.of(new Website("mosfilm", "Mosfilm", "https://cinema.mosfilm.ru")),
                 200,
                 new ScraperSettings(
-                        true, Optional.of("tvdb-key"), "http://localhost:11434",
-                        Optional.empty(), "llama3.2"));
+                        true, Optional.of("tvdb-key"), Optional.of("tmdb-key"),
+                        "http://localhost:11434", Optional.empty(), "llama3.2"));
 
         assertTrue(store.save(original));
         ApplicationSettings reloaded = store.load();
@@ -137,6 +137,30 @@ class SettingsStoreTest {
     }
 
     @Test
+    @DisplayName("a TMDB key alone is as good as a TheTVDB key; with both, TheTVDB answers")
+    void eitherMetadataKeyReadiesTheScraper() {
+        ScraperSettings tmdbOnly = ScraperSettings.defaults()
+                .withEnabled(true)
+                .withTmdbApiKey(Optional.of("tmdb-key"));
+        assertTrue(tmdbOnly.readyToScrape());
+        assertEquals(Optional.of("TMDB"), tmdbOnly.metadataProviderName());
+
+        ScraperSettings both = tmdbOnly.withTvdbApiKey(Optional.of("tvdb-key"));
+        assertEquals(Optional.of("TheTVDB"), both.metadataProviderName());
+        assertEquals(Optional.empty(), ScraperSettings.defaults().metadataProviderName());
+    }
+
+    @Test
+    @DisplayName("the TMDB key survives a save and load")
+    void roundTripsTheTmdbKey(@TempDir Path temp) {
+        SettingsStore store = new SettingsStore(temp);
+        assertTrue(store.save(ApplicationSettings.defaults().withScraper(
+                ScraperSettings.defaults().withTmdbApiKey(Optional.of("tmdb-key")))));
+
+        assertEquals(Optional.of("tmdb-key"), store.load().scraper().tmdbApiKey());
+    }
+
+    @Test
     @DisplayName("the hosted Ollama endpoint counts as configured only with its key")
     void ollamaConfigurationDependsOnTheEndpoint() {
         assertFalse(ScraperSettings.defaults().ollamaConfigured());
@@ -151,7 +175,7 @@ class SettingsStoreTest {
     @DisplayName("blanked-out scraper fields fall back rather than sticking as empty")
     void scraperFieldsNormalise() {
         ScraperSettings scraper = new ScraperSettings(
-                true, Optional.of("  spaced-key  "), " ", Optional.of("   "), "");
+                true, Optional.of("  spaced-key  "), Optional.empty(), " ", Optional.of("   "), "");
 
         assertEquals(Optional.of("spaced-key"), scraper.tvdbApiKey());
         assertEquals(ScraperSettings.DEFAULT_OLLAMA_ENDPOINT, scraper.ollamaEndpoint());

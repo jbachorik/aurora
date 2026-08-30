@@ -3,9 +3,13 @@ package mediacenter.scrape;
 import java.util.List;
 import java.util.Optional;
 
-/** One series TheTVDB offered for a search, as much of it as the match needs. */
-public record TvdbCandidate(
-        long tvdbId,
+/**
+ * One series or film a metadata provider offered for a search — as much of it
+ * as the match needs, in the same shape whichever database answered. The id
+ * means something only to the provider that issued it.
+ */
+public record TitleCandidate(
+        long id,
         String name,
         List<String> aliases,
         Optional<Integer> year,
@@ -13,9 +17,9 @@ public record TvdbCandidate(
         Optional<String> status,
         Optional<String> posterUrl) {
 
-    public TvdbCandidate {
+    public TitleCandidate {
         if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("A series candidate must carry a name");
+            throw new IllegalArgumentException("A title candidate must carry a name");
         }
         aliases = aliases == null ? List.of() : List.copyOf(aliases);
         year = year == null ? Optional.empty() : year;
