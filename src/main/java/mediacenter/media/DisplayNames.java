@@ -7,9 +7,11 @@ import java.util.regex.Pattern;
  * Turning file and directory names into something readable from the sofa.
  *
  * <p>Deliberately conservative: extensions are removed, separators become
- * spaces, an "01 - " ordering prefix is dropped, anything in square brackets
- * goes, and whitespace is tidied. Years and unbracketed quality markers are
- * left alone — guessing wrong is worse than showing the original name.
+ * spaces, an "01 - " ordering prefix is dropped — a leading "S01E05" episode
+ * tag with it, being the same ordering in longer clothes — anything in square
+ * brackets goes, and whitespace is tidied. Years and unbracketed quality
+ * markers are left alone — guessing wrong is worse than showing the original
+ * name.
  */
 public final class DisplayNames {
 
@@ -50,6 +52,17 @@ public final class DisplayNames {
     private static final Pattern ORDERING_PREFIX = Pattern.compile("^\\d{1,2}\\s*[-.)\\]]\\s*");
 
     /**
+     * A leading episode tag — "S01E05-The Wolf and the Lion", "1x01 Pilot" —
+     * the same shapes {@link SeriesFolders} chains on, anchored to the front.
+     * At the front the tag is pure ordering, which the listing already keeps,
+     * so it goes the way an "01 - " prefix goes; anywhere later it sits inside
+     * "Breaking.Bad.S01E01.Pilot" between the series and the episode name,
+     * and cutting a name's middle out is not this class's kind of confidence.
+     */
+    private static final Pattern LEADING_EPISODE_TAG = Pattern.compile(
+            "(?i)^(?:s\\d{1,2}[\\s._-]{0,3}ep?\\d{1,3}|\\d{1,2}x\\d{1,3})(?![\\p{L}\\p{N}])[\\s._-]*");
+
+    /**
      * Anything in square brackets: "[DVDRip-XviD]", "[1080p]", "[EN]", and the
      * "[Group]" a fansub writes at the front. Square brackets in a file name are
      * all but never part of what the thing is called — they are what the tool
@@ -68,7 +81,9 @@ public final class DisplayNames {
         // stripped name is judged on the separators it actually has left.
         name = BRACKETED_TAG.matcher(name).replaceAll(" ").trim();
         // Before the dots are touched, so "01.Dead.Mans.Chest" still has its
-        // separator to recognise.
+        // separator to recognise — and the episode tag before the ordering
+        // prefix, so "1x01" is never half-eaten as a number and a leftover.
+        name = withoutLeadingEpisodeTag(name);
         name = withoutOrderingPrefix(name);
         // Dotted names such as "Blade.Runner.2049.2017.mkv" read badly, but dots in
         // a name that already uses spaces ("S.W.A.T. 2017") are usually intentional.
@@ -82,6 +97,12 @@ public final class DisplayNames {
     /** Numbering the grid already conveys, so showing it twice only costs room. */
     private static String withoutOrderingPrefix(String name) {
         String stripped = ORDERING_PREFIX.matcher(name).replaceFirst("");
+        return stripped.isBlank() ? name : stripped;
+    }
+
+    /** Same reasoning, for names that open with their tag — unless the tag is all there is. */
+    private static String withoutLeadingEpisodeTag(String name) {
+        String stripped = LEADING_EPISODE_TAG.matcher(name).replaceFirst("");
         return stripped.isBlank() ? name : stripped;
     }
 }
