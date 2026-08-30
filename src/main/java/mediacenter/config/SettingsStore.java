@@ -115,6 +115,8 @@ public final class SettingsStore {
         scraperMembers.put("enabled", new JsonBoolean(settings.scraper().enabled()));
         settings.scraper().tvdbApiKey()
                 .ifPresent(key -> scraperMembers.put("tvdbApiKey", new JsonString(key)));
+        settings.scraper().tmdbApiKey()
+                .ifPresent(key -> scraperMembers.put("tmdbApiKey", new JsonString(key)));
         scraperMembers.put("ollamaEndpoint", new JsonString(settings.scraper().ollamaEndpoint()));
         settings.scraper().ollamaApiKey()
                 .ifPresent(key -> scraperMembers.put("ollamaApiKey", new JsonString(key)));
@@ -166,6 +168,7 @@ public final class SettingsStore {
         return new ScraperSettings(
                 scraper.booleanValue("enabled", false),
                 scraper.nonBlankString("tvdbApiKey"),
+                scraper.nonBlankString("tmdbApiKey"),
                 scraper.nonBlankString("ollamaEndpoint").orElse(ScraperSettings.DEFAULT_OLLAMA_ENDPOINT),
                 scraper.nonBlankString("ollamaApiKey"),
                 scraper.nonBlankString("ollamaModel").orElse(ScraperSettings.DEFAULT_OLLAMA_MODEL));

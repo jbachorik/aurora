@@ -17,14 +17,14 @@ class MovieMatcherTest {
     }
 
     /** Wraps plain candidates the way the scraper does when no runtime was fetched. */
-    private static List<MovieMatcher.Candidate> plain(TvdbCandidate... candidates) {
+    private static List<MovieMatcher.Candidate> plain(TitleCandidate... candidates) {
         return Arrays.stream(candidates)
                 .map(candidate -> new MovieMatcher.Candidate(candidate, Optional.empty()))
                 .toList();
     }
 
-    private static TvdbCandidate candidate(long id, String name, Integer year) {
-        return new TvdbCandidate(id, name, List.of(),
+    private static TitleCandidate candidate(long id, String name, Integer year) {
+        return new TitleCandidate(id, name, List.of(),
                 Optional.ofNullable(year), Optional.empty(), Optional.empty(), Optional.empty());
     }
 
@@ -32,8 +32,8 @@ class MovieMatcherTest {
     @DisplayName("a clear title with the right year wins the match")
     void picksTheObviousCandidate() {
         MovieEvidence evidence = evidence("Blade Runner 2049 (2017)", "Blade.Runner.2049.2017.mkv", 2017);
-        TvdbCandidate bladeRunner = candidate(12362, "Blade Runner 2049", 2017);
-        TvdbCandidate original = candidate(228, "Blade Runner", 1982);
+        TitleCandidate bladeRunner = candidate(12362, "Blade Runner 2049", 2017);
+        TitleCandidate original = candidate(228, "Blade Runner", 1982);
 
         assertEquals(Optional.of(bladeRunner), MovieMatcher.pick(
                 evidence, Optional.empty(), plain(bladeRunner, original)));
@@ -42,8 +42,8 @@ class MovieMatcherTest {
     @Test
     @DisplayName("the year is what tells a remake from its original")
     void theYearBreaksTheTie() {
-        TvdbCandidate newDune = candidate(1, "Dune", 2021);
-        TvdbCandidate oldDune = candidate(2, "Dune", 1984);
+        TitleCandidate newDune = candidate(1, "Dune", 2021);
+        TitleCandidate oldDune = candidate(2, "Dune", 1984);
 
         assertEquals(Optional.of(newDune), MovieMatcher.pick(
                 evidence("Dune (2021)", "Dune.2021.2160p.mkv", 2021),
@@ -58,8 +58,8 @@ class MovieMatcherTest {
     @Test
     @DisplayName("a much-remade title with no year anywhere is left unidentified")
     void noYearMeansNoTieBreaker() {
-        TvdbCandidate newDune = candidate(1, "Dune", 2021);
-        TvdbCandidate oldDune = candidate(2, "Dune", 1984);
+        TitleCandidate newDune = candidate(1, "Dune", 2021);
+        TitleCandidate oldDune = candidate(2, "Dune", 1984);
 
         assertEquals(Optional.empty(), MovieMatcher.pick(
                 evidence("Dune", "Dune.mkv", null),
@@ -71,8 +71,8 @@ class MovieMatcherTest {
     @DisplayName("the language model's guess rescues a messy name — including its year")
     void theGuessCarriesAMessyName() {
         MovieEvidence evidence = evidence("BR2049.2160p.HDR.x265-GRP", "br2049.mkv", null);
-        TvdbCandidate bladeRunner = candidate(12362, "Blade Runner 2049", 2017);
-        TvdbCandidate original = candidate(228, "Blade Runner", 1982);
+        TitleCandidate bladeRunner = candidate(12362, "Blade Runner 2049", 2017);
+        TitleCandidate original = candidate(228, "Blade Runner", 1982);
 
         assertEquals(Optional.of(bladeRunner), MovieMatcher.pick(
                 evidence,
@@ -101,8 +101,8 @@ class MovieMatcherTest {
         MovieEvidence evidence = new MovieEvidence(
                 "The Gambler", "The.Gambler.mkv", Optional.empty(),
                 Optional.of(Duration.ofMinutes(150)));
-        TvdbCandidate longFilm = candidate(1, "The Gambler", null);
-        TvdbCandidate shortFilm = candidate(2, "The Gambler", null);
+        TitleCandidate longFilm = candidate(1, "The Gambler", null);
+        TitleCandidate shortFilm = candidate(2, "The Gambler", null);
 
         assertEquals(Optional.of(longFilm), MovieMatcher.pick(
                 evidence,
@@ -136,7 +136,7 @@ class MovieMatcherTest {
         // The film "2012" came out in 2009. Its folder name never reads as a
         // year hint — a leading year is a title — so the year comes from the
         // guess, and the title comparison keeps the "2012" it is named by.
-        TvdbCandidate the2012Film = candidate(7, "2012", 2009);
+        TitleCandidate the2012Film = candidate(7, "2012", 2009);
         assertEquals(Optional.of(the2012Film), MovieMatcher.pick(
                 evidence("2012", "2012.1080p.mkv", null),
                 Optional.of(new TitleGuess("2012", Optional.of(2009))),

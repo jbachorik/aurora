@@ -36,7 +36,7 @@ import mediacenter.json.JsonValue.JsonString;
  * is a background nicety, and the folder it was about plays exactly as well
  * without it.
  */
-public final class TvdbClient {
+public final class TvdbClient implements MetadataProvider {
 
     private static final Logger LOG = Logger.getLogger(TvdbClient.class.getName());
 
@@ -75,17 +75,24 @@ public final class TvdbClient {
                 .build();
     }
 
+    @Override
+    public String name() {
+        return "TheTVDB";
+    }
+
     /** Series matching a title, best first as TheTVDB ranks them. */
-    public List<TvdbCandidate> searchSeries(String query) {
+    @Override
+    public List<TitleCandidate> searchSeries(String query) {
         return search(query, "series");
     }
 
     /** Films matching a title — the same endpoint, the same shape, another type. */
-    public List<TvdbCandidate> searchMovies(String query) {
+    @Override
+    public List<TitleCandidate> searchMovies(String query) {
         return search(query, "movie");
     }
 
-    private List<TvdbCandidate> search(String query, String type) {
+    private List<TitleCandidate> search(String query, String type) {
         String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
         return get("/search?query=" + encoded + "&type=" + type + "&limit=" + SEARCH_LIMIT)
                 .map(TvdbClient::parseSearch)
@@ -97,6 +104,7 @@ public final class TvdbClient {
      * (aired) order. Empty when the answer could not be fetched — which the
      * matcher treats as "no opinion", never as a mismatch.
      */
+    @Override
     public Optional<Map<Integer, Integer>> episodesPerSeason(long seriesId) {
         TreeMap<Integer, Integer> counts = new TreeMap<>();
         for (int page = 0; page < EPISODE_PAGE_LIMIT; page++) {
@@ -119,6 +127,7 @@ public final class TvdbClient {
      * Empty when TheTVDB does not know or could not be asked — which the
      * matcher treats as "no opinion", never as a mismatch.
      */
+    @Override
     public Optional<Integer> movieRuntimeMinutes(long movieId) {
         return get("/movies/" + movieId + "/extended")
                 .flatMap(TvdbClient::parseMovieRuntime);
@@ -137,8 +146,8 @@ public final class TvdbClient {
     }
 
     /** Reads a search response. Static and pure so the shape stays testable offline. */
-    public static List<TvdbCandidate> parseSearch(JsonObject document) {
-        List<TvdbCandidate> candidates = new ArrayList<>();
+    public static List<TitleCandidate> parseSearch(JsonObject document) {
+        List<TitleCandidate> candidates = new ArrayList<>();
         for (JsonObject result : document.objectArray("data")) {
             // The search endpoint spells the id as a string.
             Optional<Long> id = result.longValue("tvdb_id");
@@ -156,7 +165,7 @@ public final class TvdbClient {
                     }
                 }
             });
-            candidates.add(new TvdbCandidate(
+            candidates.add(new TitleCandidate(
                     id.get(),
                     name.get(),
                     aliases,

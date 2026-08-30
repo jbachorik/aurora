@@ -14,7 +14,8 @@ import java.util.Optional;
  * the share sees the answer.
  */
 public record ScrapedMetadata(
-        long tvdbId,
+        String provider,
+        long providerId,
         String title,
         Optional<Integer> year,
         Optional<String> overview,
@@ -23,6 +24,9 @@ public record ScrapedMetadata(
         Instant scrapedAt) {
 
     public ScrapedMetadata {
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Scraped metadata must name the database it came from");
+        }
         if (title == null || title.isBlank()) {
             throw new IllegalArgumentException("Scraped metadata must carry a title");
         }

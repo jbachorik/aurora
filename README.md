@@ -341,10 +341,16 @@ Three steps, each falling back gracefully to the next:
    endpoint is Ollama's hosted service by default (its free tier needs the
    API key), or point it at an Ollama in the house (`http://localhost:11434`,
    no key). With neither, the cleaned folder name is the search term.
-3. **What TheTVDB knows.** The title is searched on TheTVDB (v4 API key
-   required — the one thing there is no scraping without; the same key
-   covers series and films) and every leading candidate is cross-checked
-   against what the disk showed. A series is checked by **shape**: a season
+3. **What the database knows.** The title is searched on TheTVDB or TMDB —
+   an API key to one of them is the one thing there is no scraping without,
+   either database serves series and films alike, and with both keys set
+   TheTVDB is used. TMDB keys are the easy ones to get: create an account at
+   [themoviedb.org](https://www.themoviedb.org), then **Settings → API** —
+   free for personal use, and the dialog takes either the short "API Key" or
+   the long "Read Access Token". TheTVDB's v4 key comes from
+   thetvdb.com/api-information, when their account creation cooperates.
+   Every leading candidate is then cross-checked against what the disk
+   showed. A series is checked by **shape**: a season
    holding more episodes than the candidate ever aired rules it out, which
    is how the American *The Office* is told from the British one. A film has
    no shape, so it is checked by **year**, which is what tells *Dune* (2021)
@@ -362,8 +368,8 @@ Three steps, each falling back gracefully to the next:
 
 What was learned is written into the title's folder itself: a hand-editable
 `aurora-series.json` or `aurora-movie.json` (title, year, overview, status,
-TheTVDB id) and a `poster.jpg` — but never over artwork that is already
-there. That file is the whole database: the metadata travels with the folder,
+the database and its id) and a `poster.jpg` — but never over artwork that is
+already there. That file is the whole database: the metadata travels with the folder,
 every machine that can see the share sees it, and deleting the file is how
 you ask for a re-scrape. Scrapes run one at a time in the background; a
 folder that found no confident match is retried on the next start, when the
@@ -383,8 +389,8 @@ and samples, collisions and any doubt leave a file exactly where it was.
 
 ### Setting up Ollama
 
-Ollama is optional — without it, folder names are searched on TheTVDB as they
-are, which is fine for tidy libraries and hopeless for
+Ollama is optional — without it, folder names are searched as they are,
+which is fine for tidy libraries and hopeless for
 `BrBa.COMPLETE.720p.x264-GRP`. There are two ways to have it, and the settings
 dialog (**Settings → Series scraper → Configure…**) takes either:
 
@@ -437,7 +443,7 @@ JavaFX Media Center
         |
         +-- MediaScanner ........... local disks, UNC/SMB paths
         +-- ArtworkResolver ........ local poster/folder/cover images
-        +-- ScrapeService .......... Ollama title guess, TheTVDB metadata
+        +-- ScrapeService .......... Ollama title guess, TheTVDB/TMDB metadata
         +-- PlaybackHistory ........ recently played
         +-- PlayerLauncher ......... external VLC process
         +-- PlatformServices ....... VLC discovery, sleep, data directory
@@ -450,7 +456,7 @@ src/main/java/
     mediacenter/ui/                views, shell, tile grid, artwork cache
     mediacenter/ui/components/     tiles, grid, motion, activation gate
     mediacenter/media/             MediaRoot, MediaItem, MediaScanner, artwork
-    mediacenter/scrape/            series+movie evidence, Ollama, TheTVDB, matchers
+    mediacenter/scrape/            evidence, Ollama, TheTVDB/TMDB, matchers
     mediacenter/playback/          PlayerLauncher, VlcPlayerLauncher, service
     mediacenter/platform/          Windows / macOS / Linux services
     mediacenter/remote/            remote-control HTTP server, QR encoder

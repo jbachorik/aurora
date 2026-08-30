@@ -14,7 +14,7 @@ import mediacenter.media.DisplayNames;
  * One movie folder, start to finish — {@link SeriesScraper}'s shorter sibling.
  *
  * <p>Same pipeline, one step lighter: there are no episodes to count, so the
- * cross-checks TheTVDB's candidates face are the year and — where libVLC
+ * cross-checks the provider's candidates face are the year and — where libVLC
  * could read the file — the running time against the official runtime, in
  * place of the season shape. What it loses in signals it makes up in
  * caution: the matcher's bar is higher, and a much-remade title with no year
@@ -34,19 +34,19 @@ public final class MovieScraper {
 
     private final MovieEvidenceCollector evidenceCollector;
     private final Optional<OllamaTitleService> titleService;
-    private final TvdbClient tvdb;
+    private final MetadataProvider provider;
     private final ScrapedMetadataStore store;
     private final PosterDownloader posters;
 
     public MovieScraper(
             MovieEvidenceCollector evidenceCollector,
             Optional<OllamaTitleService> titleService,
-            TvdbClient tvdb,
+            MetadataProvider provider,
             ScrapedMetadataStore store,
             PosterDownloader posters) {
         this.evidenceCollector = evidenceCollector;
         this.titleService = titleService;
-        this.tvdb = tvdb;
+        this.provider = provider;
         this.store = store;
         this.posters = posters;
     }
@@ -70,37 +70,38 @@ public final class MovieScraper {
                 + "\" as \"" + titleGuess.title() + "\""));
 
         String fallbackQuery = DisplayNames.forDirectory(movieFolder);
-        List<TvdbCandidate> found = guess
-                .map(titleGuess -> tvdb.searchMovies(titleGuess.title()))
+        List<TitleCandidate> found = guess
+                .map(titleGuess -> provider.searchMovies(titleGuess.title()))
                 .filter(results -> !results.isEmpty())
-                .orElseGet(() -> tvdb.searchMovies(fallbackQuery));
+                .orElseGet(() -> provider.searchMovies(fallbackQuery));
         if (found.isEmpty()) {
-            LOG.log(Level.INFO, () -> "TheTVDB has nothing for \"" + evidence.folderName() + "\"");
+            LOG.log(Level.INFO, () -> provider.name() + " has nothing for \"" + evidence.folderName() + "\"");
             return Optional.empty();
         }
 
         // The runtime cross-check, where there is a file duration to check it
-        // against; without one the extended records would answer a question
+        // against; without one the per-film records would answer a question
         // nobody is asking, so they are not fetched at all.
         List<MovieMatcher.Candidate> candidates = new ArrayList<>();
         for (int i = 0; i < found.size(); i++) {
-            TvdbCandidate candidate = found.get(i);
+            TitleCandidate candidate = found.get(i);
             candidates.add(new MovieMatcher.Candidate(
                     candidate,
                     evidence.duration().isPresent() && i < CANDIDATES_TO_CHECK
-                            ? tvdb.movieRuntimeMinutes(candidate.tvdbId())
+                            ? provider.movieRuntimeMinutes(candidate.id())
                             : Optional.empty()));
         }
 
-        Optional<TvdbCandidate> match = MovieMatcher.pick(evidence, guess, candidates);
+        Optional<TitleCandidate> match = MovieMatcher.pick(evidence, guess, candidates);
         if (match.isEmpty()) {
-            LOG.log(Level.INFO, () -> "No TheTVDB candidate earned \"" + evidence.folderName() + "\"");
+            LOG.log(Level.INFO, () -> "No " + provider.name() + " candidate earned \"" + evidence.folderName() + "\"");
             return Optional.empty();
         }
 
-        TvdbCandidate movie = match.get();
+        TitleCandidate movie = match.get();
         ScrapedMetadata metadata = new ScrapedMetadata(
-                movie.tvdbId(),
+                provider.name(),
+                movie.id(),
                 movie.name(),
                 movie.year(),
                 movie.overview(),
@@ -112,7 +113,7 @@ public final class MovieScraper {
         }
         movie.posterUrl().ifPresent(url -> posters.downloadIfMissing(movieFolder, url));
         LOG.log(Level.INFO, () -> "Identified \"" + evidence.folderName() + "\" as \""
-                + movie.name() + "\" (TheTVDB movie " + movie.tvdbId() + ")");
+                + movie.name() + "\" (" + provider.name() + " movie " + movie.id() + ")");
         return Optional.of(metadata);
     }
 }

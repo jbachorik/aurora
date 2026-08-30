@@ -221,13 +221,24 @@ public final class ScrapeService {
                 ? Optional.of(new OllamaTitleService(
                         current.ollamaEndpoint(), current.ollamaApiKey(), current.ollamaModel()))
                 : Optional.empty();
-        TvdbClient tvdb = new TvdbClient(current.tvdbApiKey().orElseThrow());
+        MetadataProvider provider = buildProvider(current);
         return switch (kind) {
             case SERIES -> new SeriesScraper(
-                    new SeriesEvidenceCollector(), ollama, tvdb, seriesStore, posters).scrape(folder);
+                    new SeriesEvidenceCollector(), ollama, provider, seriesStore, posters).scrape(folder);
             case MOVIE -> new MovieScraper(
-                    new MovieEvidenceCollector(durationProbe), ollama, tvdb, movieStore, posters).scrape(folder);
+                    new MovieEvidenceCollector(durationProbe), ollama, provider, movieStore, posters).scrape(folder);
         };
+    }
+
+    /**
+     * Whichever database the user could get a key for; with both, TheTVDB —
+     * the order {@link ScraperSettings#metadataProviderName()} promises, and
+     * {@code readyToScrape} has already vouched that one key exists.
+     */
+    private static MetadataProvider buildProvider(ScraperSettings current) {
+        return current.tvdbApiKey()
+                .<MetadataProvider>map(TvdbClient::new)
+                .orElseGet(() -> new TmdbClient(current.tmdbApiKey().orElseThrow()));
     }
 
     private ScrapedMetadataStore storeFor(Kind kind) {

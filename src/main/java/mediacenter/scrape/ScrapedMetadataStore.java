@@ -88,7 +88,8 @@ public final class ScrapedMetadataStore {
 
     public static JsonObject toJson(ScrapedMetadata metadata) {
         Map<String, JsonValue> members = new LinkedHashMap<>();
-        members.put("tvdbId", new JsonNumber(metadata.tvdbId()));
+        members.put("provider", new JsonString(metadata.provider()));
+        members.put("providerId", new JsonNumber(metadata.providerId()));
         members.put("title", new JsonString(metadata.title()));
         metadata.year().ifPresent(year -> members.put("year", new JsonNumber(year)));
         metadata.overview().ifPresent(overview -> members.put("overview", new JsonString(overview)));
@@ -99,11 +100,15 @@ public final class ScrapedMetadataStore {
     }
 
     public static Optional<ScrapedMetadata> fromJson(JsonObject document) {
-        Optional<Long> tvdbId = document.longValue("tvdbId");
+        // Files written before TMDB existed carry only "tvdbId"; the name of
+        // the field is the name of the database.
+        Optional<Long> providerId = document.longValue("providerId")
+                .or(() -> document.longValue("tvdbId"));
         Optional<String> title = document.nonBlankString("title");
-        if (tvdbId.isEmpty() || title.isEmpty()) {
+        if (providerId.isEmpty() || title.isEmpty()) {
             return Optional.empty();
         }
+        String provider = document.nonBlankString("provider").orElse("TheTVDB");
         Instant scrapedAt;
         try {
             scrapedAt = document.nonBlankString("scrapedAt").map(Instant::parse).orElse(Instant.EPOCH);
@@ -112,7 +117,8 @@ public final class ScrapedMetadataStore {
             scrapedAt = Instant.EPOCH;
         }
         return Optional.of(new ScrapedMetadata(
-                tvdbId.get(),
+                provider,
+                providerId.get(),
                 title.get(),
                 document.longValue("year").map(Long::intValue),
                 document.nonBlankString("overview"),

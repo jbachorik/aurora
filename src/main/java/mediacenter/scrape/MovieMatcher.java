@@ -43,17 +43,17 @@ public final class MovieMatcher {
     }
 
     /** One candidate together with the official runtime TheTVDB has for it. */
-    public record Candidate(TvdbCandidate movie, Optional<Integer> runtimeMinutes) {
+    public record Candidate(TitleCandidate movie, Optional<Integer> runtimeMinutes) {
     }
 
     /**
      * The one candidate worth writing to disk, or empty when none is, or when
      * two are too close to call.
      */
-    public static Optional<TvdbCandidate> pick(
+    public static Optional<TitleCandidate> pick(
             MovieEvidence evidence, Optional<TitleGuess> guess, List<Candidate> candidates) {
 
-        TvdbCandidate best = null;
+        TitleCandidate best = null;
         double bestScore = 0;
         double secondScore = 0;
         for (Candidate candidate : candidates) {
@@ -120,7 +120,7 @@ public final class MovieMatcher {
     }
 
     /** The best similarity any of the candidate's names manages against any of ours. */
-    static double titleScore(MovieEvidence evidence, Optional<TitleGuess> guess, TvdbCandidate candidate) {
+    static double titleScore(MovieEvidence evidence, Optional<TitleGuess> guess, TitleCandidate candidate) {
         // The extension is the one part of the file name that is certainly
         // not title; the rest the normalisation and edit distance absorb.
         String fileBaseName = VideoFiles.withoutExtension(evidence.videoFileName());
@@ -135,7 +135,7 @@ public final class MovieMatcher {
         return best;
     }
 
-    private static List<String> namesOf(TvdbCandidate candidate) {
+    private static List<String> namesOf(TitleCandidate candidate) {
         List<String> names = new ArrayList<>();
         names.add(candidate.name());
         names.addAll(candidate.aliases());

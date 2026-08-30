@@ -573,6 +573,8 @@ public final class SettingsView implements View {
         TextField tvdbKeyField = new TextField(scraper.tvdbApiKey().orElse(""));
         tvdbKeyField.setPromptText("TheTVDB v4 API key");
         tvdbKeyField.setPrefColumnCount(36);
+        TextField tmdbKeyField = new TextField(scraper.tmdbApiKey().orElse(""));
+        tmdbKeyField.setPromptText("TMDB API key or read access token");
         TextField ollamaEndpointField = new TextField(scraper.ollamaEndpoint());
         ollamaEndpointField.setPromptText(ScraperSettings.DEFAULT_OLLAMA_ENDPOINT);
         TextField ollamaKeyField = new TextField(scraper.ollamaApiKey().orElse(""));
@@ -580,8 +582,9 @@ public final class SettingsView implements View {
         TextField ollamaModelField = new TextField(scraper.ollamaModel());
         ollamaModelField.setPromptText(ScraperSettings.DEFAULT_OLLAMA_MODEL);
 
-        Label hint = new Label("TheTVDB supplies the metadata and always needs its key "
-                + "(thetvdb.com/api-information). Ollama reads messy folder names into titles: "
+        Label hint = new Label("Metadata comes from TheTVDB (thetvdb.com/api-information) or "
+                + "TMDB (themoviedb.org/settings/api) — one key is enough, and with both "
+                + "TheTVDB is used. Ollama reads messy folder names into titles: "
                 + "the hosted service at " + ScraperSettings.DEFAULT_OLLAMA_ENDPOINT
                 + " has a free tier and needs its key, an Ollama in the house "
                 + "(http://localhost:11434) needs none — and with neither, folder names "
@@ -595,10 +598,11 @@ public final class SettingsView implements View {
         form.setVgap(12);
         form.setPadding(new Insets(16));
         form.addRow(0, new Label("TheTVDB API key"), tvdbKeyField);
-        form.addRow(1, new Label("Ollama endpoint"), ollamaEndpointField);
-        form.addRow(2, new Label("Ollama API key"), ollamaKeyField);
-        form.addRow(3, new Label("Ollama model"), ollamaModelField);
-        form.add(hint, 1, 4);
+        form.addRow(1, new Label("TMDB API key"), tmdbKeyField);
+        form.addRow(2, new Label("Ollama endpoint"), ollamaEndpointField);
+        form.addRow(3, new Label("Ollama API key"), ollamaKeyField);
+        form.addRow(4, new Label("Ollama model"), ollamaModelField);
+        form.add(hint, 1, 5);
 
         dialog.getDialogPane().setContent(form);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
@@ -611,18 +615,20 @@ public final class SettingsView implements View {
             return new ScraperSettings(
                     scraper.enabled(),
                     Optional.ofNullable(tvdbKeyField.getText()),
+                    Optional.ofNullable(tmdbKeyField.getText()),
                     ollamaEndpointField.getText(),
                     Optional.ofNullable(ollamaKeyField.getText()),
                     ollamaModelField.getText());
         });
 
-        // The TheTVDB key is the one thing there is no scraping without.
+        // A metadata key is the one thing there is no scraping without.
         javafx.application.Platform.runLater(tvdbKeyField::requestFocus);
         dialog.showAndWait().ifPresent(updated -> {
             update(settings().withScraper(updated));
-            showStatus(scraperStatus, updated.tvdbApiKey().isPresent()
-                    ? "Saved. New TV and movie folders are identified as they are browsed."
-                    : "Saved — but without a TheTVDB API key nothing can be looked up.");
+            showStatus(scraperStatus, updated.metadataProviderName()
+                    .map(provider -> "Saved. New TV and movie folders are identified"
+                            + " against " + provider + " as they are browsed.")
+                    .orElse("Saved — but without a TheTVDB or TMDB API key nothing can be looked up."));
         });
     }
 
@@ -631,12 +637,11 @@ public final class SettingsView implements View {
         if (!scraper.enabled()) {
             return "Off — TV and movie folders are not identified online";
         }
-        if (scraper.tvdbApiKey().isEmpty()) {
-            return "On, but missing a TheTVDB API key — configure one";
-        }
-        return scraper.ollamaConfigured()
-                ? "TheTVDB via " + scraper.ollamaModel() + " title guesses"
-                : "TheTVDB, searching folder names as they are";
+        return scraper.metadataProviderName()
+                .map(provider -> scraper.ollamaConfigured()
+                        ? provider + " via " + scraper.ollamaModel() + " title guesses"
+                        : provider + ", searching folder names as they are")
+                .orElse("On, but missing a TheTVDB or TMDB API key — configure one");
     }
 
     private Node mediaRootsSection() {
