@@ -57,8 +57,8 @@ One script installs whatever is missing and leaves the rest alone:
 scripts/install-dependencies.sh        # Linux (apt, dnf, pacman, zypper) and macOS (brew)
 ```
 
-```powershell
-scripts\install-dependencies.ps1       # Windows, via winget; Edge already counts as the browser
+```bat
+scripts\install-dependencies.bat       # Windows, via winget; Edge already counts as the browser
 ```
 
 VLC and yt-dlp are found automatically (the PATH plus the usual install

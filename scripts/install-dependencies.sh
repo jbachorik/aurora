@@ -133,7 +133,7 @@ case "$(uname -s)" in
         fi
         ;;
     *)
-        say "Unsupported system: $(uname -s). On Windows run scripts/install-dependencies.ps1."
+        say "Unsupported system: $(uname -s). On Windows run scripts\\install-dependencies.bat."
         exit 1
         ;;
 esac
