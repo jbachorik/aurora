@@ -81,6 +81,7 @@ public final class SettingsStore {
         Map<String, JsonValue> members = new LinkedHashMap<>();
         settings.vlcPath().ifPresent(path -> members.put("vlcPath", new JsonString(path.toString())));
         settings.browserPath().ifPresent(path -> members.put("browserPath", new JsonString(path.toString())));
+        settings.ytDlpPath().ifPresent(path -> members.put("ytDlpPath", new JsonString(path.toString())));
         members.put("fullScreen", new JsonBoolean(settings.fullScreen()));
         members.put("theme", new JsonString(settings.theme().name()));
         members.put("slideshowSeconds", new JsonNumber(settings.slideshowSeconds()));
@@ -125,6 +126,8 @@ public final class SettingsStore {
     public static ApplicationSettings fromJson(JsonObject document) {
         Optional<Path> vlcPath = document.nonBlankString("vlcPath").map(Path::of);
         Optional<Path> browserPath = document.nonBlankString("browserPath").map(Path::of);
+        // A hand-written entry: where yt-dlp lives when it is not on the PATH.
+        Optional<Path> ytDlpPath = document.nonBlankString("ytDlpPath").map(Path::of);
         boolean fullScreen = document.booleanValue("fullScreen", true);
         Theme theme = document.nonBlankString("theme").flatMap(Theme::parse).orElse(Theme.DARK);
         // JsonValue reads numbers as longs; the interval is small enough to narrow.
@@ -150,7 +153,7 @@ public final class SettingsStore {
             readWebsite(websiteDocument).ifPresent(websites::add);
         }
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, roots, slideshowSeconds, playerBufferSeconds,
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, roots, slideshowSeconds, playerBufferSeconds,
                 mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, readScraper(document));
     }
 

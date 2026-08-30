@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -109,6 +110,45 @@ public final class VlcPlayerLauncher implements PlayerLauncher {
             command.add(following.toString());
         }
         return List.copyOf(command);
+    }
+
+    /**
+     * The command that plays a network stream — a resolved page, not a file.
+     *
+     * <p>The stream's host may insist on seeing the headers the resolver found;
+     * VLC only takes the two that matter as options of their own, and the rest
+     * of what yt-dlp reports (Accept, encodings) no host actually checks.
+     *
+     * @param httpHeaders headers the stream was resolved with; {@code Referer}
+     *                    and {@code User-Agent} are handed to VLC, any case
+     */
+    public static List<String> streamCommandFor(
+            Path vlcExecutable, String streamUrl, Map<String, String> httpHeaders,
+            int bufferSeconds, List<String> platformOptions) {
+        List<String> command = new ArrayList<>(6 + platformOptions.size());
+        command.add(vlcExecutable.toString());
+        command.add("--fullscreen");
+        command.add("--play-and-exit");
+        if (bufferSeconds > 0) {
+            // --network-caching this time: an http address is opened by VLC's
+            // network access, which the file option never reaches.
+            command.add("--network-caching=" + bufferSeconds * 1000);
+        }
+        headerValue(httpHeaders, "Referer")
+                .ifPresent(referer -> command.add("--http-referrer=" + referer));
+        headerValue(httpHeaders, "User-Agent")
+                .ifPresent(agent -> command.add("--http-user-agent=" + agent));
+        command.addAll(platformOptions);
+        // Last, as everywhere: what follows is the address.
+        command.add(streamUrl);
+        return List.copyOf(command);
+    }
+
+    private static Optional<String> headerValue(Map<String, String> headers, String name) {
+        return headers.entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(name))
+                .map(Map.Entry::getValue)
+                .findFirst();
     }
 
     @Override

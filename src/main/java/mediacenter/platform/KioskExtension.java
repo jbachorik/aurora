@@ -11,14 +11,16 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * The bundled browser extension that gives the kiosk browser its two keys.
+ * The bundled browser extension that gives the kiosk browser its keys.
  *
  * <p>{@code Ctrl+Q} closes it — the same key that closes VLC, so leaving
  * whatever is on screen is one gesture everywhere. {@code F} puts the player
  * full screen, which the site's own button frequently cannot: a page handed a
  * window that already fills the screen fools any player that reads its
  * fullscreen state off the window instead of off {@code document.fullscreenElement},
- * and the button then does nothing at all.
+ * and the button then does nothing at all. {@code W} — and the "Watch in
+ * Aurora" button drawn over pages with a player — asks the media center to
+ * pull the page's stream out with yt-dlp and play it in VLC instead.
  *
  * <p>The extension ships inside the application jar and is written out to the
  * data directory on every launch — three small files, rewritten unconditionally
@@ -36,7 +38,7 @@ public final class KioskExtension {
 
     /** Resources are not listable, so the extension's files are named here. */
     static final List<String> FILES =
-            List.of("manifest.json", "quit.js", "background.js", "fullscreen.js");
+            List.of("manifest.json", "quit.js", "background.js", "fullscreen.js", "watch.js");
 
     private static final String RESOURCE_DIRECTORY = "/mediacenter/browser-extension/";
 

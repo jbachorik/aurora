@@ -22,7 +22,12 @@ function isTyping(target) {
 }
 
 function isFullscreenKey(event) {
-    if (event.key !== "f" && event.key !== "F") {
+    // The physical key as well as the letter: a layout that types something
+    // other than "f" on that key — Cyrillic, say — reports it only in
+    // event.code, while the players clashing over the key read the legacy
+    // layout-independent keyCode and fire regardless. Matching the letter
+    // alone would stand aside exactly when the broken handler does not.
+    if (event.code !== "KeyF" && event.key !== "f" && event.key !== "F") {
         return false;
     }
     return !event.ctrlKey && !event.altKey && !event.metaKey && !isTyping(event.target);
@@ -89,19 +94,38 @@ for (const type of ["keypress", "keyup"]) {
     }, true);
 }
 
-window.addEventListener("keydown", event => {
-    if (!isFullscreenKey(event)) {
-        return;
-    }
-    swallow(event);
+function toggleFullscreen() {
     if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => { /* already on the way out */ });
         return;
     }
     const target = playerElement();
     if (target) {
-        // Rejection is normal and not worth a dialog on a television: a frame
-        // whose permissions policy withholds fullscreen simply stays as it was.
-        target.requestFullscreen().catch(() => { /* the page keeps its size */ });
+        target.requestFullscreen().catch(() => {
+            // A frame whose permissions policy withholds fullscreen cannot
+            // take the screen itself, but the page that embedded it may put
+            // the frame there from outside — the keypress's user activation
+            // reaches ancestor frames too. Only the background worker can
+            // carry the request across the frame boundary.
+            if (window !== window.top) {
+                chrome.runtime.sendMessage("fullscreen-from-top");
+            }
+        });
+    }
+}
+
+window.addEventListener("keydown", event => {
+    if (isFullscreenKey(event)) {
+        swallow(event);
+        toggleFullscreen();
     }
 }, true);
+
+// The relayed request from a frame that was not allowed to fullscreen itself.
+// Delivered to the top frame alone, where the largest visible iframe is that
+// player seen from outside; on a second press the toggle exits instead.
+chrome.runtime.onMessage.addListener(message => {
+    if (message === "fullscreen-from-top" && window === window.top) {
+        toggleFullscreen();
+    }
+});

@@ -20,6 +20,7 @@ class RemoteControlServerTest {
     /** Remembers what it was asked instead of launching anything. */
     private static final class FakeKiosk implements RemoteKiosk {
         volatile String opened;
+        volatile String watched;
         volatile Optional<String> complaint = Optional.empty();
 
         @Override
@@ -28,6 +29,15 @@ class RemoteControlServerTest {
                 return complaint;
             }
             opened = url;
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<String> watchUrl(String url) {
+            if (complaint.isPresent()) {
+                return complaint;
+            }
+            watched = url;
             return Optional.empty();
         }
 
@@ -123,6 +133,26 @@ class RemoteControlServerTest {
     }
 
     @Test
+    @DisplayName("watching hands the address to the kiosk's resolver")
+    void watchReachesTheKiosk() throws Exception {
+        HttpResponse<String> response =
+                post("/api/watch", "{\"url\": \"https://cinema.mosfilm.ru/film\"}");
+        assertEquals(200, response.statusCode());
+        assertEquals("https://cinema.mosfilm.ru/film", kiosk.watched);
+        assertNull(kiosk.opened);
+    }
+
+    @Test
+    @DisplayName("a page that resolves to nothing comes back as a 409 with the reason")
+    void watchComplaintIsRelayed() throws Exception {
+        kiosk.complaint = Optional.of("No playable stream was found on this page.");
+        HttpResponse<String> response = post("/api/watch", "{\"url\": \"https://example.com\"}");
+        assertEquals(409, response.statusCode());
+        assertTrue(response.body().contains("No playable stream"));
+        assertNull(kiosk.watched);
+    }
+
+    @Test
     @DisplayName("stop says whether there was anything to stop")
     void stopReportsWhatItDid() throws Exception {
         kiosk.opened = "https://example.com";
@@ -144,6 +174,7 @@ class RemoteControlServerTest {
     @DisplayName("the API endpoints insist on their methods")
     void wrongMethodsAreRefused() throws Exception {
         assertEquals(405, get("/api/open").statusCode());
+        assertEquals(405, get("/api/watch").statusCode());
         assertEquals(405, get("/api/stop").statusCode());
         assertEquals(405, post("/api/status", "").statusCode());
     }

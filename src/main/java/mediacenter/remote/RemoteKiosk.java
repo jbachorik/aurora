@@ -20,6 +20,17 @@ public interface RemoteKiosk {
     Optional<String> openUrl(String url);
 
     /**
+     * Resolves the page's video stream with yt-dlp and plays it in the media
+     * center's own player, closing the kiosk browser on the way. Blocks for
+     * the resolution — up to tens of seconds — so the caller can answer with
+     * the outcome; the playback itself runs on after the return.
+     *
+     * @return the complaint when nothing will play (no VLC, no yt-dlp, or a
+     *         page with no extractable stream), empty when playback is starting
+     */
+    Optional<String> watchUrl(String url);
+
+    /**
      * Closes the kiosk browser and returns to the main menu.
      *
      * @return false when there was nothing to stop

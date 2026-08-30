@@ -20,6 +20,7 @@ class KioskBrowserTest {
     // prints these same paths back with backslashes, and a literal here would
     // pass on a POSIX machine and fail on the runner that matters most.
     private static final Path CHROME = Path.of("/usr/bin/google-chrome");
+    private static final Path CHROMIUM = Path.of("/usr/bin/chromium");
     private static final Path FIREFOX = Path.of("/usr/bin/firefox");
     private static final Path EPIPHANY = Path.of("/usr/bin/epiphany");
 
@@ -27,10 +28,10 @@ class KioskBrowserTest {
     @DisplayName("a Chromium gets app mode, its own profile, fullscreen and the scale hint")
     void buildsTheChromiumCommand() {
         List<String> command = KioskBrowser.commandFor(
-                CHROME, "https://cinema.mosfilm.ru", 150, PROFILE, Optional.of(EXTENSION));
+                CHROMIUM, "https://cinema.mosfilm.ru", 150, PROFILE, Optional.of(EXTENSION));
 
         assertEquals(List.of(
-                CHROME.toString(),
+                CHROMIUM.toString(),
                 "--user-data-dir=" + PROFILE,
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -38,6 +39,17 @@ class KioskBrowserTest {
                 "--force-device-scale-factor=1.50",
                 "--start-fullscreen",
                 "--app=https://cinema.mosfilm.ru"), command);
+    }
+
+    @Test
+    @DisplayName("branded Chrome is maximized, not fullscreened: without the extension's F key, "
+            + "an already-fullscreen window would leave embedded players' own buttons dead")
+    void brandedChromeIsMaximizedNotFullscreened() {
+        List<String> command = KioskBrowser.commandFor(
+                CHROME, "https://cinema.mosfilm.ru", 150, PROFILE, Optional.of(EXTENSION));
+
+        assertTrue(command.contains("--start-maximized"), command.toString());
+        assertFalse(command.contains("--start-fullscreen"), command.toString());
     }
 
     @Test
@@ -84,5 +96,17 @@ class KioskBrowserTest {
         assertTrue(KioskBrowser.isChromiumFamily("Brave Browser"));
         assertFalse(KioskBrowser.isChromiumFamily("firefox"));
         assertFalse(KioskBrowser.isChromiumFamily("safari"));
+    }
+
+    @Test
+    @DisplayName("branded Chrome is told apart from Chromium, which honours --load-extension")
+    void tellsBrandedChromeFromChromium() {
+        assertTrue(KioskBrowser.isBrandedChrome("google-chrome"));
+        assertTrue(KioskBrowser.isBrandedChrome("google-chrome-stable"));
+        assertTrue(KioskBrowser.isBrandedChrome("Chrome.exe"));
+        assertFalse(KioskBrowser.isBrandedChrome("chromium"));
+        assertFalse(KioskBrowser.isBrandedChrome("chromium-browser"));
+        assertFalse(KioskBrowser.isBrandedChrome("msedge.exe"));
+        assertFalse(KioskBrowser.isBrandedChrome("Brave Browser"));
     }
 }
