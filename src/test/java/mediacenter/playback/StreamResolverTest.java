@@ -20,11 +20,15 @@ class StreamResolverTest {
     @Test
     @DisplayName("the command asks for one address and hands the page URL through verbatim")
     void buildsTheDocumentedCommandLine() {
+        // Rendered by the platform, not spelled out: Windows prints this same
+        // path back with backslashes.
+        Path ytDlp = Path.of("/usr/local/bin/yt-dlp");
+
         List<String> command = StreamResolver.commandFor(
-                Path.of("/usr/local/bin/yt-dlp"), "https://cinema.mosfilm.ru/films/film/--dashes");
+                ytDlp, "https://cinema.mosfilm.ru/films/film/--dashes");
 
         assertEquals(List.of(
-                "/usr/local/bin/yt-dlp",
+                ytDlp.toString(),
                 "--dump-json",
                 "--no-playlist",
                 "--no-warnings",

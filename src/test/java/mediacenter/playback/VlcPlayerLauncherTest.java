@@ -112,8 +112,12 @@ class VlcPlayerLauncherTest {
     @Test
     @DisplayName("a resolved stream plays with the headers its host insists on")
     void buildsTheStreamCommandLine() {
+        // Rendered by the platform, not spelled out: Windows prints this same
+        // path back with backslashes.
+        Path vlc = Path.of("/usr/bin/vlc");
+
         List<String> command = VlcPlayerLauncher.streamCommandFor(
-                Path.of("/usr/bin/vlc"),
+                vlc,
                 "https://cdn.example.org/film/index.m3u8?sig=abc",
                 // Header names arrive as yt-dlp spells them, any case.
                 java.util.Map.of(
@@ -123,7 +127,7 @@ class VlcPlayerLauncherTest {
                 10, List.of("--no-one-instance"));
 
         assertEquals(List.of(
-                "/usr/bin/vlc",
+                vlc.toString(),
                 "--fullscreen",
                 "--play-and-exit",
                 "--network-caching=10000",
@@ -136,13 +140,15 @@ class VlcPlayerLauncherTest {
     @Test
     @DisplayName("a stream with no headers and no buffer gets the plain command line")
     void buildsThePlainStreamCommandLine() {
+        Path vlc = Path.of("/usr/bin/vlc");
+
         assertEquals(List.of(
-                "/usr/bin/vlc",
+                vlc.toString(),
                 "--fullscreen",
                 "--play-and-exit",
                 "https://cdn.example.org/film.mp4"),
                 VlcPlayerLauncher.streamCommandFor(
-                        Path.of("/usr/bin/vlc"), "https://cdn.example.org/film.mp4",
+                        vlc, "https://cdn.example.org/film.mp4",
                         java.util.Map.of(), 0, List.of()));
     }
 
