@@ -35,6 +35,8 @@ import mediacenter.json.JsonValue.JsonString;
  * <ul>
  *   <li>{@code GET  /api/status} — what the kiosk browser is showing</li>
  *   <li>{@code POST /api/open}   — {@code {"url": "…"}}, open it full screen</li>
+ *   <li>{@code POST /api/watch}  — {@code {"url": "…"}}, extract the page's
+ *       stream with yt-dlp and play it in VLC instead of the browser</li>
  *   <li>{@code POST /api/stop}   — close the browser, back to the main menu</li>
  * </ul>
  *
@@ -69,6 +71,7 @@ public final class RemoteControlServer {
         server.createContext("/", this::handleIndex);
         server.createContext("/api/status", this::handleStatus);
         server.createContext("/api/open", this::handleOpen);
+        server.createContext("/api/watch", this::handleWatch);
         server.createContext("/api/stop", this::handleStop);
     }
 
@@ -169,6 +172,33 @@ public final class RemoteControlServer {
                 return;
             }
             LOG.log(Level.INFO, () -> "Remote request to open " + url.get());
+            respondJson(exchange, 200, new JsonObject(Map.of("ok", new JsonBoolean(true))));
+        }
+    }
+
+    /**
+     * Unlike its siblings this one takes its time: the kiosk runs yt-dlp
+     * before answering, so the caller — the extension's button, a phone —
+     * learns whether the film is actually coming. Handlers run on the
+     * application's virtual-thread executor, so the wait starves nobody.
+     */
+    private void handleWatch(HttpExchange exchange) throws IOException {
+        try (exchange) {
+            if (!exchange.getRequestMethod().equals("POST")) {
+                respondJson(exchange, 405, error("Use POST"));
+                return;
+            }
+            Optional<String> url = readUrl(exchange.getRequestBody());
+            if (url.isEmpty()) {
+                respondJson(exchange, 400, error("Send {\"url\": \"…\"}"));
+                return;
+            }
+            LOG.log(Level.INFO, () -> "Remote request to watch " + url.get());
+            Optional<String> complaint = kiosk.watchUrl(url.get());
+            if (complaint.isPresent()) {
+                respondJson(exchange, 409, error(complaint.get()));
+                return;
+            }
             respondJson(exchange, 200, new JsonObject(Map.of("ok", new JsonBoolean(true))));
         }
     }

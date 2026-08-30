@@ -76,6 +76,7 @@ class SettingsStoreTest {
         ApplicationSettings original = new ApplicationSettings(
                 Optional.of(Path.of("C:\\Program Files\\VideoLAN\\VLC\\vlc.exe")),
                 Optional.of(Path.of("C:\\Program Files\\Mozilla Firefox\\firefox.exe")),
+                Optional.of(Path.of("C:\\Tools\\yt-dlp.exe")),
                 false,
                 Theme.LIGHT,
                 List.of(movies, tv),
@@ -94,6 +95,7 @@ class SettingsStoreTest {
 
         assertEquals(original.vlcPath(), reloaded.vlcPath());
         assertEquals(original.browserPath(), reloaded.browserPath());
+        assertEquals(original.ytDlpPath(), reloaded.ytDlpPath());
         assertFalse(reloaded.fullScreen());
         assertEquals(Theme.LIGHT, reloaded.theme());
         assertEquals(2, reloaded.mediaRoots().size());

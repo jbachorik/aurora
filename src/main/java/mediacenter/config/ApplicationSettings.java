@@ -15,6 +15,7 @@ import mediacenter.media.MediaRootType;
 public record ApplicationSettings(
         Optional<Path> vlcPath,
         Optional<Path> browserPath,
+        Optional<Path> ytDlpPath,
         boolean fullScreen,
         Theme theme,
         List<MediaRoot> mediaRoots,
@@ -29,6 +30,7 @@ public record ApplicationSettings(
     public ApplicationSettings {
         vlcPath = vlcPath == null ? Optional.empty() : vlcPath;
         browserPath = browserPath == null ? Optional.empty() : browserPath;
+        ytDlpPath = ytDlpPath == null ? Optional.empty() : ytDlpPath;
         theme = theme == null ? Theme.DARK : theme;
         mediaRoots = mediaRoots == null ? List.of() : List.copyOf(mediaRoots);
         websites = websites == null ? List.of() : List.copyOf(websites);
@@ -50,43 +52,53 @@ public record ApplicationSettings(
 
     public static ApplicationSettings defaults() {
         return new ApplicationSettings(
-                Optional.empty(), Optional.empty(), true, Theme.DARK, List.of(), 5, 1, 10, false,
-                List.of(), 150, ScraperSettings.defaults());
+                Optional.empty(), Optional.empty(), Optional.empty(), true, Theme.DARK, List.of(),
+                5, 1, 10, false, List.of(), 150, ScraperSettings.defaults());
     }
 
     public ApplicationSettings withVlcPath(Optional<Path> newVlcPath) {
         return new ApplicationSettings(
-                newVlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                newVlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withBrowserPath(Optional<Path> newBrowserPath) {
         return new ApplicationSettings(
-                vlcPath, newBrowserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, newBrowserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+    }
+
+    /**
+     * Where yt-dlp lives, when the user has pointed at one by hand — a
+     * {@code config.json} entry, with no Settings row yet. Absent means look
+     * for it on the PATH and in the usual install spots.
+     */
+    public ApplicationSettings withYtDlpPath(Optional<Path> newYtDlpPath) {
+        return new ApplicationSettings(
+                vlcPath, browserPath, newYtDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withFullScreen(boolean newFullScreen) {
         return new ApplicationSettings(
-                vlcPath, browserPath, newFullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, newFullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withTheme(Theme newTheme) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, newTheme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, newTheme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withMediaRoots(List<MediaRoot> newMediaRoots) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, newMediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, newMediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withSlideshowSeconds(int newSlideshowSeconds) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, newSlideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, newSlideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     public ApplicationSettings withPlayerBufferSeconds(int newPlayerBufferSeconds) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, newPlayerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, newPlayerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     /**
@@ -96,7 +108,7 @@ public record ApplicationSettings(
      */
     public ApplicationSettings withMirrorGigabytes(int newMirrorGigabytes) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, newMirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, newMirrorGigabytes, embeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     /**
@@ -107,7 +119,7 @@ public record ApplicationSettings(
      */
     public ApplicationSettings withEmbeddedPlayer(boolean newEmbeddedPlayer) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, newEmbeddedPlayer, websites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, newEmbeddedPlayer, websites, browserScalePercent, scraper);
     }
 
     /** Adds a root, replacing any existing root with the same id. */
@@ -144,7 +156,7 @@ public record ApplicationSettings(
 
     public ApplicationSettings withWebsites(List<Website> newWebsites) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, newWebsites, browserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, newWebsites, browserScalePercent, scraper);
     }
 
     /** Adds a website tile, replacing any existing one with the same id. */
@@ -172,12 +184,12 @@ public record ApplicationSettings(
     /** How much larger a website tile asks the browser to draw everything. */
     public ApplicationSettings withBrowserScalePercent(int newBrowserScalePercent) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, newBrowserScalePercent, scraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, newBrowserScalePercent, scraper);
     }
 
     /** How — and whether — series and movie folders are identified online. */
     public ApplicationSettings withScraper(ScraperSettings newScraper) {
         return new ApplicationSettings(
-                vlcPath, browserPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, newScraper);
+                vlcPath, browserPath, ytDlpPath, fullScreen, theme, mediaRoots, slideshowSeconds, playerBufferSeconds, mirrorGigabytes, embeddedPlayer, websites, browserScalePercent, newScraper);
     }
 }

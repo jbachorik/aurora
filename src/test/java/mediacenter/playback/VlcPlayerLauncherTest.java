@@ -110,6 +110,43 @@ class VlcPlayerLauncherTest {
     }
 
     @Test
+    @DisplayName("a resolved stream plays with the headers its host insists on")
+    void buildsTheStreamCommandLine() {
+        List<String> command = VlcPlayerLauncher.streamCommandFor(
+                Path.of("/usr/bin/vlc"),
+                "https://cdn.example.org/film/index.m3u8?sig=abc",
+                // Header names arrive as yt-dlp spells them, any case.
+                java.util.Map.of(
+                        "referer", "https://cinema.mosfilm.ru/film",
+                        "User-Agent", "Mozilla/5.0",
+                        "Accept", "*/*"),
+                10, List.of("--no-one-instance"));
+
+        assertEquals(List.of(
+                "/usr/bin/vlc",
+                "--fullscreen",
+                "--play-and-exit",
+                "--network-caching=10000",
+                "--http-referrer=https://cinema.mosfilm.ru/film",
+                "--http-user-agent=Mozilla/5.0",
+                "--no-one-instance",
+                "https://cdn.example.org/film/index.m3u8?sig=abc"), command);
+    }
+
+    @Test
+    @DisplayName("a stream with no headers and no buffer gets the plain command line")
+    void buildsThePlainStreamCommandLine() {
+        assertEquals(List.of(
+                "/usr/bin/vlc",
+                "--fullscreen",
+                "--play-and-exit",
+                "https://cdn.example.org/film.mp4"),
+                VlcPlayerLauncher.streamCommandFor(
+                        Path.of("/usr/bin/vlc"), "https://cdn.example.org/film.mp4",
+                        java.util.Map.of(), 0, List.of()));
+    }
+
+    @Test
     @DisplayName("Unicode file names reach VLC unchanged")
     void passesUnicodeFileNamesThrough() {
         String unicodeName = "\\\\synology\\video\\Movies\\Amélie (2001)\\Amélie 岸辺.mkv";

@@ -189,6 +189,20 @@ their own fullscreen buttons keep working — at the price of a title bar
 whenever no film is playing. Prefer Chromium, Edge or Brave for the borderless
 version.
 
+**Watching in Aurora's own player:** on a page with a video, the extension
+draws a small **▶ Watch in Aurora** button in the corner (`W` presses it too).
+It hands the page's address back to the media center, which extracts the
+actual stream with [yt-dlp](https://github.com/yt-dlp/yt-dlp) and plays it in
+VLC — native fullscreen, the usual keys, no browser quirks — closing the
+browser on the way. This needs `yt-dlp` installed (on the PATH, or point
+`ytDlpPath` in `config.json` at it) and works for sites whose streams are not
+DRM-protected: Mosfilm's free catalogue qualifies, the big subscription
+services do not — for those the page itself remains the player. When a page
+does not resolve, the button says so and the site keeps playing in the
+browser; a stale yt-dlp is the usual reason (`yt-dlp -U` updates it). The
+same thing is reachable from a phone as `POST /api/watch` with
+`{"url": "…"}` on the remote-control server.
+
 **Leaving a site:** `Ctrl+Q` closes the browser and the media center returns
 — the same key that quits VLC, provided by a tiny bundled extension the
 kiosk launch loads into its own profile. `Ctrl+W` (close window) works

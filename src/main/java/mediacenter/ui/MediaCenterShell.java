@@ -46,6 +46,8 @@ import mediacenter.media.MediaScanner;
 import mediacenter.playback.PlayablePaths;
 import mediacenter.playback.PlaybackResult;
 import mediacenter.playback.PlaybackService;
+import mediacenter.playback.StreamResolver;
+import mediacenter.playback.VlcPlayerLauncher;
 import mediacenter.playback.cache.PlaybackPreparer;
 import mediacenter.playback.vlc.VlcEngine;
 import mediacenter.platform.KioskBrowser;
@@ -508,6 +510,75 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         }
         openWebsite(Website.create("Remote", url));
         return Optional.empty();
+    }
+
+    /**
+     * The kiosk page's "Watch in Aurora": resolve the stream while the caller
+     * waits for the verdict, and only on success take the screen — the
+     * browser closes and VLC plays what the page was offering. A failure
+     * leaves the browser exactly where it was, showing the film the site's
+     * own way.
+     */
+    @Override
+    public Optional<String> watchUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return Optional.of("The address is empty.");
+        }
+        Optional<Path> vlc = settings().vlcPath();
+        if (vlc.isEmpty()) {
+            return Optional.of("VLC was not found. Choose it in Settings on the TV first.");
+        }
+        Optional<Path> ytDlp = StreamResolver.locate(settings().ytDlpPath());
+        if (ytDlp.isEmpty()) {
+            return Optional.of("yt-dlp was not found. Install it, "
+                    + "or point \"ytDlpPath\" in config.json at it.");
+        }
+        Optional<StreamResolver.ResolvedStream> stream =
+                new StreamResolver(ytDlp.get()).resolve(url);
+        if (stream.isEmpty()) {
+            return Optional.of("No playable stream was found on this page.");
+        }
+        playStream(vlc.get(), stream.get());
+        return Optional.empty();
+    }
+
+    /**
+     * The same silent handover as a replacing launch in {@code openWebsite}:
+     * the browser process is taken out of the reference before the destroy,
+     * so its watcher does not restore the window under the player.
+     */
+    private void playStream(Path vlc, StreamResolver.ResolvedStream stream) {
+        backgroundExecutor.execute(() -> {
+            Process browser = kioskProcess.getAndSet(null);
+            kioskUrl = null;
+            if (browser != null) {
+                browser.destroy();
+            }
+            List<String> command = VlcPlayerLauncher.streamCommandFor(
+                    vlc, stream.url(), stream.httpHeaders(),
+                    settings().playerBufferSeconds(), platform.playerOptions());
+            LOG.log(Level.INFO, () -> "Starting stream playback"
+                    + stream.title().map(title -> " of " + title).orElse("")
+                    + ": " + String.join(" ", command));
+            try {
+                Process process = new ProcessBuilder(command)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start();
+                int exitCode = process.waitFor();
+                LOG.log(Level.INFO, () -> "Stream playback ended with exit code " + exitCode);
+                FxTasks.onFx(this::restoreAfterPlayback);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                FxTasks.onFx(this::restoreAfterPlayback);
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "VLC could not be started for the stream", e);
+                FxTasks.onFx(() -> {
+                    restoreAfterPlayback();
+                    showError("VLC could not be started. Check its path in Settings.");
+                });
+            }
+        });
     }
 
     @Override
