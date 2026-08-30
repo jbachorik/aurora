@@ -20,6 +20,7 @@ import mediacenter.media.MediaRoot;
 import mediacenter.media.MediaRootType;
 import mediacenter.media.PhotoWalker;
 import mediacenter.media.SeriesFolders;
+import mediacenter.scrape.ScrapedMetadata;
 import mediacenter.ui.components.MediaListRow;
 import mediacenter.ui.components.MediaListView;
 import mediacenter.ui.components.PosterPane;
@@ -467,9 +468,12 @@ public final class BrowseView implements View {
     /**
      * A scrape may have just put a poster where this page remembered "none":
      * the remembered answer goes, and the line — if it is the selected one —
-     * asks again and fills the column.
+     * asks again and fills the column. The banner says what was found — the
+     * one place the whole feature is visible before the posters arrive, and
+     * the place a wrong identification is caught while the folder it names
+     * is still on screen.
      */
-    private void onFolderScraped(Path scrapedFolder) {
+    private void onFolderScraped(Path scrapedFolder, ScrapedMetadata metadata) {
         if (discarded) {
             return;
         }
@@ -480,6 +484,8 @@ public final class BrowseView implements View {
                 showPosterFor(row);
             }
         });
+        context.navigation().showInfo("Identified \"" + metadata.title() + "\""
+                + metadata.year().map(year -> " (" + year + ")").orElse(""));
     }
 
     // -- activation ---------------------------------------------------------

@@ -28,6 +28,19 @@ class EpisodeTagsTest {
     }
 
     @Test
+    @DisplayName("a name that opens with its tag — no series name in front — still parses")
+    void parsesTagFirstNames() {
+        // The rest of the title follows a dash…
+        assertEquals(Optional.of(new SeasonEpisode(1, 5)),
+                EpisodeTags.parse("S01E05-The Wolf and the Lion.mkv"));
+        // …or dots, the other shape rippers write.
+        assertEquals(Optional.of(new SeasonEpisode(2, 3)),
+                EpisodeTags.parse("s02e03.The.North.Remembers.mkv"));
+        assertEquals(Optional.of(new SeasonEpisode(1, 1)),
+                EpisodeTags.parse("1x01 Pilot.mkv"));
+    }
+
+    @Test
     @DisplayName("what is not a tag yields nothing, exactly as it does not chain")
     void refusesWhatIsNotATag() {
         assertTrue(EpisodeTags.parse("movie.1280x720.mkv").isEmpty());

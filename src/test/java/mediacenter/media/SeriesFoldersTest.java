@@ -56,6 +56,18 @@ class SeriesFoldersTest {
     }
 
     @Test
+    @DisplayName("a tag at the very front of the name, title trailing behind, chains too")
+    void recognisesTagFirstNames() {
+        // What some rippers write when the folder already names the series.
+        assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
+                "S01E01-Winter Is Coming.mkv",
+                "S01E02-The Kingsroad.mkv")));
+        assertTrue(SeriesFolders.looksLikeEpisodes(List.of(
+                "s01e01.winter.is.coming.mkv",
+                "s01e02.the.kingsroad.mkv")));
+    }
+
+    @Test
     @DisplayName("a parted tag still has to be a tag, not two unrelated numbers")
     void doesNotInventEpisodeTags() {
         // The separator is a short run of punctuation, and what follows it has
