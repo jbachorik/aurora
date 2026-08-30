@@ -39,6 +39,37 @@ Windows has not mapped cannot be browsed to, so both ways are supported). VLC is
 located automatically; if it is somewhere unusual, point Settings at `vlc.exe`.
 
 
+What the TV machine needs
+-------------------------
+
+The media center itself ships self-contained; the programs it drives do not.
+Three of them, only the first strictly required:
+
+| Program                       | For                                          |
+|-------------------------------|----------------------------------------------|
+| **VLC**                       | playing everything                           |
+| a **Chromium-family browser** | website tiles (Chromium, Chrome, Edge, Brave, Vivaldi, Opera — see the notes on branded Chrome below) |
+| **yt-dlp**                    | the *Watch in Aurora* button on website pages |
+
+One script installs whatever is missing and leaves the rest alone:
+
+```bash
+scripts/install-dependencies.sh        # Linux (apt, dnf, pacman, zypper) and macOS (brew)
+```
+
+```powershell
+scripts\install-dependencies.ps1       # Windows, via winget; Edge already counts as the browser
+```
+
+VLC and yt-dlp are found automatically (the PATH plus the usual install
+spots); the browser is chosen in Settings. A yt-dlp installed as the
+standalone binary keeps itself current with `yt-dlp -U`, which is the first
+thing to try when a site stops resolving. On the original Windows 7 target
+there is no winget — install [VLC](https://www.videolan.org) and drop
+[yt-dlp.exe](https://github.com/yt-dlp/yt-dlp/releases) anywhere on the PATH
+(or point `ytDlpPath` in `config.json` at it) by hand.
+
+
 Using it
 --------
 
