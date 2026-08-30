@@ -328,6 +328,13 @@ class PlaybackPreparerTest {
         Path takeover = session.takeoverAt(media, 0).orElseThrow();
         assertNotEquals(media, takeover);
         assertArrayEquals(Files.readAllBytes(media), Files.readAllBytes(takeover));
+        // The takeover can be offered the instant the last byte is down, a
+        // moment before the copy thread's completion callback publishes the
+        // copy to the path map — so that map is polled, not read once.
+        while (session.playablePath(media).equals(media)
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
         assertNotEquals(media, session.playablePath(media),
                 "once landed, the copy also answers for later entries and sessions");
     }
