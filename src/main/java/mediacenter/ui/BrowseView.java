@@ -8,10 +8,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Semaphore;
 
+import javafx.geometry.Insets;
 import javafx.scene.Node;
+import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 
 import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaAccessException;
@@ -21,6 +25,7 @@ import mediacenter.media.MediaRootType;
 import mediacenter.media.PhotoWalker;
 import mediacenter.media.SeriesFolders;
 import mediacenter.scrape.ScrapedMetadata;
+import mediacenter.scrape.ScrapedMetadataStore;
 import mediacenter.ui.components.MediaListRow;
 import mediacenter.ui.components.MediaListView;
 import mediacenter.ui.components.PosterPane;
@@ -35,6 +40,12 @@ import mediacenter.ui.components.PosterPane;
  * name echoed at its front; {@link mediacenter.media.ParentPrefixes} drops it. Artwork is looked up only for the selected line, which
  * makes browsing a slow share cost one directory listing at a time instead of
  * one per visible folder.
+ *
+ * <p>A folder the scraper has identified earns the one departure from on-disk
+ * names: its line is re-captioned with the scraped title — "Breaking Bad"
+ * where the disk says {@code Breaking.Bad.S01-S05.COMPLETE.1080p} — and the
+ * selected folder's year and synopsis appear under its poster. The disk name
+ * still governs the sort, so the shelf keeps its order.
  *
  * <p>A folder of episodes plays onwards: starting one video also queues the
  * ones after it in the listing, so finishing an episode rolls into the next
@@ -67,6 +78,12 @@ public final class BrowseView implements View {
     private final BorderPane content = new BorderPane();
     private final MediaListView list = new MediaListView();
     private final PosterPane poster;
+    /** Year and synopsis of the selected identified folder, under its poster. */
+    private final Label overview = new Label();
+
+    /** Stateless file readers; which one a folder answers to is the root's call. */
+    private static final ScrapedMetadataStore SERIES_METADATA = ScrapedMetadataStore.series();
+    private static final ScrapedMetadataStore MOVIE_METADATA = ScrapedMetadataStore.movies();
 
     /**
      * Folder-artwork answers already fetched, so walking the selection back over
@@ -82,6 +99,12 @@ public final class BrowseView implements View {
      * it browses — the collapse is a shortcut, never something to wait for.
      */
     private final Map<Path, Optional<MediaItem>> soleMediaByFolder = new HashMap<>();
+
+    /**
+     * What the scraper knows about each folder on screen, as the same sweep
+     * answers. Only touched on the JavaFX thread; emptied by every load.
+     */
+    private final Map<Path, ScrapedMetadata> scrapedByFolder = new HashMap<>();
 
     private List<MediaItem> items = List.of();
     /** The rows on screen, kept so the watched marks can be re-applied in place. */
@@ -102,7 +125,16 @@ public final class BrowseView implements View {
         this.poster = new PosterPane(context.artworkCache());
 
         content.setCenter(list);
-        content.setRight(poster);
+        // The poster with the scraper's words beneath it — hidden entirely for
+        // a selection nothing is known about, so the column stays pure image.
+        overview.getStyleClass().add("poster-overview");
+        overview.setWrapText(true);
+        overview.setMaxWidth(PosterPane.WIDTH - 48);
+        overview.setPadding(new Insets(0, 24, 24, 24));
+        showOverview(null);
+        VBox rightColumn = new VBox(poster, overview);
+        VBox.setVgrow(poster, Priority.ALWAYS);
+        content.setRight(rightColumn);
 
         list.setOnActivate(this::activate);
         list.setOnSelectionChanged(this::showPosterFor);
@@ -172,7 +204,9 @@ public final class BrowseView implements View {
         int generation = ++loadGeneration;
         directoryArtwork.clear();
         soleMediaByFolder.clear();
+        scrapedByFolder.clear();
         poster.clear();
+        showOverview(null);
         list.showMessage("Loading…");
         FxTasks.run(
                 context.backgroundExecutor(),
@@ -234,17 +268,21 @@ public final class BrowseView implements View {
     }
 
     /**
-     * Peeks into each sub-folder for the single medium it may collapse into.
+     * Peeks into each sub-folder for the single medium it may collapse into —
+     * and, on a TV or Movies shelf, for the metadata an earlier scrape left
+     * there, whose title re-captions the row.
      *
      * <p>Each peek is a directory listing, which over a share is the whole
      * cost — so the list is on screen first and the answers re-badge rows as
-     * they arrive, exactly like the poster lookups. A load that has been
-     * replaced stops the moment it notices.
+     * they arrive, exactly like the poster lookups. The metadata piggybacks on
+     * the same trip: one small file read beside a listing already paid for.
+     * A load that has been replaced stops the moment it notices.
      */
     private void resolveSoleMedia(List<MediaListRow> directoryRows, int generation) {
         if (directoryRows.isEmpty()) {
             return;
         }
+        Optional<ScrapedMetadataStore> metadataStore = metadataStore();
         Semaphore permits = new Semaphore(FOLDER_PEEK_PARALLELISM);
         for (MediaListRow row : directoryRows) {
             MediaItem folderItem = row.item().orElseThrow();
@@ -253,6 +291,7 @@ public final class BrowseView implements View {
                     return;
                 }
                 Optional<MediaItem> sole;
+                Optional<ScrapedMetadata> scraped;
                 try {
                     permits.acquire();
                 } catch (InterruptedException e) {
@@ -268,7 +307,9 @@ public final class BrowseView implements View {
                 } finally {
                     permits.release();
                 }
+                scraped = metadataStore.flatMap(store -> store.load(folderItem.path()));
                 Optional<MediaItem> answer = sole;
+                Optional<ScrapedMetadata> metadata = scraped;
                 FxTasks.onFx(() -> {
                     if (generation != loadGeneration || discarded) {
                         return;
@@ -282,9 +323,63 @@ public final class BrowseView implements View {
                             row.showWatched(true);
                         }
                     });
+                    metadata.ifPresent(found -> applyMetadata(row, folderItem.path(), found));
                 });
             });
         }
+    }
+
+    /**
+     * Which metadata file this shelf's folders would carry — a root's
+     * declaration again; a General root's folders carry none.
+     */
+    private Optional<ScrapedMetadataStore> metadataStore() {
+        return switch (root.type()) {
+            case TV -> Optional.of(SERIES_METADATA);
+            case MOVIES -> Optional.of(MOVIE_METADATA);
+            case GENERAL -> Optional.empty();
+        };
+    }
+
+    /**
+     * Puts what the scraper learned onto the screen: the row re-captioned with
+     * the real title, and — when this is the selected line — the year and
+     * synopsis under the poster.
+     */
+    private void applyMetadata(MediaListRow row, Path folderPath, ScrapedMetadata metadata) {
+        scrapedByFolder.put(folderPath, metadata);
+        row.showTitle(metadata.title());
+        if (isSelected(folderPath)) {
+            showOverview(metadata);
+        }
+    }
+
+    /**
+     * Fills — or empties, given null — the text under the poster: the year
+     * and status on one line, the synopsis after a blank one. Unmanaged when
+     * empty, so an unidentified selection gets the whole column for its image.
+     */
+    private void showOverview(ScrapedMetadata metadata) {
+        StringBuilder text = new StringBuilder();
+        if (metadata != null) {
+            metadata.year().ifPresent(text::append);
+            metadata.status().ifPresent(status -> {
+                if (!text.isEmpty()) {
+                    text.append("  ·  ");
+                }
+                text.append(status);
+            });
+            metadata.overview().ifPresent(synopsis -> {
+                if (!text.isEmpty()) {
+                    text.append("\n\n");
+                }
+                text.append(synopsis);
+            });
+        }
+        boolean present = !text.isEmpty();
+        overview.setText(text.toString());
+        overview.setVisible(present);
+        overview.setManaged(present);
     }
 
     /**
@@ -371,8 +466,12 @@ public final class BrowseView implements View {
         if (item == null) {
             // The slideshow line illustrates the whole folder, not one entry.
             poster.clear();
+            showOverview(null);
             return;
         }
+        // The scraper's words follow the selection the way the poster does;
+        // a line nothing is known about gets the whole column for its image.
+        showOverview(scrapedByFolder.get(item.path()));
         if (item.artworkPath().isPresent()) {
             poster.show(item.artworkPath().get());
             return;
@@ -410,9 +509,13 @@ public final class BrowseView implements View {
     }
 
     private boolean isSelected(MediaItem item) {
+        return isSelected(item.path());
+    }
+
+    private boolean isSelected(Path path) {
         return list.selectedRow()
                 .flatMap(MediaListRow::item)
-                .map(selected -> selected.path().equals(item.path()))
+                .map(selected -> selected.path().equals(path))
                 .orElse(false);
     }
 
@@ -478,6 +581,15 @@ public final class BrowseView implements View {
             return;
         }
         directoryArtwork.remove(scrapedFolder);
+        // The freshly identified folder earns its caption and synopsis at
+        // once, not on the next visit.
+        for (MediaListRow row : itemRows) {
+            MediaItem item = row.item().orElse(null);
+            if (item != null && item.path().equals(scrapedFolder)) {
+                applyMetadata(row, scrapedFolder, metadata);
+                break;
+            }
+        }
         list.selectedRow().ifPresent(row -> {
             MediaItem item = row.item().orElse(null);
             if (item != null && item.path().equals(scrapedFolder)) {

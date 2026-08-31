@@ -36,7 +36,7 @@ public final class MediaListRow extends HBox {
     private static final String WATCHED_CLASS = "media-row-watched";
 
     private final MediaItem item;
-    private final String title;
+    private String title;
     private final Label symbol;
     private final MarqueeLabel name;
     /** What the symbol column shows while the row is not marked watched. */
@@ -105,6 +105,18 @@ public final class MediaListRow extends HBox {
     public void showMediaSymbol(MediaItemType type) {
         symbolType = type;
         updateSymbol();
+    }
+
+    /**
+     * Re-captions the row with what the folder turned out to <em>be</em> — the
+     * scraped title of an identified series or film. The one deliberate
+     * departure from showing the on-disk name: "Breaking Bad" is the answer
+     * the ripper's name was a question about, and the disk name still governs
+     * the sort, so the shelf keeps its order.
+     */
+    public void showTitle(String newTitle) {
+        title = newTitle;
+        name.setText(newTitle);
     }
 
     /**

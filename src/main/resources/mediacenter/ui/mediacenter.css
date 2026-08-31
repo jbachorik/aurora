@@ -206,6 +206,13 @@
     -fx-padding: 24;
 }
 
+/* What the scraper learned about the selection, under its poster. */
+.poster-overview {
+    -fx-font-size: 17px;
+    -fx-text-fill: -mc-text-dim;
+    -fx-line-spacing: 2px;
+}
+
 /* ---------------------------------------------------------------- banner */
 
 .banner {
