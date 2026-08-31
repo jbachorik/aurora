@@ -79,7 +79,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private static final long PLAYBACK_GUARD_NANOS = 800_000_000L;
 
     /** How long the pointer may sit still before it is hidden. */
-    private static final Duration CURSOR_IDLE_DELAY = Duration.seconds(3);
+    private static final Duration CURSOR_IDLE_DELAY = Duration.seconds(5);
 
     private static final String HIDDEN_CURSOR_CLASS = "cursor-hidden";
 
@@ -323,11 +323,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
         // takes it away.
         remoteBadge.setVisible(remoteBadgeReady && view == homeView);
 
-        titleLabel.setText(view.title());
-        String subtitle = view.subtitle();
-        subtitleLabel.setText(subtitle);
-        subtitleLabel.setVisible(!subtitle.isBlank());
-        subtitleLabel.setManaged(!subtitle.isBlank());
+        refreshHeader();
         view.onShown();
 
         switch (direction) {
@@ -335,6 +331,16 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
             case BACKWARD -> Motion.slideFadeIn(view.node(), -Motion.PAGE_SLIDE, Motion.NORMAL);
             case NONE -> Motion.fadeIn(view.node(), Motion.NORMAL);
         }
+    }
+
+    @Override
+    public void refreshHeader() {
+        View view = currentView();
+        titleLabel.setText(view.title());
+        String subtitle = view.subtitle();
+        subtitleLabel.setText(subtitle);
+        subtitleLabel.setVisible(!subtitle.isBlank());
+        subtitleLabel.setManaged(!subtitle.isBlank());
     }
 
     /** Which way the viewer is moving through the page stack. */
