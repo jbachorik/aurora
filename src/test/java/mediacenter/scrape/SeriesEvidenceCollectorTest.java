@@ -51,6 +51,19 @@ class SeriesEvidenceCollectorTest {
     }
 
     @Test
+    @DisplayName("episodes whose names open with the tag itself still count")
+    void readsTagFirstEpisodes(@TempDir Path temp) throws IOException {
+        Path series = Files.createDirectory(temp.resolve("Game of Thrones"));
+        Files.createFile(series.resolve("S01E01-Winter Is Coming.mkv"));
+        Files.createFile(series.resolve("s01e02.the.kingsroad.mkv"));
+        Files.createFile(series.resolve("S02E01-The North Remembers.mkv"));
+
+        SeriesEvidence evidence = collector.collect(series).orElseThrow();
+
+        assertEquals(Map.of(1, 2, 2, 1), evidence.episodesPerSeason());
+    }
+
+    @Test
     @DisplayName("bare ordering prefixes read as season one")
     void readsOrderingPrefixesAsSeasonOne(@TempDir Path temp) throws IOException {
         Path series = Files.createDirectory(temp.resolve("Planet Earth"));

@@ -57,6 +57,31 @@ class DisplayNamesTest {
     }
 
     @Test
+    @DisplayName("a leading episode tag is ordering too, and goes the same way")
+    void dropsALeadingEpisodeTag() {
+        assertEquals("The Wolf and the Lion",
+                DisplayNames.forFileName("S01E05-The Wolf and the Lion.mkv"));
+        assertEquals("the kingsroad",
+                DisplayNames.forFileName("s01e02.the.kingsroad.mkv"));
+        assertEquals("Pilot", DisplayNames.forFileName("1x01 Pilot.mkv"));
+        assertEquals("Pilot", DisplayNames.forFileName("S01.E01 - Pilot.mkv"));
+    }
+
+    @Test
+    @DisplayName("a tag in the middle of a name stays: cutting a middle out is guessing")
+    void keepsAMidNameEpisodeTag() {
+        assertEquals("Breaking Bad S01E01 Pilot",
+                DisplayNames.forFileName("Breaking.Bad.S01E01.Pilot.mkv"));
+    }
+
+    @Test
+    @DisplayName("a name that is nothing but its tag keeps the tag")
+    void keepsANameThatIsOnlyATag() {
+        assertEquals("S01E05", DisplayNames.forFileName("S01E05.mkv"));
+        assertEquals("1x01", DisplayNames.forFileName("1x01.mkv"));
+    }
+
+    @Test
     @DisplayName("a number that is part of the title survives, having no separator after it")
     void keepsALeadingNumberThatBelongsToTheTitle() {
         assertEquals("12 Angry Men", DisplayNames.forFileName("12 Angry Men.mkv"));

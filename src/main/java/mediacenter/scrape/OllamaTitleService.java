@@ -89,9 +89,20 @@ public final class OllamaTitleService {
 
             HttpResponse<String> response = client.send(
                     request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() != 200) {
-                LOG.log(Level.INFO, () -> "Ollama answered HTTP " + response.statusCode()
-                        + " for \"" + folderName + "\"");
+            int status = response.statusCode();
+            if (status == 401 || status == 403) {
+                // Worth a warning and the server's own words: the hosted
+                // service turns away anything but an API key made on its
+                // keys page, and "401" alone sends nobody there.
+                LOG.log(Level.WARNING, () -> "Ollama refused the credential (HTTP " + status
+                        + ") — check the Ollama API key in Settings; the hosted service needs "
+                        + "an API key from ollama.com/settings/keys. Server said: "
+                        + briefBody(response.body()));
+                return Optional.empty();
+            }
+            if (status != 200) {
+                LOG.log(Level.INFO, () -> "Ollama answered HTTP " + status
+                        + " for \"" + folderName + "\": " + briefBody(response.body()));
                 return Optional.empty();
             }
             return parseResponse(response.body());
@@ -211,6 +222,15 @@ public final class OllamaTitleService {
     /** Television with a year outside this range is a hallucination, not a fact. */
     private static boolean isPlausibleYear(int year) {
         return year >= 1930 && year <= 2100;
+    }
+
+    /** An error body's first line, bounded — servers explain, logs should not scroll. */
+    private static String briefBody(String body) {
+        if (body == null || body.isBlank()) {
+            return "(no body)";
+        }
+        String firstLine = body.strip().lines().findFirst().orElse("");
+        return firstLine.length() <= 200 ? firstLine : firstLine.substring(0, 200) + "…";
     }
 
     private static String trimTrailingSlash(String endpoint) {

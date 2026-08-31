@@ -53,6 +53,11 @@ public final class MarqueeLabel extends Pane {
         label.getStyleClass().add(styleClass);
     }
 
+    /** Replaces the line's text; the width listener restarts any glide to fit. */
+    public void setText(String text) {
+        label.setText(text);
+    }
+
     /** Starts or stops the glide; stopping snaps the line back to its beginning. */
     public void setScrolling(boolean scrolling) {
         if (this.scrolling == scrolling) {

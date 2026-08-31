@@ -59,7 +59,7 @@ public final class ScrapeService {
     private final Set<Path> organized = ConcurrentHashMap.newKeySet();
 
     /** Who to tell when a folder gains metadata; the browse page showing it, mostly. */
-    private volatile Consumer<Path> onScraped = folder -> { };
+    private volatile BiConsumer<Path, ScrapedMetadata> onScraped = (folder, metadata) -> { };
 
     /** Who to tell when a shelf's loose films were foldered; that page must reload. */
     private volatile Consumer<Path> onReorganized = folder -> { };
@@ -93,8 +93,8 @@ public final class ScrapeService {
     }
 
     /** Registers the one interested party, replacing the previous one. */
-    public void setOnScraped(Consumer<Path> listener) {
-        this.onScraped = listener == null ? folder -> { } : listener;
+    public void setOnScraped(BiConsumer<Path, ScrapedMetadata> listener) {
+        this.onScraped = listener == null ? (folder, metadata) -> { } : listener;
     }
 
     /** Registers who hears about a tidied shelf, replacing the previous one. */
@@ -201,8 +201,9 @@ public final class ScrapeService {
             }
             Optional<ScrapedMetadata> scraped = scrape(folder, kind, current);
             if (scraped.isPresent()) {
-                Consumer<Path> listener = onScraped;
-                notificationExecutor.execute(() -> listener.accept(folder));
+                ScrapedMetadata metadata = scraped.get();
+                BiConsumer<Path, ScrapedMetadata> listener = onScraped;
+                notificationExecutor.execute(() -> listener.accept(folder, metadata));
             }
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, e, () -> "Scraping " + folder + " failed");
