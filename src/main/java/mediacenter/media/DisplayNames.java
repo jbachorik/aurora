@@ -100,9 +100,15 @@ public final class DisplayNames {
         return stripped.isBlank() ? name : stripped;
     }
 
-    /** Same reasoning, for names that open with their tag — unless the tag is all there is. */
-    private static String withoutLeadingEpisodeTag(String name) {
+    /**
+     * Same reasoning, for names that open with their tag — unless the tag is
+     * all there is. Public as well as part of {@link #forFileName}: dropping a
+     * parent folder's echo can leave a mid-name tag newly at the front —
+     * "Breaking Bad S01E01 Pilot" less its folder's echo opens with "S01E01" —
+     * and the list applies this once more to finish the job.
+     */
+    public static String withoutLeadingEpisodeTag(String name) {
         String stripped = LEADING_EPISODE_TAG.matcher(name).replaceFirst("");
-        return stripped.isBlank() ? name : stripped;
+        return stripped.isBlank() ? name : stripped.trim();
     }
 }

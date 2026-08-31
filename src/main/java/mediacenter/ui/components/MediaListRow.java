@@ -8,20 +8,24 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 
+import mediacenter.media.DisplayNames;
 import mediacenter.media.MediaItem;
 import mediacenter.media.MediaItemType;
 import mediacenter.media.ParentPrefixes;
 
 /**
- * One line of a browsed folder: a type symbol and the actual file name.
+ * One line of a browsed folder: a type symbol and the entry's readable name.
  *
- * <p>Deliberately not a tile. The whole point of the list is that the name on
- * disk is readable — the row shows it verbatim, extension and all, and a name
- * still wider than the line scrolls slowly under the selection rather than
- * being cut off. Only the selected row scrolls; the rest hold still, because a
- * page of sliding names cannot be read. The one edit made is dropping a parent
- * folder's name echoed at the front — see {@link ParentPrefixes} — which is
- * removing repetition, not information: the folder is the page being browsed.
+ * <p>Deliberately not a tile. The line carries the {@link DisplayNames
+ * display name} — extension gone, separators spaced, ordering prefixes and
+ * leading episode tags dropped — because from a sofa the name is a title, not
+ * a path; the on-disk truth stays one glance away in the header's subtitle,
+ * and the on-disk name still governs the sort. A name wider than the line
+ * scrolls slowly under the selection rather than being cut off; only the
+ * selected row scrolls, because a page of sliding names cannot be read. A
+ * parent folder's name echoed at the front is dropped too — see
+ * {@link ParentPrefixes} — and where that uncovers an episode tag, the tag
+ * goes the way a leading one always goes.
  *
  * <p>Focus is the selection, exactly as with {@code Tile}: the {@code :focused}
  * pseudo-class drives the highlight, so "what is highlighted" and "what Enter
@@ -44,15 +48,25 @@ public final class MediaListRow extends HBox {
     private boolean watched;
 
     /**
-     * A row for one scanned entry, showing its on-disk name — less any parent
-     * folder's name echoed at the front of it.
+     * A row for one scanned entry, captioned with its display name — less any
+     * parent folder's name echoed at the front of it.
      *
      * @param parentFolderNames the on-disk names of the folders above the entry,
      *                          within the root being browsed
      */
     public static MediaListRow forItem(MediaItem item, Collection<String> parentFolderNames) {
-        return new MediaListRow(item, symbolFor(item),
-                ParentPrefixes.withoutParentPrefix(fileNameOf(item), parentFolderNames));
+        return new MediaListRow(item, symbolFor(item), captionFor(item, parentFolderNames));
+    }
+
+    /**
+     * The line's caption: the display name, the parent echo gone, and any
+     * episode tag the echo's removal uncovered at the front gone with it —
+     * "Breaking Bad S01E01 Pilot" inside "Breaking Bad" reads simply "Pilot".
+     * Static and pure so the whole pipeline stays testable without a toolkit.
+     */
+    static String captionFor(MediaItem item, Collection<String> parentFolderNames) {
+        String withoutEcho = ParentPrefixes.withoutParentPrefix(item.displayName(), parentFolderNames);
+        return DisplayNames.withoutLeadingEpisodeTag(withoutEcho);
     }
 
     /** A row for a page action such as the slideshow; {@link #item()} is empty. */
@@ -150,14 +164,4 @@ public final class MediaListRow extends HBox {
         };
     }
 
-    /**
-     * The name as it is on disk, extension included — what this list exists to
-     * show. Only a filesystem root has no file name of its own, and such a path
-     * never appears as an entry inside a scanned folder; the display name is a
-     * fallback for exactly that never-case.
-     */
-    private static String fileNameOf(MediaItem item) {
-        var fileName = item.path().getFileName();
-        return fileName == null ? item.displayName() : fileName.toString();
-    }
 }

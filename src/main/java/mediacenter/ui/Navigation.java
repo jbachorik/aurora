@@ -52,6 +52,13 @@ public interface Navigation {
 
     void exitApplication();
 
+    /**
+     * Re-reads the current page's title and subtitle into the header — for a
+     * page whose title just got better, such as a folder the scraper has now
+     * identified.
+     */
+    void refreshHeader();
+
     /** Shows a transient, friendly error. */
     void showError(String message);
 

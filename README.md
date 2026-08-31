@@ -366,13 +366,20 @@ Three steps, each falling back gracefully to the next:
    still works. Either way, a match that is not clearly ahead of the
    runner-up is discarded — a wrong poster is worse than none.
 
-What was learned shows up in three places. Each identification announces
+What was learned shows up in four places. Each identification announces
 itself in the status banner as it happens. An identified folder's line is
 **re-captioned with the real title** — "Breaking Bad" where the disk says
-`Breaking.Bad.S01-S05.COMPLETE.1080p` — the one deliberate departure from
-showing on-disk names, and the disk name still governs the sort, so the
-shelf keeps its order. And selecting the folder puts its **year, status and
-synopsis under the poster**.
+`Breaking.Bad.S01-S05.COMPLETE.1080p`. The same title **heads the page**
+when the folder is browsed into, with the on-disk path a glance away in the
+header's subtitle. And selecting the folder puts its **year, status and
+synopsis under the poster**. The disk name still governs the sort
+throughout, so the shelf keeps its order.
+
+Whether identified or not, every browse line carries its entry's cleaned
+**display name** — extension gone, dots and underscores spaced, ordering
+prefixes, leading `SxxEyy` tags and a parent folder's echoed name dropped —
+so `Breaking.Bad.S01E01.Pilot.mkv` inside "Breaking Bad" reads simply
+"Pilot".
 
 On disk, it is written into the title's folder itself: a hand-editable
 `aurora-series.json` or `aurora-movie.json` (title, year, overview, status,

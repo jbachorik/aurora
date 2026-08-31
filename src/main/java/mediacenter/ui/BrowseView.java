@@ -31,21 +31,23 @@ import mediacenter.ui.components.MediaListView;
 import mediacenter.ui.components.PosterPane;
 
 /**
- * A browsable folder rendered as two columns: every entry as one line showing
- * its actual on-disk name, and the selected entry's poster beside the list.
+ * A browsable folder rendered as two columns: every entry as one readable
+ * line, and the selected entry's poster beside the list.
  *
- * <p>The lines are the point — a name too long for its line scrolls slowly
- * under the selection instead of being cut off, so the real file name is
- * always readable. The one thing a line does not repeat is a parent folder's
- * name echoed at its front; {@link mediacenter.media.ParentPrefixes} drops it. Artwork is looked up only for the selected line, which
- * makes browsing a slow share cost one directory listing at a time instead of
- * one per visible folder.
+ * <p>The lines are the point — each carries its entry's {@link DisplayNames
+ * display name}, a name too long for its line scrolls slowly under the
+ * selection instead of being cut off, and a parent folder's name echoed at
+ * the front is dropped ({@link mediacenter.media.ParentPrefixes}). The
+ * on-disk truth stays a glance away in the header's subtitle, and the
+ * on-disk name still governs the sort. Artwork is looked up only for the
+ * selected line, which makes browsing a slow share cost one directory
+ * listing at a time instead of one per visible folder.
  *
- * <p>A folder the scraper has identified earns the one departure from on-disk
- * names: its line is re-captioned with the scraped title — "Breaking Bad"
- * where the disk says {@code Breaking.Bad.S01-S05.COMPLETE.1080p} — and the
- * selected folder's year and synopsis appear under its poster. The disk name
- * still governs the sort, so the shelf keeps its order.
+ * <p>A folder the scraper has identified reads by its real name: its line is
+ * re-captioned with the scraped title — "Breaking Bad" where the disk says
+ * {@code Breaking.Bad.S01-S05.COMPLETE.1080p} — the same title heads the
+ * page when the folder is browsed into, and the selected folder's year and
+ * synopsis appear under its poster.
  *
  * <p>A folder of episodes plays onwards: starting one video also queues the
  * ones after it in the listing, so finishing an episode rolls into the next
@@ -106,6 +108,13 @@ public final class BrowseView implements View {
      */
     private final Map<Path, ScrapedMetadata> scrapedByFolder = new HashMap<>();
 
+    /**
+     * What the scraper knows about the browsed folder itself — the header's
+     * title, where the disk spells a ripper's name. Only touched on the JavaFX
+     * thread; cleared by every load.
+     */
+    private ScrapedMetadata ownMetadata;
+
     private List<MediaItem> items = List.of();
     /** The rows on screen, kept so the watched marks can be re-applied in place. */
     private List<MediaListRow> itemRows = List.of();
@@ -151,6 +160,9 @@ public final class BrowseView implements View {
 
     @Override
     public String title() {
+        if (ownMetadata != null) {
+            return ownMetadata.title();
+        }
         return folder.equals(root.path()) ? root.displayName() : DisplayNames.forDirectory(folder);
     }
 
@@ -179,6 +191,10 @@ public final class BrowseView implements View {
         if (scrapableRoot()) {
             context.scrapeService().setOnScraped(this::onFolderScraped);
             context.scrapeService().setOnReorganized(this::onFolderReorganized);
+            // And the answers that landed while another page held that ear are
+            // healed by asking the disk again — cheaply, only where a row is
+            // still uncaptioned.
+            refreshScrapedMetadata();
         }
         View.super.onShown();
     }
@@ -205,8 +221,10 @@ public final class BrowseView implements View {
         directoryArtwork.clear();
         soleMediaByFolder.clear();
         scrapedByFolder.clear();
+        ownMetadata = null;
         poster.clear();
         showOverview(null);
+        loadOwnMetadata(generation);
         list.showMessage("Loading…");
         FxTasks.run(
                 context.backgroundExecutor(),
@@ -327,6 +345,31 @@ public final class BrowseView implements View {
                 });
             });
         }
+    }
+
+    /**
+     * The browsed folder's own identity, for the header — "Breaking Bad" over
+     * the episode list, where the disk spells a ripper's name. Asynchronous
+     * like everything here; the header corrects itself a beat later, through
+     * the same door every page change uses.
+     */
+    private void loadOwnMetadata(int generation) {
+        Optional<ScrapedMetadataStore> store = metadataStore();
+        if (store.isEmpty() || folder.equals(root.path())) {
+            // A root's name describes a library; no file on disk renames it.
+            return;
+        }
+        FxTasks.run(
+                context.backgroundExecutor(),
+                () -> store.get().load(folder),
+                metadata -> {
+                    if (generation != loadGeneration || discarded || metadata.isEmpty()) {
+                        return;
+                    }
+                    ownMetadata = metadata.get();
+                    context.navigation().refreshHeader();
+                },
+                failure -> { });
     }
 
     /**
@@ -557,6 +600,46 @@ public final class BrowseView implements View {
     }
 
     /**
+     * Re-captions rows whose folders were identified while this page was not
+     * the listener — a scrape finishing while the viewer is inside another
+     * folder tells that page, not this one, and coming back does not reload.
+     * One small file read per still-uncaptioned row, off the JavaFX thread.
+     */
+    private void refreshScrapedMetadata() {
+        Optional<ScrapedMetadataStore> store = metadataStore();
+        if (store.isEmpty()) {
+            return;
+        }
+        if (ownMetadata == null) {
+            loadOwnMetadata(loadGeneration);
+        }
+        List<MediaListRow> uncaptioned = new ArrayList<>();
+        for (MediaListRow row : itemRows) {
+            MediaItem item = row.item().orElse(null);
+            if (item != null && item.isDirectory() && !scrapedByFolder.containsKey(item.path())) {
+                uncaptioned.add(row);
+            }
+        }
+        if (uncaptioned.isEmpty()) {
+            return;
+        }
+        int generation = loadGeneration;
+        context.backgroundExecutor().execute(() -> {
+            for (MediaListRow row : uncaptioned) {
+                if (generation != loadGeneration || discarded) {
+                    return;
+                }
+                MediaItem item = row.item().orElseThrow();
+                store.get().load(item.path()).ifPresent(metadata -> FxTasks.onFx(() -> {
+                    if (generation == loadGeneration && !discarded) {
+                        applyMetadata(row, item.path(), metadata);
+                    }
+                }));
+            }
+        });
+    }
+
+    /**
      * The shelf on screen was tidied under the page's feet — loose files
      * became folders — so what the rows show is no longer what is there.
      * A full reload, exactly as if F5 had been pressed; it happens at most
@@ -579,6 +662,12 @@ public final class BrowseView implements View {
     private void onFolderScraped(Path scrapedFolder, ScrapedMetadata metadata) {
         if (discarded) {
             return;
+        }
+        if (folder.equals(scrapedFolder)) {
+            // The page being browsed was itself just identified: the header is
+            // where its name lives.
+            ownMetadata = metadata;
+            context.navigation().refreshHeader();
         }
         directoryArtwork.remove(scrapedFolder);
         // The freshly identified folder earns its caption and synopsis at
