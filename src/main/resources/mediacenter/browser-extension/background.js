@@ -17,18 +17,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message === "fullscreen-from-top" && sender.tab) {
         chrome.tabs.sendMessage(sender.tab.id, "fullscreen-from-top", { frameId: 0 });
     }
-    // "Watch in Aurora": the media center answers only after running yt-dlp,
-    // so the fetch — made here because only the worker holds the permission
-    // for the media center's local address — takes as long as the resolution.
-    if (message && message.watchInAurora) {
+    // "Watch in Aurora": the fetch lives here because only the worker holds
+    // the permission for the media center's local address. The verdict goes
+    // back as a pushed message rather than as this message's response: the
+    // media center answers only after running yt-dlp — the better part of a
+    // minute on an old machine — and an older Chromium (109, the last one
+    // Windows 7 gets) stops a waiting worker at thirty seconds, closing a
+    // response channel nobody has answered yet. Acknowledge now, report later.
+    if (message && message.watchInAurora && sender.tab) {
+        const tab = sender.tab.id;
+        const frame = sender.frameId;
         fetch("http://127.0.0.1:8765/api/watch", {
             method: "POST",
             body: JSON.stringify({ url: message.watchInAurora }),
         })
             .then(response => response.json()
-                .then(body => sendResponse({ ok: response.ok, error: body.error })))
-            .catch(() => sendResponse({ ok: false, error: "Aurora is not reachable" }));
-        return true; // the response comes later
+                .then(body => ({ ok: response.ok, error: body.error })))
+            .catch(() => ({ ok: false, error: "Aurora is not reachable — is the media center running?" }))
+            .then(outcome => chrome.tabs.sendMessage(tab, { watchOutcome: outcome }, { frameId: frame }))
+            .catch(() => { /* the page is already gone: Aurora took the screen */ });
+        sendResponse({ accepted: true });
     }
 });
 

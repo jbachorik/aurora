@@ -49,6 +49,8 @@ if (window === window.top) {
         return element;
     }
 
+    let verdictTimer = null;
+
     function ask() {
         if (asking || !button) {
             return;
@@ -56,21 +58,45 @@ if (window === window.top) {
         asking = true;
         button.disabled = true;
         button.textContent = ASKING_LABEL;
-        chrome.runtime.sendMessage({ watchInAurora: location.href }, answer => {
-            // On success there is nothing to restore: Aurora is already
-            // closing this browser. Everything else resets the button after
-            // the reason has been on screen long enough to read.
-            if (answer && answer.ok) {
-                return;
+        // The verdict arrives as a pushed message (see background.js) so the
+        // wait survives an old Chromium stopping the worker mid-resolution.
+        // The timer is for the day nothing arrives at all; by then Aurora may
+        // still be resolving, and if the film starts, this browser closes and
+        // none of it matters.
+        verdictTimer = setTimeout(
+            () => showFailure("No answer from Aurora — check its application.log"), 90000);
+        chrome.runtime.sendMessage({ watchInAurora: location.href }, () => {
+            if (chrome.runtime.lastError) {
+                showFailure("The extension's worker did not answer");
             }
-            button.textContent = (answer && answer.error) || "Aurora is not reachable";
-            setTimeout(() => {
-                asking = false;
-                button.disabled = false;
-                button.textContent = IDLE_LABEL;
-            }, 5000);
         });
     }
+
+    /** Puts the reason on the button long enough to read, then resets it. */
+    function showFailure(reason) {
+        clearTimeout(verdictTimer);
+        if (!button) {
+            return;
+        }
+        button.textContent = reason;
+        setTimeout(() => {
+            asking = false;
+            button.disabled = false;
+            button.textContent = IDLE_LABEL;
+        }, 6000);
+    }
+
+    // On success there is nothing to show: Aurora is already closing this
+    // browser on its way to VLC.
+    chrome.runtime.onMessage.addListener(message => {
+        if (message && message.watchOutcome) {
+            if (message.watchOutcome.ok) {
+                clearTimeout(verdictTimer);
+            } else {
+                showFailure(message.watchOutcome.error || "Aurora could not play this page");
+            }
+        }
+    });
 
     /** The button follows the player: appearing with it, going with it. */
     function refreshButton() {
