@@ -90,7 +90,7 @@ subfolders — handy before a rewatch of a whole series.
 
 Single click selects, double click plays. Nothing important is mouse-only, so
 a cheap USB or Bluetooth remote that emulates a keyboard is enough. The pointer
-hides itself after a few seconds of stillness and comes back on the first
+hides itself after five seconds of stillness and comes back on the first
 movement.
 
 It starts **full screen with no window decorations**, which is the default and

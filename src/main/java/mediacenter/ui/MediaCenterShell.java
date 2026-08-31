@@ -79,7 +79,7 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
     private static final long PLAYBACK_GUARD_NANOS = 800_000_000L;
 
     /** How long the pointer may sit still before it is hidden. */
-    private static final Duration CURSOR_IDLE_DELAY = Duration.seconds(3);
+    private static final Duration CURSOR_IDLE_DELAY = Duration.seconds(5);
 
     private static final String HIDDEN_CURSOR_CLASS = "cursor-hidden";
 
