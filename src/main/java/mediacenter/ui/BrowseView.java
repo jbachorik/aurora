@@ -1,6 +1,9 @@
 package mediacenter.ui;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -119,6 +122,14 @@ public final class BrowseView implements View {
     /** The rows on screen, kept so the watched marks can be re-applied in place. */
     private List<MediaListRow> itemRows = List.of();
     /**
+     * The folder's own modification time as of the last load, so a page found
+     * again on the stack — {@link #onShown} after Back, never a fresh
+     * {@link #load} — can tell whether disk content it has not seen yet is
+     * sitting right there. Null when it could not be read, which leaves the
+     * page exactly as trusting of a stale listing as it always was.
+     */
+    private FileTime directoryStamp;
+    /**
      * Read by the walker thread through the cancellation supplier below, so it is
      * volatile: a plain int would let that thread go on reading the generation it
      * saw when the walk began and never notice the load that replaced it.
@@ -196,6 +207,13 @@ public final class BrowseView implements View {
             // still uncaptioned.
             refreshScrapedMetadata();
         }
+        // A page found again on the stack (Back, having gone deeper from here)
+        // never reloaded while it was covered: a title dropped in the meantime
+        // would go on missing from the list, and never reach the scraper, until
+        // the viewer thought to press refresh. The folder's own modification
+        // time is one cheap read even over a share, so a full reload is only
+        // paid for when the folder actually changed.
+        reloadIfFolderChanged();
         View.super.onShown();
     }
 
@@ -215,6 +233,44 @@ public final class BrowseView implements View {
         return root;
     }
 
+    /**
+     * Reloads the page only if the folder itself has changed since the last
+     * load — the check {@link #onShown} runs on a page found again on the
+     * stack, so returning to one still showing exactly what it showed before
+     * costs one stat, not a full re-listing.
+     */
+    private void reloadIfFolderChanged() {
+        FileTime knownStamp = directoryStamp;
+        if (knownStamp == null) {
+            // Never successfully stamped — the very first load, or a share that
+            // does not answer this question — so there is nothing to compare
+            // against and no cheap answer to trust either way.
+            return;
+        }
+        int generation = loadGeneration;
+        FxTasks.run(
+                context.backgroundExecutor(),
+                () -> readDirectoryStamp(folder),
+                stamp -> {
+                    if (generation == loadGeneration && stamp != null && !stamp.equals(knownStamp)) {
+                        load();
+                    }
+                },
+                failure -> { });
+    }
+
+    private static FileTime readDirectoryStamp(Path folder) {
+        try {
+            return Files.getLastModifiedTime(folder);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** One folder listing, paired with the stamp taken at the very same visit. */
+    private record FolderScan(List<MediaItem> items, FileTime stamp) {
+    }
+
     /** Re-reads the folder without blocking; late results from an older load are ignored. */
     private void load() {
         int generation = ++loadGeneration;
@@ -228,10 +284,13 @@ public final class BrowseView implements View {
         list.showMessage("Loading…");
         FxTasks.run(
                 context.backgroundExecutor(),
-                () -> context.scanner().scanWithoutDirectoryArtwork(folder, folder.equals(root.path())),
-                scanned -> {
+                () -> new FolderScan(
+                        context.scanner().scanWithoutDirectoryArtwork(folder, folder.equals(root.path())),
+                        readDirectoryStamp(folder)),
+                scan -> {
                     if (generation == loadGeneration) {
-                        showItems(scanned);
+                        directoryStamp = scan.stamp();
+                        showItems(scan.items());
                     }
                 },
                 failure -> {
