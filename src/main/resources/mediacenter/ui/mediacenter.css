@@ -462,15 +462,22 @@
 /* ---------------------------------------------------------------- cursor */
 
 /*
- * Applied to the root while the pointer is idle. The descendant rules are
- * needed because a node's own -fx-cursor wins over the one on its ancestors,
- * and most of the screen is covered by tiles that ask for a hand.
+ * Applied to the root while the pointer is idle. Read "none" here as "no cursor
+ * of its own", not as "no cursor": a bare none in JavaFX CSS is the parser's way
+ * of writing null, so these rules take the hand off every tile and row rather
+ * than hiding anything. Every rule above that names -fx-cursor needs answering
+ * here, or the pointer over that node keeps the cursor it asked for.
+ *
+ * What is actually hidden is the scene's cursor, set alongside this class in
+ * MediaCenterShell: with nothing between the pointer and the scene still asking
+ * for a cursor, the scene's is what the window shows.
  */
 .cursor-hidden {
     -fx-cursor: none;
 }
 
 .cursor-hidden .tile,
+.cursor-hidden .media-row,
 .cursor-hidden .button,
 .cursor-hidden .toggle-button,
 .cursor-hidden .list-cell,

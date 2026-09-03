@@ -17,6 +17,7 @@ import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
@@ -206,22 +207,46 @@ public final class MediaCenterShell implements Navigation, RemoteKiosk {
      * just clutter; it comes straight back on the first movement.
      */
     private void installCursorAutoHide(Scene scene) {
-        cursorIdleTimer.setOnFinished(event -> {
-            if (!rootPane.getStyleClass().contains(HIDDEN_CURSOR_CLASS)) {
-                rootPane.getStyleClass().add(HIDDEN_CURSOR_CLASS);
-                LOG.fine("Pointer idle, hiding it");
-            }
-        });
+        cursorIdleTimer.setOnFinished(event -> hideCursor(scene));
         // Deliberately not MouseEvent.ANY: enter/exit events are synthesized as the
         // UI changes under a stationary pointer, which would keep it awake forever.
-        scene.addEventFilter(MouseEvent.MOUSE_MOVED, event -> wakeCursor());
-        scene.addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> wakeCursor());
-        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> wakeCursor());
+        scene.addEventFilter(MouseEvent.MOUSE_MOVED, event -> wakeCursor(scene));
+        scene.addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> wakeCursor(scene));
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> wakeCursor(scene));
         cursorIdleTimer.playFromStart();
     }
 
-    private void wakeCursor() {
+    /**
+     * Takes the pointer away.
+     *
+     * <p>The style class cannot do this on its own, which is why the arrow used
+     * to sit on the film for the whole of it. In JavaFX CSS a bare {@code none}
+     * is the parser's word for "no value": {@code CssParser.valueFor} answers
+     * {@code none} — and {@code null} — with a null value for whichever property
+     * was given it. So {@code -fx-cursor: none} does not say {@code Cursor.NONE};
+     * it says this node asks for no cursor of its own. The lookup then walks up to
+     * the scene, finds nothing there either, and the window is handed the default
+     * arrow.
+     *
+     * <p>The class and the scene's cursor are therefore two halves of one job: the
+     * class clears the hand that every tile and row asks for, and the scene's
+     * cursor is the {@code Cursor.NONE} the lookup then lands on. Neither half
+     * needs the pointer to move: the scene re-reads the cursor under a hovering
+     * pointer on every pulse.
+     */
+    private void hideCursor(Scene scene) {
+        if (!rootPane.getStyleClass().contains(HIDDEN_CURSOR_CLASS)) {
+            rootPane.getStyleClass().add(HIDDEN_CURSOR_CLASS);
+        }
+        scene.setCursor(Cursor.NONE);
+        LOG.fine("Pointer idle, hiding it");
+    }
+
+    private void wakeCursor(Scene scene) {
         rootPane.getStyleClass().remove(HIDDEN_CURSOR_CLASS);
+        // Null, not DEFAULT: back to whatever the node under the pointer asks
+        // for, which is a hand over every tile.
+        scene.setCursor(null);
         cursorIdleTimer.playFromStart();
     }
 
