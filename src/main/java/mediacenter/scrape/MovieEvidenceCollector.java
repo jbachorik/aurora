@@ -15,20 +15,22 @@ import java.util.regex.Pattern;
 import mediacenter.media.VideoFiles;
 
 /**
- * Reads a folder into {@link MovieEvidence}, deciding on the way whether it is
- * a movie folder at all.
+ * Reads a folder into one {@link MovieEvidence} per film it holds, deciding on
+ * the way whether it holds any films at all.
  *
- * <p>A movie folder is the one-folder-per-film shape the browser already
- * favours — "Blade Runner 2049 (2017)" holding the film and perhaps its
- * artwork, subtitles and extras folders. What disqualifies a folder is being
- * something else: more than one feature-length claim (a collection), an
- * episode tag on the video (a season misfiled on a Movies shelf), season
- * folders, or no video at all (a folder that merely groups other folders —
- * whose own folders will be offered when they come on screen).
+ * <p>Usually that is one film in its own folder — "Blade Runner 2049 (2017)"
+ * holding the video and perhaps its artwork, subtitles and extras folders —
+ * but a trilogy nobody split apart shares its folder between several videos,
+ * and each of those is its own film to identify, on the strength of its own
+ * file name rather than the folder's. What disqualifies the whole folder is
+ * being something else entirely: season folders (a series, wherever the
+ * shelf put it), or no video at all (a folder that merely groups other
+ * folders — whose own folders will be offered when they come on screen). An
+ * episode tag disqualifies only the one video that carries it — a season
+ * misfiled on a Movies shelf beside otherwise ordinary films.
  *
- * <p>A ripper's {@code sample.mkv} beside the film is ignored rather than
- * counted, because otherwise half the shelf would read as "two videos" and
- * never be identified.
+ * <p>A ripper's {@code sample.mkv} beside a film is ignored rather than
+ * counted as a film of its own.
  */
 public final class MovieEvidenceCollector {
 
@@ -45,13 +47,14 @@ public final class MovieEvidenceCollector {
     }
 
     /**
-     * The folder's evidence, or empty when it does not read as one film —
-     * or simply cannot be listed, which over a share is an ordinary day.
+     * The folder's evidence, one entry per film — usually one, several for a
+     * trilogy sharing its folder — or empty when it holds no film at all, or
+     * simply cannot be listed, which over a share is an ordinary day.
      */
-    public Optional<MovieEvidence> collect(Path movieFolder) {
+    public List<MovieEvidence> collect(Path movieFolder) {
         Path folderName = movieFolder.getFileName();
         if (folderName == null) {
-            return Optional.empty();
+            return List.of();
         }
 
         List<String> videoNames = new ArrayList<>();
@@ -65,7 +68,7 @@ public final class MovieEvidenceCollector {
                 if (Files.isDirectory(entry)) {
                     if (SeriesEvidenceCollector.seasonNumberOf(name).isPresent()) {
                         // Season folders mean a series, wherever the shelf put it.
-                        return Optional.empty();
+                        return List.of();
                     }
                     continue;
                 }
@@ -74,27 +77,41 @@ public final class MovieEvidenceCollector {
                 }
             }
         } catch (IOException | RuntimeException e) {
-            return Optional.empty();
+            return List.of();
         }
 
-        if (videoNames.size() != 1) {
-            // Zero is a grouping folder; several is a collection or a flat
-            // season — neither is one film to identify.
-            return Optional.empty();
+        // A video carrying an episode tag is a season misfiled on this shelf,
+        // not a film beside the others — it drops out on its own rather than
+        // disqualifying films that sit next to it in the same folder. Sorted,
+        // since a directory listing's own order is nobody's to rely on, and a
+        // trilogy's numbering ("01 - …", "02 - …") reads the same way either
+        // way.
+        List<String> filmVideoNames = videoNames.stream()
+                .filter(name -> EpisodeTags.parse(name).isEmpty())
+                .sorted()
+                .toList();
+        if (filmVideoNames.isEmpty()) {
+            // Zero is a grouping folder, or a flat season with nothing but
+            // tagged episodes — neither holds a film to identify.
+            return List.of();
         }
-        String videoName = videoNames.getFirst();
-        if (EpisodeTags.parse(videoName).isPresent()) {
-            return Optional.empty();
+        // The folder's own year, when it is unambiguous, is a candidate hint
+        // for every film in it; each video's own name is asked too, since a
+        // shared folder's name — a trilogy's box title, say — rarely carries
+        // one film's specific year.
+        Optional<Integer> folderYear = yearHintOf(folderName.toString());
+        List<MovieEvidence> evidence = new ArrayList<>();
+        for (String videoName : filmVideoNames) {
+            Optional<Integer> year = folderYear.or(() -> yearHintOf(videoName));
+            // Asked last, once a video has qualified as a film: the probe
+            // opens the file, and a name that never qualified deserves no I/O.
+            evidence.add(new MovieEvidence(
+                    folderName.toString(),
+                    videoName,
+                    year,
+                    durationProbe.durationOf(movieFolder.resolve(videoName))));
         }
-        Optional<Integer> year = yearHintOf(folderName.toString())
-                .or(() -> yearHintOf(videoName));
-        // Asked last, once the folder has qualified as one film: the probe
-        // opens the file, and grouping folders and collections deserve no I/O.
-        return Optional.of(new MovieEvidence(
-                folderName.toString(),
-                videoName,
-                year,
-                durationProbe.durationOf(movieFolder.resolve(videoName))));
+        return List.copyOf(evidence);
     }
 
     /**

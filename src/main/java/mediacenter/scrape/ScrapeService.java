@@ -24,14 +24,23 @@ import mediacenter.config.ScraperSettings;
  * decides which are worth a scrape. A Movies shelf is also offered whole, so
  * {@link LooseMovieOrganizer} can give bare files folders of their own before
  * the scrapes reach them. Cheap disqualifications first — scraping switched
- * off, folder already carrying its metadata file, folder already tried since
- * startup — and only then the real work, serialised so twenty new titles
- * never open twenty conversations with TheTVDB at once.
+ * off, folder already tried since startup — and only then the real work,
+ * serialised so twenty new titles never open twenty conversations with
+ * TheTVDB at once.
  *
- * <p>"Already tried" is remembered per run and not on disk: a folder that
- * found no confident match is left alone until the next start rather than
- * being retried on every visit, but is never marked failed forever — the
- * missing season, or the year a rename adds, may arrive next week.
+ * <p>"Already tried" is remembered per run and not on disk: a series or film
+ * folder that found no confident match is left alone until the next start
+ * rather than being retried on every visit, but is never marked failed
+ * forever — the year a rename adds may arrive next week. A series folder
+ * that <em>did</em> earn a match is a different question every time it comes
+ * back on screen, not a settled one: it is asked again, cheaply — one
+ * directory listing, no network — whether the season shape on disk still
+ * matches what was on record, and only a real change opens a new
+ * conversation with the provider. A film's identity does not grow a second
+ * season, so a folder holding exactly one already-identified film stays
+ * settled for good; a folder sharing itself between several films instead
+ * asks {@link MovieScraper} on every visit whether any of them are still
+ * waiting to be told apart.
  */
 public final class ScrapeService {
 
@@ -58,7 +67,11 @@ public final class ScrapeService {
     /** Shelves already tidied this run; a tidy that moved nothing needs no second look. */
     private final Set<Path> organized = ConcurrentHashMap.newKeySet();
 
-    /** Who to tell when a folder gains metadata; the browse page showing it, mostly. */
+    /**
+     * Who to tell when a subject gains metadata — a folder ordinarily, or one
+     * film's own video when its folder shares itself with others; the browse
+     * page showing it, mostly.
+     */
     private volatile BiConsumer<Path, ScrapedMetadata> onScraped = (folder, metadata) -> { };
 
     /** Who to tell when a shelf's loose films were foldered; that page must reload. */
@@ -173,7 +186,16 @@ public final class ScrapeService {
             // identified as a film called "Season 2".
             return;
         }
-        if (!settings.get().readyToScrape() || !attempted.add(folder)) {
+        if (!settings.get().readyToScrape()) {
+            return;
+        }
+        // An identified series folder is worth a fresh look every time it is
+        // offered — a season may have arrived since the last one — so only a
+        // folder still waiting for its first match is rationed to one try per
+        // run; asking a settled one again and again costs one stat, not a
+        // conversation with anybody.
+        boolean rationedByAttempt = !(kind == Kind.SERIES && seriesStore.exists(folder));
+        if (rationedByAttempt && !attempted.add(folder)) {
             return;
         }
         try {
@@ -192,18 +214,25 @@ public final class ScrapeService {
         }
         try {
             ScraperSettings current = settings.get();
-            // Both looked at again behind the semaphore: the user may have
-            // switched scraping off — or the previous scrape may have been
-            // this very folder, queued twice from two visits — while this
-            // one waited its turn.
-            if (!current.readyToScrape() || storeFor(kind).exists(folder)) {
+            // Looked at again behind the semaphore: the user may have switched
+            // scraping off, or two visits may have queued this very folder
+            // twice, while this one waited its turn.
+            if (!current.readyToScrape()) {
                 return;
             }
-            Optional<ScrapedMetadata> scraped = scrape(folder, kind, current);
-            if (scraped.isPresent()) {
-                ScrapedMetadata metadata = scraped.get();
+            if (kind == Kind.SERIES) {
+                if (seriesStore.exists(folder) && !seriesNeedsAnotherLook(folder)) {
+                    return;
+                }
+            } else if (movieStore.exists(folder)) {
+                // A single-film folder fully identified has nothing left to
+                // do; a folder shared between several films is MovieScraper's
+                // own question, since it alone knows which of them are done.
+                return;
+            }
+            for (Scraped one : scrape(folder, kind, current)) {
                 BiConsumer<Path, ScrapedMetadata> listener = onScraped;
-                notificationExecutor.execute(() -> listener.accept(folder, metadata));
+                notificationExecutor.execute(() -> listener.accept(one.subject(), one.metadata()));
             }
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, e, () -> "Scraping " + folder + " failed");
@@ -213,11 +242,40 @@ public final class ScrapeService {
     }
 
     /**
+     * Whether an already-identified series folder deserves the cost of asking
+     * again: the season shape read off disk right now differs from what was
+     * on record at the last successful scrape, and nobody has corrected the
+     * file by hand since — a hand edit is left standing for good, the same
+     * courtesy a folder the pipeline has never touched is shown.
+     *
+     * <p>A file predating this check, or one a stray write left unparsable,
+     * carries no shape to compare against and is read the same way: nothing
+     * confidently changed, so nothing is disturbed.
+     */
+    private boolean seriesNeedsAnotherLook(Path folder) {
+        Optional<ScrapedMetadata> onRecord = seriesStore.load(folder);
+        if (onRecord.isEmpty() || onRecord.get().diskEpisodeCount().isEmpty()) {
+            return false;
+        }
+        if (seriesStore.handEditedSince(folder, onRecord.get())) {
+            return false;
+        }
+        return new SeriesEvidenceCollector().collect(folder)
+                .map(SeriesEvidence::totalEpisodes)
+                .map(onDisk -> !onDisk.equals(onRecord.get().diskEpisodeCount().get()))
+                .orElse(false);
+    }
+
+    /** One newly scraped subject — a folder, or one film's own video — paired with what was found. */
+    private record Scraped(Path subject, ScrapedMetadata metadata) {
+    }
+
+    /**
      * Built fresh per scrape from the settings of the moment. A TheTVDB login
      * token is the only thing this discards, and one login per scraped title
      * is well within the API's manners.
      */
-    private Optional<ScrapedMetadata> scrape(Path folder, Kind kind, ScraperSettings current) {
+    private List<Scraped> scrape(Path folder, Kind kind, ScraperSettings current) {
         Optional<OllamaTitleService> ollama = current.ollamaConfigured()
                 ? Optional.of(new OllamaTitleService(
                         current.ollamaEndpoint(), current.ollamaApiKey(), current.ollamaModel()))
@@ -225,9 +283,16 @@ public final class ScrapeService {
         MetadataProvider provider = buildProvider(current);
         return switch (kind) {
             case SERIES -> new SeriesScraper(
-                    new SeriesEvidenceCollector(), ollama, provider, seriesStore, posters).scrape(folder);
+                    new SeriesEvidenceCollector(), ollama, provider, seriesStore, posters)
+                    .scrape(folder)
+                    .map(metadata -> new Scraped(folder, metadata))
+                    .map(List::of)
+                    .orElse(List.of());
             case MOVIE -> new MovieScraper(
-                    new MovieEvidenceCollector(durationProbe), ollama, provider, movieStore, posters).scrape(folder);
+                    new MovieEvidenceCollector(durationProbe), ollama, provider, movieStore, posters)
+                    .scrape(folder).stream()
+                    .map(identified -> new Scraped(identified.subject(), identified.metadata()))
+                    .toList();
         };
     }
 
@@ -240,9 +305,5 @@ public final class ScrapeService {
         return current.tvdbApiKey()
                 .<MetadataProvider>map(TvdbClient::new)
                 .orElseGet(() -> new TmdbClient(current.tmdbApiKey().orElseThrow()));
-    }
-
-    private ScrapedMetadataStore storeFor(Kind kind) {
-        return kind == Kind.SERIES ? seriesStore : movieStore;
     }
 }

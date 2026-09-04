@@ -20,6 +20,11 @@ import mediacenter.media.DisplayNames;
  * candidate? The title carries the match alone. No confident match at all?
  * Nothing is written, and the next run gets to try again with nothing lost.
  *
+ * <p>What is written keeps the total episode count on disk at scrape time
+ * alongside the identification — {@link ScrapeService}'s one way of telling,
+ * without asking anybody, that a season has arrived since and this folder is
+ * worth a second conversation.
+ *
  * <p>Blocking throughout — network twice over and a share in between — so it
  * runs where {@link ScrapeService} puts it, never on the JavaFX thread.
  */
@@ -110,7 +115,8 @@ public final class SeriesScraper {
                 series.overview(),
                 series.status(),
                 evidence.folderName(),
-                Instant.now());
+                Instant.now(),
+                Optional.of(evidence.totalEpisodes()));
         if (!store.save(seriesFolder, metadata)) {
             return Optional.empty();
         }
