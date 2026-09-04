@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -109,5 +110,81 @@ class ScrapedMetadataStoreTest {
 
         assertEquals("TheTVDB", loaded.provider());
         assertEquals(81189, loaded.providerId());
+    }
+
+    @Test
+    @DisplayName("the on-disk episode count survives the round trip, when there is one")
+    void roundTripsTheDiskEpisodeCount(@TempDir Path temp) {
+        ScrapedMetadata withCount = new ScrapedMetadata(
+                "TheTVDB", 81189, "Breaking Bad", Optional.of(2008), Optional.empty(), Optional.empty(),
+                "Breaking Bad", Instant.parse("2026-08-29T10:15:30Z"), Optional.of(62));
+
+        assertTrue(store.save(temp, withCount));
+
+        assertEquals(Optional.of(62), store.load(temp).orElseThrow().diskEpisodeCount());
+    }
+
+    @Test
+    @DisplayName("a file written before the episode count existed simply has none")
+    void anOlderFileHasNoDiskEpisodeCount(@TempDir Path temp) throws IOException {
+        Files.writeString(temp.resolve(ScrapedMetadataStore.SERIES_FILE_NAME), """
+                {"providerId": 81189, "title": "Breaking Bad", "scrapedAt": "2026-08-29T10:15:30Z"}
+                """);
+
+        assertEquals(Optional.empty(), store.load(temp).orElseThrow().diskEpisodeCount());
+    }
+
+    @Test
+    @DisplayName("a film sharing its folder with others keeps its metadata beside its own video")
+    void keepsPerVideoMetadataBesideTheVideo(@TempDir Path temp) throws IOException {
+        ScrapedMetadataStore movies = ScrapedMetadataStore.movies();
+        Path video = Files.createFile(temp.resolve("The Matrix.mkv"));
+
+        assertFalse(movies.existsForVideo(video));
+
+        assertTrue(movies.saveForVideo(video, metadata()));
+
+        assertTrue(movies.existsForVideo(video));
+        assertTrue(Files.isRegularFile(temp.resolve("The Matrix." + ScrapedMetadataStore.MOVIE_FILE_NAME)));
+        assertEquals(Optional.of(metadata()), movies.loadForVideo(video));
+        // A sibling video shares the folder but not the sidecar.
+        assertFalse(movies.existsForVideo(temp.resolve("The Matrix Reloaded.mkv")));
+    }
+
+    @Test
+    @DisplayName("a file this class just wrote does not read as somebody else's edit")
+    void aFreshWriteIsNotHandEdited(@TempDir Path temp) {
+        ScrapedMetadata justScraped = new ScrapedMetadata(
+                "TheTVDB", 81189, "Breaking Bad", Optional.empty(), Optional.empty(), Optional.empty(),
+                "Breaking Bad", Instant.now());
+
+        store.save(temp, justScraped);
+
+        assertFalse(store.handEditedSince(temp, justScraped));
+    }
+
+    @Test
+    @DisplayName("a file touched after the scrape it recorded reads as hand-edited")
+    void aLaterTouchIsHandEdited(@TempDir Path temp) throws IOException {
+        ScrapedMetadata justScraped = new ScrapedMetadata(
+                "TheTVDB", 81189, "Breaking Bad", Optional.empty(), Optional.empty(), Optional.empty(),
+                "Breaking Bad", Instant.now().minusSeconds(60));
+
+        store.save(temp, justScraped);
+        // A person's own save touches the file well after the scrape it recorded.
+        Files.setLastModifiedTime(
+                temp.resolve(ScrapedMetadataStore.SERIES_FILE_NAME), FileTime.from(Instant.now()));
+
+        assertTrue(store.handEditedSince(temp, justScraped));
+    }
+
+    @Test
+    @DisplayName("a folder that was never written to has nothing to compare a hand edit against")
+    void anUnscrapedFolderIsNeverHandEdited(@TempDir Path temp) {
+        ScrapedMetadata neverSaved = new ScrapedMetadata(
+                "TheTVDB", 81189, "Breaking Bad", Optional.empty(), Optional.empty(), Optional.empty(),
+                "Breaking Bad", Instant.now());
+
+        assertFalse(store.handEditedSince(temp, neverSaved));
     }
 }

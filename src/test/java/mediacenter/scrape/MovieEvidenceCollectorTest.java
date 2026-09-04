@@ -28,8 +28,10 @@ class MovieEvidenceCollectorTest {
         Files.createFile(movie.resolve("poster.jpg"));
         Files.createDirectory(movie.resolve("Subs"));
 
-        MovieEvidence evidence = collector.collect(movie).orElseThrow();
+        List<MovieEvidence> found = collector.collect(movie);
 
+        assertEquals(1, found.size());
+        MovieEvidence evidence = found.getFirst();
         assertEquals("Blade Runner 2049 (2017)", evidence.folderName());
         assertEquals("Blade.Runner.2049.2017.mkv", evidence.videoFileName());
         assertEquals(Optional.of(2017), evidence.yearHint());
@@ -48,7 +50,7 @@ class MovieEvidenceCollectorTest {
             return Optional.of(Duration.ofMinutes(170));
         });
 
-        MovieEvidence evidence = probing.collect(movie).orElseThrow();
+        MovieEvidence evidence = probing.collect(movie).getFirst();
 
         assertEquals(Optional.of(Duration.ofMinutes(170)), evidence.duration());
         // The film itself, once — never the sample beside it.
@@ -63,40 +65,54 @@ class MovieEvidenceCollectorTest {
         Files.createFile(movie.resolve("sample.mkv"));
         Files.createFile(movie.resolve("heat-sample.avi"));
 
-        MovieEvidence evidence = collector.collect(movie).orElseThrow();
+        List<MovieEvidence> found = collector.collect(movie);
 
-        assertEquals("Heat.1995.mkv", evidence.videoFileName());
+        assertEquals(1, found.size());
+        assertEquals("Heat.1995.mkv", found.getFirst().videoFileName());
+    }
+
+    @Test
+    @DisplayName("a trilogy sharing one folder is one film per video, not a refusal")
+    void readsEachFilmOfATrilogySharingAFolder(@TempDir Path temp) throws IOException {
+        Path trilogy = Files.createDirectory(temp.resolve("The Lord of the Rings"));
+        Files.createFile(trilogy.resolve("01 - The Fellowship of the Ring.mkv"));
+        Files.createFile(trilogy.resolve("02 - The Two Towers.mkv"));
+        Files.createFile(trilogy.resolve("03 - The Return of the King.mkv"));
+
+        List<MovieEvidence> found = collector.collect(trilogy);
+
+        assertEquals(3, found.size());
+        assertEquals(
+                List.of("01 - The Fellowship of the Ring.mkv", "02 - The Two Towers.mkv",
+                        "03 - The Return of the King.mkv"),
+                found.stream().map(MovieEvidence::videoFileName).toList());
+        // Every entry shares the folder they were found in.
+        assertTrue(found.stream().allMatch(evidence -> evidence.folderName().equals("The Lord of the Rings")));
     }
 
     @Test
     @DisplayName("what is not one film is not a movie folder")
     void refusesWhatIsNotOneFilm(@TempDir Path temp) throws IOException {
-        // A collection of several films.
-        Path collection = Files.createDirectory(temp.resolve("Pirates of the Caribbean"));
-        Files.createFile(collection.resolve("01 - Curse of the Black Pearl.mkv"));
-        Files.createFile(collection.resolve("02 - Dead Mans Chest.mkv"));
-        assertEquals(Optional.empty(), collector.collect(collection));
-
         // A grouping folder with no video of its own.
         Path grouping = Files.createDirectory(temp.resolve("Kids"));
         Files.createDirectory(grouping.resolve("Frozen (2013)"));
-        assertEquals(Optional.empty(), collector.collect(grouping));
+        assertEquals(List.of(), collector.collect(grouping));
 
         // A season misfiled on a Movies shelf, either shape.
         Path tagged = Files.createDirectory(temp.resolve("Misfiled"));
         Files.createFile(tagged.resolve("Show.S01E01.mkv"));
-        assertEquals(Optional.empty(), collector.collect(tagged));
+        assertEquals(List.of(), collector.collect(tagged));
 
         Path seasons = Files.createDirectory(temp.resolve("Also Misfiled"));
         Files.createFile(seasons.resolve("Also.Misfiled.mkv"));
         Files.createDirectory(seasons.resolve("Season 2"));
-        assertEquals(Optional.empty(), collector.collect(seasons));
+        assertEquals(List.of(), collector.collect(seasons));
     }
 
     @Test
     @DisplayName("an unreadable folder yields nothing rather than an error")
     void refusesTheUnreadable(@TempDir Path temp) {
-        assertEquals(Optional.empty(), collector.collect(temp.resolve("does-not-exist")));
+        assertEquals(List.of(), collector.collect(temp.resolve("does-not-exist")));
     }
 
     @Test

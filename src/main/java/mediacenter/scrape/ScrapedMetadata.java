@@ -21,7 +21,8 @@ public record ScrapedMetadata(
         Optional<String> overview,
         Optional<String> status,
         String scrapedFromFolderName,
-        Instant scrapedAt) {
+        Instant scrapedAt,
+        Optional<Integer> diskEpisodeCount) {
 
     public ScrapedMetadata {
         if (provider == null || provider.isBlank()) {
@@ -39,5 +40,19 @@ public record ScrapedMetadata(
         year = year == null ? Optional.empty() : year;
         overview = overview == null ? Optional.empty() : overview;
         status = status == null ? Optional.empty() : status;
+        diskEpisodeCount = diskEpisodeCount == null ? Optional.empty() : diskEpisodeCount;
+    }
+
+    /**
+     * Convenience for a film, or for code written before a series folder's own
+     * episode count was worth keeping: no shape to compare against later, so
+     * an incremental re-scrape never has grounds to trigger for it.
+     */
+    public ScrapedMetadata(
+            String provider, long providerId, String title, Optional<Integer> year,
+            Optional<String> overview, Optional<String> status, String scrapedFromFolderName,
+            Instant scrapedAt) {
+        this(provider, providerId, title, year, overview, status, scrapedFromFolderName, scrapedAt,
+                Optional.empty());
     }
 }

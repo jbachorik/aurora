@@ -16,15 +16,20 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import mediacenter.media.ArtworkResolver;
+import mediacenter.media.VideoFiles;
 
 /**
- * Fetches a scraped title's poster into its folder — but never over artwork
- * already there, whoever put it there: a cover the user chose beats a scraped
- * one. Series and films share this, because a poster is a poster.
+ * Fetches a scraped title's poster — but never over artwork already there,
+ * whoever put it there: a cover the user chose beats a scraped one. Series
+ * and films share this, because a poster is a poster.
  *
- * <p>Written as {@code poster.jpg} (or {@code .png}, after the source),
- * which is the first name {@link ArtworkResolver} looks for — so a
- * downloaded poster appears on the shelf with no further wiring.
+ * <p>Ordinarily written as {@code poster.jpg} (or {@code .png}, after the
+ * source) into the title's own folder, which is the first name
+ * {@link ArtworkResolver} looks for — so a downloaded poster appears on the
+ * shelf with no further wiring. A film sharing its folder with others — a
+ * trilogy nobody split apart — instead gets its poster beside its own video,
+ * named after it, which {@link ArtworkResolver#resolveForFile} already knows
+ * to look for.
  */
 final class PosterDownloader {
 
@@ -35,13 +40,32 @@ final class PosterDownloader {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
-    /** Downloads the poster unless the folder already shows a cover. */
+    /** Downloads the poster into the folder unless it already shows a cover. */
     void downloadIfMissing(Path folder, String posterUrl) {
         if (ArtworkResolver.selectCover(listFileNames(folder)).isPresent()) {
             return;
         }
-        String extension = posterUrl.toLowerCase(Locale.ROOT).endsWith(".png") ? "png" : "jpg";
-        Path target = folder.resolve("poster." + extension);
+        download(folder.resolve("poster." + extensionOf(posterUrl)), posterUrl);
+    }
+
+    /** Downloads one video's own poster unless it already has a sidecar image. */
+    void downloadIfMissingForVideo(Path videoFile, String posterUrl) {
+        Path folder = videoFile.getParent();
+        if (folder == null) {
+            return;
+        }
+        String baseName = VideoFiles.withoutExtension(videoFile.getFileName().toString());
+        if (ArtworkResolver.selectSidecar(baseName, listFileNames(folder)).isPresent()) {
+            return;
+        }
+        download(folder.resolve(baseName + "." + extensionOf(posterUrl)), posterUrl);
+    }
+
+    private static String extensionOf(String posterUrl) {
+        return posterUrl.toLowerCase(Locale.ROOT).endsWith(".png") ? "png" : "jpg";
+    }
+
+    private void download(Path target, String posterUrl) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(posterUrl))
@@ -61,7 +85,7 @@ final class PosterDownloader {
             // The metadata is already saved; a poster that would not download
             // is retried the day the user deletes the metadata file, and the
             // tile falls back to its generated placeholder meanwhile.
-            LOG.log(Level.INFO, e, () -> "Could not download the poster for " + folder);
+            LOG.log(Level.INFO, e, () -> "Could not download the poster for " + target);
         }
     }
 

@@ -106,10 +106,12 @@ public final class BrowseView implements View {
     private final Map<Path, Optional<MediaItem>> soleMediaByFolder = new HashMap<>();
 
     /**
-     * What the scraper knows about each folder on screen, as the same sweep
-     * answers. Only touched on the JavaFX thread; emptied by every load.
+     * What the scraper knows about each row on screen, as the same sweep
+     * answers — keyed by a folder ordinarily, or by one film's own video when
+     * a folder shares itself between several. Only touched on the JavaFX
+     * thread; emptied by every load.
      */
-    private final Map<Path, ScrapedMetadata> scrapedByFolder = new HashMap<>();
+    private final Map<Path, ScrapedMetadata> scrapedBySubject = new HashMap<>();
 
     /**
      * What the scraper knows about the browsed folder itself — the header's
@@ -276,7 +278,7 @@ public final class BrowseView implements View {
         int generation = ++loadGeneration;
         directoryArtwork.clear();
         soleMediaByFolder.clear();
-        scrapedByFolder.clear();
+        scrapedBySubject.clear();
         ownMetadata = null;
         poster.clear();
         showOverview(null);
@@ -317,11 +319,14 @@ public final class BrowseView implements View {
         List<String> parentFolderNames = parentFolderNames();
         List<MediaListRow> rows = new ArrayList<>(items.size());
         List<MediaListRow> directoryRows = new ArrayList<>();
+        List<MediaListRow> videoRows = new ArrayList<>();
         for (MediaItem item : items) {
             MediaListRow row = MediaListRow.forItem(item, parentFolderNames);
             rows.add(row);
             if (item.isDirectory()) {
                 directoryRows.add(row);
+            } else if (item.isVideo()) {
+                videoRows.add(row);
             }
             if (item.isVideo() && context.watched().isWatched(item.path())) {
                 row.showWatched(true);
@@ -331,6 +336,7 @@ public final class BrowseView implements View {
         list.setRows(rows);
         list.focusSelection();
         resolveSoleMedia(directoryRows, generation);
+        resolveVideoMetadata(videoRows, generation);
         offerFoldersForScraping();
         // A photograph in this very folder settles the question with no walk at
         // all, and this is the folder a viewer of photographs is usually in. The
@@ -407,6 +413,37 @@ public final class BrowseView implements View {
     }
 
     /**
+     * Peeks at each video's own metadata sidecar, on a Movies shelf only — the
+     * shape a folder shared between several films keeps, one film's own file
+     * beside the others. A single-film folder never has one of these, so the
+     * check costs one missed stat and nothing more; a series' episodes are
+     * never asked at all, since {@link SeriesScraper} never writes one.
+     */
+    private void resolveVideoMetadata(List<MediaListRow> videoRows, int generation) {
+        if (videoRows.isEmpty() || root.type() != MediaRootType.MOVIES) {
+            return;
+        }
+        for (MediaListRow row : videoRows) {
+            MediaItem video = row.item().orElseThrow();
+            context.backgroundExecutor().execute(() -> {
+                if (generation != loadGeneration || discarded) {
+                    return;
+                }
+                applyIfFound(row, video.path(), MOVIE_METADATA.loadForVideo(video.path()), generation);
+            });
+        }
+    }
+
+    /** Delivers a background metadata lookup's answer back onto the JavaFX thread. */
+    private void applyIfFound(MediaListRow row, Path subject, Optional<ScrapedMetadata> found, int generation) {
+        found.ifPresent(metadata -> FxTasks.onFx(() -> {
+            if (generation == loadGeneration && !discarded) {
+                applyMetadata(row, subject, metadata);
+            }
+        }));
+    }
+
+    /**
      * The browsed folder's own identity, for the header — "Breaking Bad" over
      * the episode list, where the disk spells a ripper's name. Asynchronous
      * like everything here; the header corrects itself a beat later, through
@@ -448,10 +485,10 @@ public final class BrowseView implements View {
      * the real title, and — when this is the selected line — the year and
      * synopsis under the poster.
      */
-    private void applyMetadata(MediaListRow row, Path folderPath, ScrapedMetadata metadata) {
-        scrapedByFolder.put(folderPath, metadata);
+    private void applyMetadata(MediaListRow row, Path subject, ScrapedMetadata metadata) {
+        scrapedBySubject.put(subject, metadata);
         row.showTitle(metadata.title());
-        if (isSelected(folderPath)) {
+        if (isSelected(subject)) {
             showOverview(metadata);
         }
     }
@@ -573,7 +610,7 @@ public final class BrowseView implements View {
         }
         // The scraper's words follow the selection the way the poster does;
         // a line nothing is known about gets the whole column for its image.
-        showOverview(scrapedByFolder.get(item.path()));
+        showOverview(scrapedBySubject.get(item.path()));
         if (item.artworkPath().isPresent()) {
             poster.show(item.artworkPath().get());
             return;
@@ -672,28 +709,39 @@ public final class BrowseView implements View {
         if (ownMetadata == null) {
             loadOwnMetadata(loadGeneration);
         }
-        List<MediaListRow> uncaptioned = new ArrayList<>();
+        List<MediaListRow> uncaptionedFolders = new ArrayList<>();
+        List<MediaListRow> uncaptionedVideos = new ArrayList<>();
         for (MediaListRow row : itemRows) {
             MediaItem item = row.item().orElse(null);
-            if (item != null && item.isDirectory() && !scrapedByFolder.containsKey(item.path())) {
-                uncaptioned.add(row);
+            if (item == null || scrapedBySubject.containsKey(item.path())) {
+                continue;
+            }
+            if (item.isDirectory()) {
+                uncaptionedFolders.add(row);
+            } else if (item.isVideo() && root.type() == MediaRootType.MOVIES) {
+                // A trilogy sharing its folder keeps each film's metadata
+                // beside its own video; a series' episodes never carry one.
+                uncaptionedVideos.add(row);
             }
         }
-        if (uncaptioned.isEmpty()) {
+        if (uncaptionedFolders.isEmpty() && uncaptionedVideos.isEmpty()) {
             return;
         }
         int generation = loadGeneration;
         context.backgroundExecutor().execute(() -> {
-            for (MediaListRow row : uncaptioned) {
+            for (MediaListRow row : uncaptionedFolders) {
                 if (generation != loadGeneration || discarded) {
                     return;
                 }
                 MediaItem item = row.item().orElseThrow();
-                store.get().load(item.path()).ifPresent(metadata -> FxTasks.onFx(() -> {
-                    if (generation == loadGeneration && !discarded) {
-                        applyMetadata(row, item.path(), metadata);
-                    }
-                }));
+                applyIfFound(row, item.path(), store.get().load(item.path()), generation);
+            }
+            for (MediaListRow row : uncaptionedVideos) {
+                if (generation != loadGeneration || discarded) {
+                    return;
+                }
+                MediaItem item = row.item().orElseThrow();
+                applyIfFound(row, item.path(), store.get().loadForVideo(item.path()), generation);
             }
         });
     }
@@ -717,30 +765,34 @@ public final class BrowseView implements View {
      * one place the whole feature is visible before the posters arrive, and
      * the place a wrong identification is caught while the folder it names
      * is still on screen.
+     *
+     * <p>{@code subject} is a folder ordinarily, but one film's own video when
+     * a folder shares itself between several — either way, the row that
+     * carries that exact path is the one to re-caption.
      */
-    private void onFolderScraped(Path scrapedFolder, ScrapedMetadata metadata) {
+    private void onFolderScraped(Path subject, ScrapedMetadata metadata) {
         if (discarded) {
             return;
         }
-        if (folder.equals(scrapedFolder)) {
+        if (folder.equals(subject)) {
             // The page being browsed was itself just identified: the header is
             // where its name lives.
             ownMetadata = metadata;
             context.navigation().refreshHeader();
         }
-        directoryArtwork.remove(scrapedFolder);
-        // The freshly identified folder earns its caption and synopsis at
+        directoryArtwork.remove(subject);
+        // The freshly identified subject earns its caption and synopsis at
         // once, not on the next visit.
         for (MediaListRow row : itemRows) {
             MediaItem item = row.item().orElse(null);
-            if (item != null && item.path().equals(scrapedFolder)) {
-                applyMetadata(row, scrapedFolder, metadata);
+            if (item != null && item.path().equals(subject)) {
+                applyMetadata(row, subject, metadata);
                 break;
             }
         }
         list.selectedRow().ifPresent(row -> {
             MediaItem item = row.item().orElse(null);
-            if (item != null && item.path().equals(scrapedFolder)) {
+            if (item != null && item.path().equals(subject)) {
                 showPosterFor(row);
             }
         });
